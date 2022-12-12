@@ -161,7 +161,7 @@ if __name__ == "__main__":
     parser.add_argument('--w_bce', type=float, default=1.0)
     parser.add_argument('--alpha_kl', type=float, default=0.0)
     parser.add_argument('--lambda_mmd_q', type=float, default=1300.0)
-    parser.add_argument('--lambda_mmd_a', type=float, default=70.0)
+    parser.add_argument('--lambda_mmd_a', type=float, default=26.0)
     # parser.add_argument('--alpha_jsd', type=float, default=0.0)
     parser.add_argument('--lambda_qa_info', type=float, default=1.0)
 
