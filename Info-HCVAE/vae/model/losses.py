@@ -6,7 +6,7 @@ from torch.distributions.gumbel import Gumbel
 from model.model_utils import sample_gaussian, gumbel_softmax, sample_gumbel
 
 # Define MMD loss
-def compute_kernel(x, y, latent_dim, kernel_bandwidth, imq_scales=[0.1, 0.2, 0.5, 1.0, 2.0], kernel="imq"):
+def compute_kernel(x, y, latent_dim, kernel_bandwidth, imq_scales=[0.1, 0.2, 0.5, 1.0, 2.0], kernel="rbf"):
     """ Return a kernel of size (batch_x, batch_y) """
     if kernel == "imq":
         Cbase = 2.0 * latent_dim * kernel_bandwidth ** 2
@@ -94,10 +94,10 @@ class GumbelMMDLoss(nn.Module):
     def __init__(self):
         super(GumbelMMDLoss, self).__init__()
 
-    def forward(self, posterior_z):
-        batch_size, latent_dim, nlatent = posterior_z.size()
-        prior_z = sample_gumbel((batch_size, latent_dim, nlatent), device=posterior_z.device).argmax(dim=-1).float()
-        posterior_z = posterior_z.argmax(dim=-1).float()
+    def forward(self, posterior_z_logits):
+        batch_size, latent_dim, nlatent = posterior_z_logits.size()
+        prior_z = sample_gumbel((batch_size, latent_dim, nlatent), device=posterior_z.device)
+        posterior_z = gumbel_softmax(posterior_z_logits, hard=False)
         return compute_mmd(posterior_z, prior_z, latent_dim)
 
 
