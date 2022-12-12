@@ -29,7 +29,8 @@ class PosteriorEncoder(nn.Module):
         self.zq_attention = nn.Linear(nzqdim, 2 * nhidden)
 
         self.zq_linear = nn.Linear(4 * 2 * nhidden, 2 * nzqdim)
-        self.za_linear = nn.Linear(nzqdim + 2 * 2 * nhidden, nza * nzadim)
+        # self.za_linear = nn.Linear(nzqdim + 2 * 2 * nhidden, nza * nzadim)
+        self.za_linear = nn.Linear(2 * 2 * nhidden, nza * nzadim)
 
     def forward(self, c_ids, q_ids, a_ids):
         c_mask, c_lengths = return_mask_lengths(c_ids)
@@ -82,7 +83,9 @@ class PosteriorEncoder(nn.Module):
                                        mask)
         c_a_attned_by_zq = c_a_attned_by_zq.squeeze(1)
 
-        h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
+        # h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
+        # za will be made dependent on zq during init state generation
+        h = torch.cat([c_a_attned_by_zq, c_a_h], dim=-1)
 
         za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
         # za_prob = F.softmax(za_logits, dim=-1)
