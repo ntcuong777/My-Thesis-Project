@@ -83,8 +83,8 @@ class DiscreteVAE(nn.Module):
 
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=padding_idx)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=args.max_c_len)
-        self.gaussian_kl_criterion = VaeGaussianKLLoss # GaussianKLLoss()
-        self.categorical_kl_criterion = VaeGumbelKLLoss # GumbelKLLoss()
+        self.gaussian_kl_criterion = VaeGaussianKLLoss() # GaussianKLLoss()
+        self.categorical_kl_criterion = VaeGumbelKLLoss() # GumbelKLLoss()
 
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
         self.gumbel_mmd_criterion = GumbelMMDLoss()
