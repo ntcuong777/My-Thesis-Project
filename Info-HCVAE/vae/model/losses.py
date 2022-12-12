@@ -74,8 +74,7 @@ class VaeGaussianKLLoss(nn.Module):
         super(VaeGaussianKLLoss, self).__init__()
 
     def forward(self, mu, logvar):
-        sigma = logvar.exp()
-        KLD = -0.5 * torch.sum(1 + sigma - mu.pow(2) - sigma.exp())
+        KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
         return KLD
 
 
