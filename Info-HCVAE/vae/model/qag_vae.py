@@ -10,6 +10,7 @@ from model.losses import GaussianKLLoss, CategoricalKLLoss, \
     GaussianJensenShannonDivLoss, CategoricalJensenShannonDivLoss, \
     ContinuousKernelMMDLoss, GumbelMMDLoss, GumbelKLLoss, \
     VaeGaussianKLLoss, VaeGumbelKLLoss
+from model.model_utils import sample_gumbel
 
 
 class DiscreteVAE(nn.Module):
@@ -119,7 +120,7 @@ class DiscreteVAE(nn.Module):
 
         # q_init_state, a_init_state = self.return_init_state(
         #     posterior_zq, posterior_za)
-        q_init_state, a_init_state = self.init_state_generator(c_ids)
+        q_init_state, a_init_state = self.init_state_generator(c_ids, zq=posterior_zq, za=posterior_za)
 
         # answer decoding
         start_logits, end_logits = self.answer_decoder(
@@ -175,9 +176,9 @@ class DiscreteVAE(nn.Module):
             return return_dict
 
     # def generate(self, zq, za, c_ids):
-    def generate(self, c_ids):
+    def generate(self, c_ids, zq=None, za=None):
         # q_init_state, a_init_state = self.return_init_state(zq, za)
-        q_init_state, a_init_state = self.init_state_generator(c_ids)
+        q_init_state, a_init_state = self.init_state_generator(c_ids, zq=zq, za=za)
 
         a_ids, start_positions, end_positions = self.answer_decoder.generate(
             a_init_state, c_ids)
@@ -187,9 +188,9 @@ class DiscreteVAE(nn.Module):
         return q_ids, start_positions, end_positions
 
     # def return_answer_logits(self, zq, za, c_ids):
-    def return_answer_logits(self, c_ids):
+    def return_answer_logits(self, c_ids, zq=None, za=None):
         # _, a_init_state = self.return_init_state(zq, za)
-        _, a_init_state = self.init_state_generator(c_ids)
+        _, a_init_state = self.init_state_generator(c_ids, zq=zq, za=zq)
 
         start_logits, end_logits = self.answer_decoder(a_init_state, c_ids)
 
