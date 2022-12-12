@@ -55,6 +55,7 @@ class InitStateGenerationNet(nn.Module):
         q_init_state = (q_init_h, q_init_c)
 
         # For attention calculation, linear layer is there for projection
+        # No prior question to dependent on, must attentive to zq
         mask = c_mask.unsqueeze(1)
         c_attned_by_zq, _ = cal_attn(self.zq_attention(zq).unsqueeze(1),
                                      c_hs,
