@@ -13,6 +13,8 @@ class DecodingInitStateEncoder(nn.Module):
         self.embedding = embedding
         self.nhidden = nhidden
         self.nlayers = nlayers
+        self.dec_q_nlayers = dec_q_nlayers
+        self.dec_q_nhidden = dec_q_nhidden
         self.nzqdim = nzqdim
         self.nza = nza
         self.nzadim = nzadim
@@ -42,8 +44,8 @@ class DecodingInitStateEncoder(nn.Module):
 
         q_init_c = self.q_c_init_state_linear(torch.cat((c_h, prior_zq), dim=-1))
         q_init_h = self.q_h_init_state_linear(torch.cat((c_h, prior_zq), dim=-1))
-        q_init_h = q_init_h.view(-1, self.nlayers, self.nhidden).transpose(0, 1).contiguous()
-        q_init_c = q_init_c.view(-1, self.nlayers, self.nhidden).transpose(0, 1).contiguous()
+        q_init_h = q_init_h.view(-1, self.dec_q_nlayers, self.dec_q_nhidden).transpose(0, 1).contiguous()
+        q_init_c = q_init_c.view(-1, self.dec_q_nlayers, self.dec_q_nhidden).transpose(0, 1).contiguous()
         q_init_state = (q_init_h, q_init_c)
 
         # For attention calculation, linear layer is there for projection
