@@ -3,14 +3,15 @@ import torch.nn as nn
 from model.customized_layers import CustomLSTM
 from model.model_utils import return_mask_lengths, cal_attn, gumbel_softmax, sample_gaussian
 
+
 class PosteriorEncoder(nn.Module):
-    def __init__(self, embedding, emsize,
+    def __init__(self, contextualized_embedding, emsize,
                  nhidden, nlayers,
                  nzqdim, nza, nzadim,
                  dropout=0.0):
         super(PosteriorEncoder, self).__init__()
 
-        self.embedding = embedding
+        self.contextualized_embedding = contextualized_embedding
         self.nhidden = nhidden
         self.nlayers = nlayers
         self.nzqdim = nzqdim
@@ -35,19 +36,19 @@ class PosteriorEncoder(nn.Module):
         q_mask, q_lengths = return_mask_lengths(q_ids)
 
         # question enc
-        q_embeddings = self.embedding(q_ids)
+        q_embeddings = self.contextualized_embedding(q_ids, q_mask)
         q_hs, q_state = self.encoder(q_embeddings, q_lengths.to("cpu"))
         q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
         # context enc
-        c_embeddings = self.embedding(c_ids)
+        c_embeddings = self.contextualized_embedding(c_ids, c_mask)
         c_hs, c_state = self.encoder(c_embeddings, c_lengths.to("cpu"))
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
         # context and answer enc
-        c_a_embeddings = self.embedding(c_ids, a_ids, None)
+        c_a_embeddings = self.contextualized_embedding(c_ids, c_mask, token_type_ids=a_ids)
         c_a_hs, c_a_state = self.encoder(c_a_embeddings, c_lengths.to("cpu"))
         c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)

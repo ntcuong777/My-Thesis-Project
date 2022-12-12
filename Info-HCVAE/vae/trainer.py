@@ -105,26 +105,25 @@ class VAETrainer(object):
         self.cnt_steps = 0
         self._reset_loss_values()
 
-    def generate_posterior(self, c_ids, q_ids, a_ids):
-        with torch.no_grad():
-            zq, za = self.vae.posterior_encoder(c_ids, q_ids, a_ids)
-            q_ids, start_positions, end_positions = self.vae.generate(
-                zq, za, c_ids)
-        return q_ids, start_positions, end_positions, zq
+    # def generate_posterior(self, c_ids, q_ids, a_ids):
+    #     with torch.no_grad():
+    #         zq, za = self.vae.posterior_encoder(c_ids, q_ids, a_ids)
+    #         q_ids, start_positions, end_positions = self.vae.generate(
+    #             zq, za, c_ids)
+    #     return q_ids, start_positions, end_positions, zq
 
-    def generate_answer_logits(self, c_ids, q_ids, a_ids):
-        with torch.no_grad():
-            zq, za = self.vae.posterior_encoder(c_ids, q_ids, a_ids)
-            start_logits, end_logits = self.vae.return_answer_logits(
-                zq, za, c_ids)
-        return start_logits, end_logits
+    # def generate_answer_logits(self, c_ids, q_ids, a_ids):
+    #     with torch.no_grad():
+    #         # zq, za = self.vae.posterior_encoder(c_ids, q_ids, a_ids)
+    #         start_logits, end_logits = self.vae.return_answer_logits(c_ids)
+    #     return start_logits, end_logits
 
-    def generate_prior(self, c_ids):
-        with torch.no_grad():
-            zq, za = self.vae.prior_encoder(c_ids)
-            q_ids, start_positions, end_positions = self.vae.generate(
-                zq, za, c_ids)
-        return q_ids, start_positions, end_positions, zq
+    # def generate_prior(self, c_ids):
+    #     with torch.no_grad():
+    #         zq, za = self.vae.prior_encoder(c_ids)
+    #         q_ids, start_positions, end_positions = self.vae.generate(
+    #             zq, za, c_ids)
+    #     return q_ids, start_positions, end_positions, zq
 
     def save(self, save_path, save_mode="epoch", epoch=None, save_freq=None, max_models_to_keep=4):
         assert save_mode in ["best_f1", "best_bleu"] or \

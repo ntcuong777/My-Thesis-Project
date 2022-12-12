@@ -10,20 +10,23 @@ class DimBceInfoMax(nn.Module):
         z_dim (int): dimension of latent code (typically a number in [10 - 256])
     """
 
-    def __init__(self, x_dim=784, z_dim=64):
+    def __init__(self, x_dim=784, z_dim=64, use_billinear=False):
         super(DimBceInfoMax, self).__init__()
         self.z_dim = z_dim
         self.x_dim = x_dim
-        self.discriminator = nn.Sequential(
-            nn.Linear(self.x_dim + self.z_dim, 512),
-            nn.Mish(True),
-            nn.Dropout(0.5),
-            nn.Linear(512, 256),
-            nn.Mish(True),
-            nn.Linear(256, 128),
-            nn.Mish(True),
-            nn.Linear(128, 1)
-        )
+        if use_billinear:
+            self.discriminator = nn.Bilinear(self.x_dim, self.z_dim, 1)
+        else:
+            self.discriminator = nn.Sequential(
+                nn.Linear(self.x_dim + self.z_dim, 512),
+                nn.Mish(True),
+                nn.Dropout(0.5),
+                nn.Linear(512, 256),
+                nn.Mish(True),
+                nn.Linear(256, 128),
+                nn.Mish(True),
+                nn.Linear(128, 1)
+            )
         self.bce_loss = nn.BCEWithLogitsLoss()
 
     def forward(self, x, z):

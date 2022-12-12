@@ -6,7 +6,10 @@ from transformers import BertTokenizer
 from model.customized_layers import ContextualizedEmbedding, Embedding
 from model.encoders import PosteriorEncoder, PriorEncoder
 from model.decoders import QuestionDecoder, AnswerDecoder
-from model.losses import GaussianKLLoss, CategoricalKLLoss, GaussianJensenShannonDivLoss, CategoricalJensenShannonDivLoss
+from model.losses import GaussianKLLoss, CategoricalKLLoss, \
+    GaussianJensenShannonDivLoss, CategoricalJensenShannonDivLoss, \
+    ContinuousKernelMMDLoss, GumbelMMDLoss, GumbelKLLoss, \
+    VaeGaussianKLLoss, VaeGumbelKLLoss
 
 
 class DiscreteVAE(nn.Module):
@@ -39,7 +42,8 @@ class DiscreteVAE(nn.Module):
 
         self.w_bce = args.w_bce
         self.alpha_kl = args.alpha_kl
-        self.alpha_jsd = args.alpha_jsd
+        self.lambda_mmd = args.lambda_mmd
+        # self.alpha_jsd = args.alpha_jsd
         self.lambda_qa_info = args.lambda_qa_info
 
         max_q_len = args.max_q_len
@@ -57,8 +61,11 @@ class DiscreteVAE(nn.Module):
                                                   nzqdim, nza, nzadim,
                                                   enc_dropout)
 
-        self.prior_encoder = PriorEncoder(embedding, emsize,
-                                          enc_nhidden, enc_nlayers,
+        # self.prior_encoder = PriorEncoder(embedding, emsize,
+        #                                   enc_nhidden, enc_nlayers,
+        #                                   nzqdim, nza, nzadim, enc_dropout)
+        self.init_state_generator = PriorEncoder(embedding, emsize,
+                                          enc_nhidden, enc_nlayers, dec_q_nhidden, dec_q_nlayers,
                                           nzqdim, nza, nzadim, enc_dropout)
 
         self.answer_decoder = AnswerDecoder(contextualized_embedding, emsize,
@@ -70,44 +77,48 @@ class DiscreteVAE(nn.Module):
                                                 dec_q_nhidden, ntokens, dec_q_nlayers,
                                                 dec_q_dropout, max_q_len)
 
-        self.q_h_linear = nn.Linear(nzqdim, dec_q_nlayers * dec_q_nhidden)
-        self.q_c_linear = nn.Linear(nzqdim, dec_q_nlayers * dec_q_nhidden)
-        self.a_linear = nn.Linear(nza*nzadim, emsize, False)
+        # self.q_h_linear = nn.Linear(nzqdim, dec_q_nlayers * dec_q_nhidden)
+        # self.q_c_linear = nn.Linear(nzqdim, dec_q_nlayers * dec_q_nhidden)
+        # self.a_linear = nn.Linear(nza*nzadim, emsize, False)
 
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=padding_idx)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=args.max_c_len)
-        self.gaussian_kl_criterion = GaussianKLLoss()
-        self.categorical_kl_criterion = CategoricalKLLoss()
+        self.gaussian_kl_criterion = VaeGaussianKLLoss # GaussianKLLoss()
+        self.categorical_kl_criterion = VaeGumbelKLLoss # GumbelKLLoss()
 
-        if self.alpha_jsd > 0:
-            self.gaussian_jsd_loss = GaussianJensenShannonDivLoss()
-            self.categorical_jsd_loss = CategoricalJensenShannonDivLoss()
+        self.cont_mmd_criterion = ContinuousKernelMMDLoss()
+        self.gumbel_mmd_criterion = GumbelMMDLoss()
 
-    def return_init_state(self, zq, za):
-        q_init_h = self.q_h_linear(zq)
-        q_init_c = self.q_c_linear(zq)
-        q_init_h = q_init_h.view(-1, self.dec_q_nlayers,
-                                 self.dec_q_nhidden).transpose(0, 1).contiguous()
-        q_init_c = q_init_c.view(-1, self.dec_q_nlayers,
-                                 self.dec_q_nhidden).transpose(0, 1).contiguous()
-        q_init_state = (q_init_h, q_init_c)
+        # if self.alpha_jsd > 0:
+        #     self.gaussian_jsd_loss = GaussianJensenShannonDivLoss()
+        #     self.categorical_jsd_loss = CategoricalJensenShannonDivLoss()
 
-        za_flatten = za.view(-1, self.nza * self.nzadim)
-        a_init_state = self.a_linear(za_flatten)
+    # def return_init_state(self, zq, za):
+    #     q_init_h = self.q_h_linear(zq)
+    #     q_init_c = self.q_c_linear(zq)
+    #     q_init_h = q_init_h.view(-1, self.dec_q_nlayers,
+    #                              self.dec_q_nhidden).transpose(0, 1).contiguous()
+    #     q_init_c = q_init_c.view(-1, self.dec_q_nlayers,
+    #                              self.dec_q_nhidden).transpose(0, 1).contiguous()
+    #     q_init_state = (q_init_h, q_init_c)
 
-        return q_init_state, a_init_state
+    #     za_flatten = za.view(-1, self.nza * self.nzadim)
+    #     a_init_state = self.a_linear(za_flatten)
+
+    #     return q_init_state, a_init_state
 
     def forward(self, c_ids, q_ids, a_ids, start_positions, end_positions):
         posterior_zq_mu, posterior_zq_logvar, posterior_zq, \
             posterior_za_logits, posterior_za \
             = self.posterior_encoder(c_ids, q_ids, a_ids)
 
-        prior_zq_mu, prior_zq_logvar, _, \
-            prior_za_logits, _ \
-            = self.prior_encoder(c_ids)
+        # prior_zq_mu, prior_zq_logvar, _, \
+        #     prior_za_logits, _ \
+        #     = self.prior_encoder(c_ids)
 
-        q_init_state, a_init_state = self.return_init_state(
-            posterior_zq, posterior_za)
+        # q_init_state, a_init_state = self.return_init_state(
+        #     posterior_zq, posterior_za)
+        q_init_state, a_init_state = self.init_state_generator(c_ids)
 
         # answer decoding
         start_logits, end_logits = self.answer_decoder(
@@ -132,23 +143,21 @@ class DiscreteVAE(nn.Module):
             loss_a_rec = loss_start_a_rec + loss_end_a_rec
 
             # kl loss
-            loss_zq_kl = self.gaussian_kl_criterion(posterior_zq_mu, posterior_zq_logvar,
-                                                    prior_zq_mu, prior_zq_logvar)
+            # loss_zq_kl = self.gaussian_kl_criterion(posterior_zq_mu, posterior_zq_logvar,
+            #                                         prior_zq_mu, prior_zq_logvar)
+            # loss_za_kl = self.categorical_kl_criterion(posterior_za_logits,
+            #                                            prior_za_logits)
+            loss_zq_kl = self.gaussian_kl_criterion(posterior_zq_mu, posterior_zq_logvar)
+            loss_za_kl = self.categorical_kl_criterion(posterior_za_logits)
 
-            loss_za_kl = self.categorical_kl_criterion(posterior_za_logits,
-                                                       prior_za_logits)
-
-            loss_jsd, loss_zq_jsd, loss_za_jsd = 0, 0, 0
-            if self.alpha_jsd > 0:
-                loss_zq_jsd = self.gaussian_jsd_loss(posterior_zq_mu, posterior_zq_logvar, \
-                    prior_zq_mu, prior_zq_logvar)
-                loss_za_jsd = self.categorical_jsd_loss(posterior_za_logits, prior_za_logits)
-                loss_jsd = self.alpha_jsd * (loss_zq_jsd + loss_za_jsd)
+            loss_zq_mmd = self.cont_mmd_criterion(posterior_zq)
+            loss_za_mmd = self.gumbel_mmd_criterion(posterior_za)
+            loss_mmd = ((1 - self.alpha_kl) + self.lambda_mmd - 1) * (loss_zq_mmd + loss_za_mmd)
 
             loss_kl = self.alpha_kl * (loss_zq_kl + loss_za_kl)
             loss_qa_info = self.lambda_qa_info * loss_info
             loss = self.w_bce * (loss_q_rec + loss_a_rec) + \
-                loss_kl + loss_qa_info + loss_jsd
+                loss_kl + loss_qa_info + loss_mmd
 
             return_dict = {
                 "total_loss": loss,
@@ -157,15 +166,17 @@ class DiscreteVAE(nn.Module):
                 "loss_kl": loss_kl,
                 "loss_zq_kl": loss_zq_kl,
                 "loss_za_kl": loss_za_kl,
-                "loss_jsd": loss_jsd,
-                "loss_zq_jsd": loss_zq_jsd,
-                "loss_za_jsd": loss_za_jsd,
+                "loss_mmd": loss_mmd,
+                "loss_zq_mmd": loss_zq_mmd,
+                "loss_za_mmd": loss_za_mmd,
                 "loss_qa_info": loss_qa_info,
             }
             return return_dict
 
-    def generate(self, zq, za, c_ids):
-        q_init_state, a_init_state = self.return_init_state(zq, za)
+    # def generate(self, zq, za, c_ids):
+    def generate(self, c_ids):
+        # q_init_state, a_init_state = self.return_init_state(zq, za)
+        q_init_state, a_init_state = self.init_state_generator(c_ids)
 
         a_ids, start_positions, end_positions = self.answer_decoder.generate(
             a_init_state, c_ids)
@@ -174,8 +185,10 @@ class DiscreteVAE(nn.Module):
 
         return q_ids, start_positions, end_positions
 
-    def return_answer_logits(self, zq, za, c_ids):
-        _, a_init_state = self.return_init_state(zq, za)
+    # def return_answer_logits(self, zq, za, c_ids):
+    def return_answer_logits(self, c_ids):
+        # _, a_init_state = self.return_init_state(zq, za)
+        _, a_init_state = self.init_state_generator(c_ids)
 
         start_logits, end_logits = self.answer_decoder(a_init_state, c_ids)
 
