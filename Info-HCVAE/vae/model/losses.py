@@ -5,7 +5,6 @@ import torch.distributions as torch_dist
 from torch.distributions.gumbel import Gumbel
 from model.model_utils import sample_gaussian, gumbel_softmax, sample_gumbel
 from model.loss_utils import compute_mmd
-import numpy as np
 
 
 class VaeGumbelKLLoss(nn.Module):
@@ -17,7 +16,7 @@ class VaeGumbelKLLoss(nn.Module):
         # Entropy of the logits
         h1 = logits * torch.log(logits + eps)
         # Cross entropy with the categorical distribution
-        h2 = logits * np.log(1. / self.categorical_dim + eps)
+        h2 = logits * torch.log(1. / self.categorical_dim + eps)
         KLD = torch.mean(torch.sum(h1 - h2, dim=(1, 2)), dim=0)
         return KLD
 
