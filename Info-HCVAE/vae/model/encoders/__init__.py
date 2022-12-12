@@ -1,2 +1,3 @@
 from .posterior_encoder import PosteriorEncoder
 from .prior_encoder import PriorEncoder
+from .decoding_init_state_encoder import DecodingInitStateEncoder

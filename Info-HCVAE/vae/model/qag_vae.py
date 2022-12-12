@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import BertTokenizer
 from model.customized_layers import ContextualizedEmbedding, Embedding
-from model.encoders import PosteriorEncoder, PriorEncoder
+from model.encoders import PosteriorEncoder, PriorEncoder, DecodingInitStateEncoder
 from model.decoders import QuestionDecoder, AnswerDecoder
 from model.losses import GaussianKLLoss, CategoricalKLLoss, \
     GaussianJensenShannonDivLoss, CategoricalJensenShannonDivLoss, \
@@ -64,8 +64,8 @@ class DiscreteVAE(nn.Module):
         # self.prior_encoder = PriorEncoder(embedding, emsize,
         #                                   enc_nhidden, enc_nlayers,
         #                                   nzqdim, nza, nzadim, enc_dropout)
-        self.init_state_generator = PriorEncoder(embedding, emsize,
-                                          enc_nhidden, enc_nlayers, dec_q_nhidden, dec_q_nlayers,
+        self.init_state_generator = DecodingInitStateEncoder(embedding, emsize,
+                                          enc_nhidden, enc_nlayers, dec_q_nlayers, dec_q_nhidden,
                                           nzqdim, nza, nzadim, enc_dropout)
 
         self.answer_decoder = AnswerDecoder(contextualized_embedding, emsize,
