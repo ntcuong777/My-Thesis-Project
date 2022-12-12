@@ -3,12 +3,12 @@ import torch.nn as nn
 from model.customized_layers import CustomLSTM
 from model.model_utils import return_mask_lengths, cal_attn, sample_gumbel
 
-class DecodingInitStateEncoder(nn.Module):
+class InitStateGenerationNet(nn.Module):
     def __init__(self, embedding, emsize,
                  nhidden, nlayers, dec_q_nlayers, dec_q_nhidden,
                  nzqdim, nza, nzadim,
                  dropout=0):
-        super(DecodingInitStateEncoder, self).__init__()
+        super(InitStateGenerationNet, self).__init__()
 
         self.embedding = embedding
         self.nhidden = nhidden
