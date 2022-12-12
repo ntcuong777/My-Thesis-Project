@@ -13,9 +13,11 @@ class VaeGumbelKLLoss(nn.Module):
         self.categorical_dim = categorical_dim
 
     def forward(self, logits, eps=1e-10):
-        logits = F.softmax(logits, dim=-1).view(-1, logits.size(1) * logits.size(2))
-        log_ratio = torch.log(logits * self.categorical_dim + eps)
-        KLD = torch.sum(logits * log_ratio, dim=-1).mean()
+        # Entropy of the logits
+        h1 = logits * torch.log(logits + eps)
+        # Cross entropy with the categorical distribution
+        h2 = logits * torch.log(1. / self.categorical_dim + eps)
+        KLD = torch.mean(torch.sum(h1 - h2, dim=(1, 2)), dim=0)
         return KLD
 
 
