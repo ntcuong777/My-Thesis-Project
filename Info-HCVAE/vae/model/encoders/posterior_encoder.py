@@ -29,7 +29,8 @@ class PosteriorEncoder(nn.Module):
         self.zq_attention = nn.Linear(nzqdim, 2 * nhidden)
 
         self.zq_linear = nn.Linear(4 * 2 * nhidden, 2 * nzqdim)
-        self.za_linear = nn.Linear(nzqdim + 2 * 2 * nhidden, nza * nzadim)
+        # self.za_linear = nn.Linear(nzqdim + 2 * 2 * nhidden, nza * nzadim)
+        self.za_linear = nn.Linear(nzqdim + 2 * 2 * nhidden, 2 * nzadim)
 
     def forward(self, c_ids, q_ids, a_ids):
         c_mask, c_lengths = return_mask_lengths(c_ids)
@@ -84,11 +85,13 @@ class PosteriorEncoder(nn.Module):
 
         h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
 
-        za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
+        # za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
+        za_mu, za_logvar = torch.split(self.za_linear(h), self.nzadim, dim=1)
         # za_prob = F.softmax(za_logits, dim=-1)
-        za = gumbel_softmax(za_logits)
+        za = sample_gaussian(za_mu, za_logvar)
 
         if self.training:
-            return zq_mu, zq_logvar, zq, za_logits, za
+            # return zq_mu, zq_logvar, zq, za_logits, za
+            return zq_mu, zq_logvar, zq, za_mu, za_logvar, za
         else:
             return zq, za

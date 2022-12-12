@@ -29,7 +29,8 @@ class DecodingInitStateEncoder(nn.Module):
 
         self.q_c_init_state_linear = nn.Linear(2 * nhidden + nzqdim, dec_q_nlayers * dec_q_nhidden)
         self.q_h_init_state_linear = nn.Linear(2 * nhidden + nzqdim, dec_q_nlayers * dec_q_nhidden)
-        self.a_init_state_linear = nn.Linear(nzqdim + 2 * 2 * nhidden + nza*nzadim, emsize)
+        # self.a_init_state_linear = nn.Linear(nzqdim + 2 * 2 * nhidden + nza*nzadim, emsize)
+        self.a_init_state_linear = nn.Linear(nzqdim + 2 * 2 * nhidden + nzadim, emsize)
 
 
     def forward(self, c_ids):
@@ -57,7 +58,9 @@ class DecodingInitStateEncoder(nn.Module):
 
         h = torch.cat([prior_zq, c_attned_by_zq, c_h], dim=-1)
 
-        prior_za = sample_gumbel((c_ids.size(0), self.nza, self.nzadim), prior_zq.device)
-        a_init_state = self.a_init_state_linear(torch.cat((h, prior_za.view(-1, self.nza*self.nzadim)), dim=-1))
+        # prior_za = sample_gumbel((c_ids.size(0), self.nza, self.nzadim), prior_zq.device)
+        prior_za = torch.randn(c_ids.size(0), self.nzadim).to(c_ids.device)
+        # a_init_state = self.a_init_state_linear(torch.cat((h, prior_za.view(-1, self.nza*self.nzadim)), dim=-1))
+        a_init_state = self.a_init_state_linear(torch.cat((h, prior_za), dim=-1))
 
         return q_init_state, a_init_state

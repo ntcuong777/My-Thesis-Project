@@ -157,7 +157,7 @@ if __name__ == "__main__":
     parser.add_argument('--dec_q_dropout', type=float, default=0.3)
     parser.add_argument('--nzqdim', type=int, default=50)
     parser.add_argument('--nza', type=int, default=20)
-    parser.add_argument('--nzadim', type=int, default=10)
+    parser.add_argument('--nzadim', type=int, default=20)
     parser.add_argument('--w_bce', type=float, default=1.0)
     parser.add_argument('--alpha_kl', type=float, default=0.0)
     parser.add_argument('--lambda_mmd_q', type=float, default=1300.0)
