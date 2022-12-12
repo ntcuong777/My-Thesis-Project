@@ -4,36 +4,7 @@ import torch.nn.functional as F
 import torch.distributions as torch_dist
 from torch.distributions.gumbel import Gumbel
 from model.model_utils import sample_gaussian, gumbel_softmax, sample_gumbel
-
-# Define MMD loss
-def compute_kernel(x, y, latent_dim, kernel_bandwidth, imq_scales=[0.1, 0.2, 0.5, 1.0, 2.0], kernel="rbf"):
-    """ Return a kernel of size (batch_x, batch_y) """
-    if kernel == "imq":
-        Cbase = 2.0 * latent_dim * kernel_bandwidth ** 2
-        imq_scales_cuda = torch.tensor(
-            imq_scales, dtype=torch.float).cuda()  # shape = (num_scales,)
-        # shape = (num_scales, 1, 1)
-        Cs = (imq_scales_cuda * Cbase).unsqueeze(1).unsqueeze(2)
-        # shape = (batch_x, batch_y)
-        k = (Cs / (Cs + torch.norm(x.unsqueeze(1) - y.unsqueeze(0), dim=-1).pow(2).unsqueeze(0))).sum(dim=0)
-        return k
-    elif kernel == "rbf":
-        C = 2.0 * latent_dim * kernel_bandwidth ** 2
-        return torch.exp(-torch.norm(x.unsqueeze(1) - y.unsqueeze(0), dim=-1).pow(2) / C)
-
-
-def compute_mmd(x, y, latent_dim, kernel_bandwidth=1):
-    x_size = x.size(0)
-    y_size = y.size(0)
-    x_kernel = compute_kernel(x, x, latent_dim, kernel_bandwidth)
-    y_kernel = compute_kernel(y, y, latent_dim, kernel_bandwidth)
-    xy_kernel = compute_kernel(x, y, latent_dim, kernel_bandwidth)
-    mmd_z = (x_kernel - x_kernel.diag().diag()).sum() / ((x_size - 1) * x_size)
-    mmd_z_prior = (y_kernel - y_kernel.diag().diag()
-                   ).sum() / ((y_size - 1) * y_size)
-    mmd_cross = xy_kernel.sum() / (x_size*y_size)
-    mmd = mmd_z + mmd_z_prior - 2 * mmd_cross
-    return mmd
+from model.loss_utils import compute_mmd
 
 
 class VaeGumbelKLLoss(nn.Module):
