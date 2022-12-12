@@ -38,7 +38,7 @@ def compute_mmd(x, y, latent_dim, kernel_bandwidth=1):
 
 class VaeGumbelKLLoss(nn.Module):
     def __init__(self):
-        super(GumbelKLLoss, self).__init__()
+        super(VaeGumbelKLLoss, self).__init__()
 
     def forward(self, logits, categorical_dim=10):
         log_ratio = torch.log(logits * categorical_dim + 1e-20)
