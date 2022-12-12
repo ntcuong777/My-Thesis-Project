@@ -42,7 +42,8 @@ class DiscreteVAE(nn.Module):
 
         self.w_bce = args.w_bce
         self.alpha_kl = args.alpha_kl
-        self.lambda_mmd = args.lambda_mmd
+        self.lambda_mmd_q = args.lambda_mmd_q
+        self.lambda_mmd_a = args.lambda_mmd_a
         # self.alpha_jsd = args.alpha_jsd
         self.lambda_qa_info = args.lambda_qa_info
 
@@ -150,11 +151,11 @@ class DiscreteVAE(nn.Module):
             loss_zq_kl = self.gaussian_kl_criterion(posterior_zq_mu, posterior_zq_logvar)
             loss_za_kl = self.categorical_kl_criterion(posterior_za_logits)
 
-            loss_zq_mmd = self.cont_mmd_criterion(posterior_zq)
-            loss_za_mmd = self.gumbel_mmd_criterion(posterior_za)
-            loss_mmd = ((1 - self.alpha_kl) + self.lambda_mmd - 1) * (loss_zq_mmd + loss_za_mmd)
+            loss_zq_mmd = (self.alpha_kl + self.lambda_mmd_q - 1.) * self.cont_mmd_criterion(posterior_zq)
+            loss_za_mmd = (self.alpha_kl + self.lambda_mmd_a - 1.) * self.gumbel_mmd_criterion(posterior_za)
+            loss_mmd =  loss_zq_mmd + loss_za_mmd
 
-            loss_kl = self.alpha_kl * (loss_zq_kl + loss_za_kl)
+            loss_kl = (1. - self.alpha_kl) * (loss_zq_kl + loss_za_kl)
             loss_qa_info = self.lambda_qa_info * loss_info
             loss = self.w_bce * (loss_q_rec + loss_a_rec) + \
                 loss_kl + loss_qa_info + loss_mmd
