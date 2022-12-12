@@ -26,7 +26,7 @@ class PosteriorEncoder(nn.Module):
 
         self.question_attention = nn.Linear(2 * nhidden, 2 * nhidden)
         self.context_attention = nn.Linear(2 * nhidden, 2 * nhidden)
-        self.zq_attention = nn.Linear(nzqdim, 2 * nhidden)
+        # self.zq_attention = nn.Linear(nzqdim, 2 * nhidden)
 
         self.zq_linear = nn.Linear(4 * 2 * nhidden, 2 * nzqdim)
         # self.za_linear = nn.Linear(nzqdim + 2 * 2 * nhidden, nza * nzadim)
@@ -78,14 +78,14 @@ class PosteriorEncoder(nn.Module):
         # attention zq, c_a
         # For attention calculation, linear layer is there for projection
         mask = c_mask.unsqueeze(1)
-        c_a_attned_by_zq, _ = cal_attn(self.zq_attention(zq).unsqueeze(1),
+        c_a_attned_by_q, _ = cal_attn(q_h.unsqueeze(1), # self.zq_attention(zq).unsqueeze(1),
                                        c_a_hs,
                                        mask)
-        c_a_attned_by_zq = c_a_attned_by_zq.squeeze(1)
+        c_a_attned_by_q = c_a_attned_by_q.squeeze(1)
 
         # h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
         # za will be made dependent on zq during init state generation
-        h = torch.cat([c_a_attned_by_zq, c_a_h], dim=-1)
+        h = torch.cat([c_a_attned_by_q, c_a_h], dim=-1)
 
         za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
         # za_prob = F.softmax(za_logits, dim=-1)
