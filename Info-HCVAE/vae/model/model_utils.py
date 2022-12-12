@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import numpy as np
 
 from math import pi, sqrt, exp
 
@@ -63,3 +64,20 @@ def gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
         # Re-parametrization trick.
         ret = y_soft
     return ret
+
+
+def gumbel_latent_var_sampling(num_samples, latent_dim, categorical_dim, device):
+    """
+    Samples from the latent space and return the corresponding
+    image space map.
+    :param num_samples: (Int) Number of samples
+    :param current_device: (Int) Device to run the model
+    :return: (Tensor)
+    """
+    # [S x D x Q]
+    M = num_samples * latent_dim
+    np_y = np.zeros((M, categorical_dim), dtype=np.float32)
+    np_y[range(M), np.random.choice(categorical_dim, M)] = 1
+    np_y = np.reshape(np_y, [num_samples, latent_dim, categorical_dim])
+    z_samples = torch.from_numpy(np_y).view(num_samples, latent_dim * categorical_dim).to(device)
+    return z_samples

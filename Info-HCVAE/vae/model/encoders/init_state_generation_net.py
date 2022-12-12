@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model.customized_layers import CustomLSTM
-from model.model_utils import return_mask_lengths, cal_attn, sample_gumbel
+from model.model_utils import return_mask_lengths, cal_attn, sample_gumbel, gumbel_latent_var_sampling
 
 class InitStateGenerationNet(nn.Module):
     def __init__(self, embedding, emsize,
@@ -40,7 +40,7 @@ class InitStateGenerationNet(nn.Module):
 
         if zq is None: # sampling for generation
             zq = torch.randn(c_ids.size(0), self.nzqdim).to(c_ids.device)
-            za = sample_gumbel((c_ids.size(0), self.nza, self.nzadim), zq.device)
+            za = gumbel_latent_var_sampling(c_ids.size(0), self.nza, self.nzadim, zq.device)
 
         c_embeddings = self.embedding(c_ids)
         c_hs, c_state = self.context_encoder(c_embeddings, c_lengths.to("cpu"))

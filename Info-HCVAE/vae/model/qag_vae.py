@@ -190,7 +190,7 @@ class DiscreteVAE(nn.Module):
     # def return_answer_logits(self, zq, za, c_ids):
     def return_answer_logits(self, c_ids, zq=None, za=None):
         # _, a_init_state = self.return_init_state(zq, za)
-        _, a_init_state = self.init_state_generator(c_ids, zq=zq, za=zq)
+        _, a_init_state = self.init_state_generator(c_ids, zq=zq, za=za)
 
         start_logits, end_logits = self.answer_decoder(a_init_state, c_ids)
 
