@@ -71,7 +71,7 @@ class CategoricalKLLoss(nn.Module):
 
 class VaeGaussianKLLoss(nn.Module):
     def __init__(self):
-        super(VaeGaussianKLLoss, self).init__()
+        super(VaeGaussianKLLoss, self).__init__()
 
     def forward(self, mu, logvar):
         sigma = logvar.exp()
