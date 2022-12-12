@@ -66,7 +66,7 @@ def compute_mmd(posterior_z, prior_z, latent_dim):
     prior_z_kernel = compute_kernel(prior_z, prior_z, z_dim=latent_dim)
     posterior_z_kernel = compute_kernel(
         posterior_z, posterior_z, z_dim=latent_dim)
-    combined_kernel = compute_kernel(prior_z, posterior_z)
+    combined_kernel = compute_kernel(prior_z, posterior_z, z_dim=latent_dim)
 
     mmd = prior_z_kernel.mean() + posterior_z_kernel.mean() - \
         2 * combined_kernel.mean()
