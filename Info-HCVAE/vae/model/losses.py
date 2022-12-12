@@ -37,11 +37,13 @@ def compute_mmd(x, y, latent_dim, kernel_bandwidth=1):
 
 
 class VaeGumbelKLLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, categorical_dim=10):
         super(VaeGumbelKLLoss, self).__init__()
+        self.categorical_dim = categorical_dim
 
-    def forward(self, logits, categorical_dim=10):
-        log_ratio = torch.log(logits * categorical_dim + 1e-20)
+    def forward(self, logits, eps=1e-10):
+        logits = F.softmax(logits, dim=-1).view(-1, logits.size(1) * logits.size(2))
+        log_ratio = torch.log(logits * self.categorical_dim + eps)
         KLD = torch.sum(logits * log_ratio, dim=-1).mean()
         return KLD
 
@@ -93,11 +95,10 @@ class GumbelMMDLoss(nn.Module):
     def __init__(self):
         super(GumbelMMDLoss, self).__init__()
 
-    def forward(self, posterior_z_logits):
-        batch_size, latent_dim, nlatent = posterior_z_logits.size()
-        prior_z = sample_gumbel((batch_size, latent_dim, nlatent), device=posterior_z_logits.device)
-        posterior_z = gumbel_softmax(posterior_z_logits, hard=False)
-        return compute_mmd(posterior_z.view(batch_size, -1), prior_z.view(batch_size, -1), latent_dim)
+    def forward(self, posterior_z):
+        batch_size, nlatent, latent_dim = posterior_z.size()
+        prior_z = sample_gumbel(posterior_z.size(), device=posterior_z.device)
+        return compute_mmd(posterior_z.view(batch_size, -1), prior_z.view(batch_size, -1), nlatent*latent_dim)
 
 
 class ContinuousKernelMMDLoss(nn.Module):
