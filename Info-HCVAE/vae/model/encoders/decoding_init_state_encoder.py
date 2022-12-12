@@ -62,6 +62,6 @@ class DecodingInitStateEncoder(nn.Module):
         c_attned_by_zq = c_attned_by_zq.squeeze(1)
 
         h = torch.cat([zq, c_attned_by_zq, c_h, za.view(-1, self.nza*self.nzadim)], dim=-1)
-        a_init_state = self.a_init_state_linear(torch.cat((h, za.view(-1, self.nza*self.nzadim)), dim=-1))
+        a_init_state = self.a_init_state_linear(h, dim=-1))
 
         return q_init_state, a_init_state
