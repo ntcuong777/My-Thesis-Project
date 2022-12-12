@@ -98,7 +98,7 @@ class GumbelMMDLoss(nn.Module):
         batch_size, latent_dim, nlatent = posterior_z_logits.size()
         prior_z = sample_gumbel((batch_size, latent_dim, nlatent), device=posterior_z.device)
         posterior_z = gumbel_softmax(posterior_z_logits, hard=False)
-        return compute_mmd(posterior_z, prior_z, latent_dim)
+        return compute_mmd(posterior_z.view(batch_size, -1), prior_z.view(batch_size, -1), latent_dim)
 
 
 class ContinuousKernelMMDLoss(nn.Module):
