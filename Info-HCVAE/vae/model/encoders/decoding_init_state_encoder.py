@@ -56,6 +56,6 @@ class DecodingInitStateEncoder(nn.Module):
         h = torch.cat([prior_zq, c_attned_by_zq, c_h], dim=-1)
 
         prior_za = sample_gumbel((c_ids.size(0), self.nza, self.nzadim), prior_zq.device)
-        a_init_state = self.a_init_state_linear(torch.cat(h, prior_za.view(c_ids.size(0), -1)))
+        a_init_state = self.a_init_state_linear(torch.cat(h, prior_za.view(c_ids.size(0), -1), dim=-1))
 
         return q_init_state, a_init_state
