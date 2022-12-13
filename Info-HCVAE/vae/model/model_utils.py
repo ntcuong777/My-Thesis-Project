@@ -6,7 +6,7 @@ from math import pi, sqrt, exp
 
 
 def softargmax(onehot_x, dim=-1, beta=1e4):
-    categorial_range = torch.range(0, onehot_x.size(dim) - 1).float()
+    categorial_range = torch.range(0, onehot_x.size(dim) - 1).to(onehot_x.device).float()
     return torch.sum(F.softmax(onehot_x*beta) * categorial_range, dim=dim).float()
 
 
