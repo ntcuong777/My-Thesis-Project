@@ -160,8 +160,8 @@ if __name__ == "__main__":
     parser.add_argument('--nzadim', type=int, default=16)
     parser.add_argument('--w_bce', type=float, default=1.0)
     parser.add_argument('--alpha_kl', type=float, default=0.9)
-    parser.add_argument('--lambda_mmd_q', type=float, default=1.0)
-    parser.add_argument('--lambda_mmd_a', type=float, default=0.02)
+    parser.add_argument('--lambda_mmd_q', type=float, default=1.9)
+    parser.add_argument('--lambda_mmd_a', type=float, default=0.92)
     # parser.add_argument('--alpha_jsd', type=float, default=0.0)
     parser.add_argument('--lambda_qa_info', type=float, default=1.0)
 
