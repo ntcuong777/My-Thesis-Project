@@ -38,7 +38,7 @@ class DiscreteVAE(nn.Module):
         self.dec_q_nlayers = dec_q_nlayers = args.dec_q_nlayers
         dec_q_dropout = args.dec_q_dropout
         self.nzqdim = nzqdim = args.nzqdim
-        # self.nza = nza = args.nza
+        self.nza = nza = args.nza
         self.nzadim = nzadim = args.nzadim
 
         self.w_bce = args.w_bce
