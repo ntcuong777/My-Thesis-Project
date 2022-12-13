@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributions as torch_dist
 from torch.distributions.gumbel import Gumbel
-from model.model_utils import sample_gaussian, gumbel_softmax, sample_gumbel, gumbel_latent_var_sampling
+from model.model_utils import softargmax, gumbel_latent_var_sampling
 from model.loss_utils import compute_mmd
 
 
@@ -69,7 +69,11 @@ class GumbelMMDLoss(nn.Module):
     def forward(self, posterior_z):
         batch_size, latent_dim, nlatent = posterior_z.size()
         prior_z = gumbel_latent_var_sampling(batch_size, latent_dim, nlatent, device=posterior_z.device)
-        return compute_mmd(posterior_z.view(batch_size, -1), prior_z.view(batch_size, -1), latent_dim*nlatent)
+
+        # do softargmax to make measuring the mean in MMD possible
+        prior_z = softargmax(prior_z)
+        posterior_z = softargmax(posterior_z)
+        return compute_mmd(posterior_z, prior_z, latent_dim)
 
 
 class ContinuousKernelMMDLoss(nn.Module):

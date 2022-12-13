@@ -5,6 +5,11 @@ import numpy as np
 from math import pi, sqrt, exp
 
 
+def softargmax(onehot_x, dim=-1, beta=1e4):
+    categorial_range = torch.range(0, onehot_x.size(dim) - 1).float()
+    return torch.sum(F.softmax(onehot_x*beta) * categorial_range, dim=dim).float()
+
+
 def gaussian_kernel(n=3, sigma=1):
     r = range(-int(n/2), int(n/2)+1)
     return [1 / (sigma * sqrt(2*pi)) * exp(-float(x)**2/(2*sigma**2)) for x in r]
