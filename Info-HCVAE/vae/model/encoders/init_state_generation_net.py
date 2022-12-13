@@ -6,7 +6,7 @@ from model.model_utils import return_mask_lengths, cal_attn, sample_gumbel, gumb
 class InitStateGenerationNet(nn.Module):
     def __init__(self, embedding, emsize,
                  nhidden, nlayers, dec_q_nlayers, dec_q_nhidden,
-                 nzqdim, nzadim,
+                 nzqdim, nza, nzadim,
                  dropout=0):
         super(InitStateGenerationNet, self).__init__()
 
@@ -16,7 +16,7 @@ class InitStateGenerationNet(nn.Module):
         self.dec_q_nlayers = dec_q_nlayers
         self.dec_q_nhidden = dec_q_nhidden
         self.nzqdim = nzqdim
-        # self.nza = nza
+        self.nza = nza
         self.nzadim = nzadim
 
         self.context_encoder = CustomLSTM(input_size=emsize,
@@ -29,7 +29,7 @@ class InitStateGenerationNet(nn.Module):
 
         self.q_c_init_state_linear = nn.Linear(2 * nhidden + nzqdim, dec_q_nlayers * dec_q_nhidden)
         self.q_h_init_state_linear = nn.Linear(2 * nhidden + nzqdim, dec_q_nlayers * dec_q_nhidden)
-        self.a_init_state_linear = nn.Linear(nzqdim + 2 * 2 * nhidden + nzadim, emsize)
+        self.a_init_state_linear = nn.Linear(nzqdim + 2 * 2 * nhidden + nza*nzadim, emsize)
 
 
     def forward(self, c_ids, zq=None, za=None):
@@ -40,8 +40,7 @@ class InitStateGenerationNet(nn.Module):
 
         if zq is None: # sampling for generation
             zq = torch.randn(c_ids.size(0), self.nzqdim).to(c_ids.device)
-            za = torch.randn(c_ids.size(0), self.nzadim).to(c_ids.device)
-            # za = gumbel_latent_var_sampling(c_ids.size(0), self.nza, self.nzadim, zq.device)
+            za = gumbel_latent_var_sampling(c_ids.size(0), self.nza, self.nzadim, zq.device)
 
         c_embeddings = self.embedding(c_ids)
         c_hs, c_state = self.context_encoder(c_embeddings, c_lengths.to("cpu"))
@@ -63,7 +62,7 @@ class InitStateGenerationNet(nn.Module):
                                      mask)
         c_attned_by_zq = c_attned_by_zq.squeeze(1)
 
-        h = torch.cat([zq, c_attned_by_zq, c_h, za], dim=-1)
+        h = torch.cat([zq, c_attned_by_zq, c_h, za.view(-1, self.nza*self.nzadim)], dim=-1)
         a_init_state = self.a_init_state_linear(h)
 
         return q_init_state, a_init_state

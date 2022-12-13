@@ -7,7 +7,7 @@ from model.model_utils import return_mask_lengths, cal_attn, gumbel_softmax, sam
 class PosteriorEncoder(nn.Module):
     def __init__(self, embedding, emsize,
                  nhidden, nlayers,
-                 nzqdim, nzadim,
+                 nzqdim, nza, nzadim,
                  dropout=0.0):
         super(PosteriorEncoder, self).__init__()
 
@@ -15,7 +15,7 @@ class PosteriorEncoder(nn.Module):
         self.nhidden = nhidden
         self.nlayers = nlayers
         self.nzqdim = nzqdim
-        # self.nza = nza
+        self.nza = nza
         self.nzadim = nzadim
 
         self.encoder = CustomLSTM(input_size=emsize,
@@ -30,7 +30,7 @@ class PosteriorEncoder(nn.Module):
 
         self.zq_linear = nn.Linear(4 * 2 * nhidden, 2 * nzqdim)
         # self.za_linear = nn.Linear(nzqdim + 2 * 2 * nhidden, nza * nzadim)
-        self.za_linear = nn.Linear(3 * 2 * nhidden, 2 * nzadim)
+        self.za_linear = nn.Linear(2 * 2 * nhidden, nza * nzadim)
 
     def forward(self, c_ids, q_ids, a_ids):
         c_mask, c_lengths = return_mask_lengths(c_ids)
@@ -78,22 +78,20 @@ class PosteriorEncoder(nn.Module):
         # attention zq, c_a
         # For attention calculation, linear layer is there for projection
         mask = c_mask.unsqueeze(1)
-        c_a_attned_by_q, _ = cal_attn(self.question_attention(q_h).unsqueeze(1), # self.zq_attention(zq).unsqueeze(1),
+        c_a_attned_by_q, _ = cal_attn(q_h.unsqueeze(1), # self.zq_attention(zq).unsqueeze(1),
                                        c_a_hs,
                                        mask)
         c_a_attned_by_q = c_a_attned_by_q.squeeze(1)
 
         # h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
         # za will be made dependent on zq during init state generation
-        h = torch.cat([c_a_attned_by_q, c_a_h, c_h], dim=-1)
+        h = torch.cat([c_a_attned_by_q, c_a_h], dim=-1)
 
-        # za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
-        za_mu, za_logvar = torch.split(self.za_linear(h), self.nzadim, dim=1)
+        za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
         # za_prob = F.softmax(za_logits, dim=-1)
-        za = sample_gaussian(za_mu, za_logvar)
-        # za = gumbel_softmax(za_logits)
+        za = gumbel_softmax(za_logits)
 
         if self.training:
-            return zq_mu, zq_logvar, zq, za_mu, za_logvar, za
+            return zq_mu, zq_logvar, zq, za_logits, za
         else:
             return zq, za
