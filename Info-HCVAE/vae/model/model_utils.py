@@ -78,12 +78,12 @@ def gumbel_latent_var_sampling(num_samples, latent_dim, categorical_dim, device)
     image space map.
     :param num_samples: (Int) Number of samples
     :param current_device: (Int) Device to run the model
-    :return: (Tensor)
+    :return: (Tensor) with shape (num_samples, latent_dim, categorical_dim)
     """
     # [S x D x Q]
     M = num_samples * latent_dim
     np_y = np.zeros((M, categorical_dim), dtype=np.float32)
     np_y[range(M), np.random.choice(categorical_dim, M)] = 1
     np_y = np.reshape(np_y, [num_samples, latent_dim, categorical_dim])
-    z_samples = torch.from_numpy(np_y).view(num_samples, latent_dim * categorical_dim).to(device)
+    z_samples = torch.from_numpy(np_y).to(device)
     return z_samples
