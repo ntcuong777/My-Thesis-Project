@@ -131,3 +131,9 @@ dmypy.json
 
 ./data
 .DS_Store
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml
+.idea/modules.xml
+.idea/My-Thesis-Project.iml
+.idea/vcs.xml
+.idea/workspace.xml
