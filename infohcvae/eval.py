@@ -46,7 +46,7 @@ class Result(object):
         self.prior_z_prob = prior_z_prob
 
 
-def eval_vae(epoch, args, trainer, eval_data):
+def eval_vae(args, trainer, eval_data):
     trainer.set_eval_mode(True)
 
     tokenizer = BertTokenizer.from_pretrained(args.huggingface_model)
@@ -55,80 +55,68 @@ def eval_vae(epoch, args, trainer, eval_data):
 
     eval_loader, eval_examples, eval_features = eval_data
 
-    all_results = []
-    qa_results = []
+    posterior_qa_results = []
+    prior_qa_result = []
     qg_results = {}
     res_dict = {}
     example_index = -1
 
     for batch in tqdm(eval_loader, desc="Eval iter", leave=False, position=4):
-        c_ids, q_ids, a_ids, start, end = batch_to_device(batch, args.device)
+        c_ids, q_ids, a_ids, _, _ = batch_to_device(batch, args.device)
         batch_size = c_ids.size(0)
-        batch_c_ids = c_ids.cpu().tolist()
         batch_q_ids = q_ids.cpu().tolist()
-        batch_start = start.cpu().tolist()
-        batch_end = end.cpu().tolist()
 
         batch_posterior_q_ids, \
         batch_posterior_start, batch_posterior_end, \
-        posterior_z_prob = trainer.generate_posterior(c_ids, q_ids, a_ids)
+        posterior_zq = trainer.generate_posterior(c_ids, q_ids, a_ids)
 
         batch_start_logits, batch_end_logits \
         = trainer.generate_answer_logits(c_ids, q_ids, a_ids)
 
+        # in this case: prior_zq == posterior_zq
+        batch_prior_start_logits, batch_prior_end_logits = \
+            trainer.generate_prior_answer_logits(c_ids, q_ids, a_ids)
+
+        # Convert posterior tensors to Python list
         batch_posterior_q_ids, \
         batch_posterior_start, batch_posterior_end = \
         batch_posterior_q_ids.cpu().tolist(), \
         batch_posterior_start.cpu().tolist(), batch_posterior_end.cpu().tolist()
-        posterior_z_prob = posterior_z_prob.cpu()
-
-        batch_prior_q_ids, \
-        batch_prior_start, batch_prior_end, \
-        prior_z_prob = trainer.generate_prior(c_ids)
-
-        batch_prior_q_ids, \
-        batch_prior_start, batch_prior_end = \
-        batch_prior_q_ids.cpu().tolist(), \
-        batch_prior_start.cpu().tolist(), batch_prior_end.cpu().tolist()
-        prior_z_prob = prior_z_prob.cpu()
+        posterior_zq = posterior_zq.cpu()
 
         for i in range(batch_size):
             example_index += 1
-            start_logits = batch_start_logits[i].detach().cpu().tolist()
-            end_logits = batch_end_logits[i].detach().cpu().tolist()
+            posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
+            posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
+            prior_start_logits = batch_prior_start_logits[i].detach().cpu().tolist()
+            prior_end_logits = batch_prior_end_logits[i].detach().cpu().tolist()
             eval_feature = eval_features[example_index]
             unique_id = int(eval_feature.unique_id)
 
-            context = to_string(batch_c_ids[i], tokenizer)
-
             real_question = to_string(batch_q_ids[i], tokenizer)
             posterior_question = to_string(batch_posterior_q_ids[i], tokenizer)
-            prior_question = to_string(batch_prior_q_ids[i], tokenizer)
-
-            real_answer = to_string(batch_c_ids[i][batch_start[i]:(batch_end[i] + 1)], tokenizer)
-            posterior_answer = to_string(batch_c_ids[i][batch_posterior_start[i]:(batch_posterior_end[i] + 1)], tokenizer)
-            prior_answer = to_string(batch_c_ids[i][batch_prior_start[i]:(batch_prior_end[i] + 1)], tokenizer)
-
-            all_results.append(Result(context=context,
-                                      real_question=real_question,
-                                      posterior_question=posterior_question,
-                                      prior_question=prior_question,
-                                      real_answer=real_answer,
-                                      posterior_answer=posterior_answer,
-                                      prior_answer=prior_answer,
-                                      posterior_z_prob=posterior_z_prob[i],
-                                      prior_z_prob=prior_z_prob[i]))
 
             qg_results[unique_id] = posterior_question
             res_dict[unique_id] = real_question
-            qa_results.append(RawResult(unique_id=unique_id,
-                                        start_logits=start_logits,
-                                        end_logits=end_logits))
+            posterior_qa_results.append(RawResult(unique_id=unique_id,
+                                        start_logits=posterior_start_logits,
+                                        end_logits=posterior_end_logits))
+            prior_qa_result.append(RawResult(unique_id=unique_id,
+                                    start_logits=prior_start_logits,
+                                    end_logits=prior_end_logits))
 
-    output_prediction_file = os.path.join(args.model_dir, "pred.json")
-    write_predictions(eval_examples, eval_features, qa_results, n_best_size=20,
+    posterior_out_pred_file = os.path.join(args.model_dir, "posterior_pred.json")
+    prior_out_pred_file = os.path.join(args.model_dir, "prior_pred.json")
+    write_predictions(eval_examples, eval_features, posterior_qa_results, n_best_size=20,
                       max_answer_length=30, do_lower_case=True,
-                      output_prediction_file=output_prediction_file,
+                      output_prediction_file=posterior_out_pred_file,
+                      verbose_logging=False,
+                      version_2_with_negative=False,
+                      null_score_diff_threshold=0,
+                      noq_position=True)
+    write_predictions(eval_examples, eval_features, prior_qa_result, n_best_size=20,
+                      max_answer_length=30, do_lower_case=True,
+                      output_prediction_file=prior_out_pred_file,
                       verbose_logging=False,
                       version_2_with_negative=False,
                       null_score_diff_threshold=0,
@@ -137,9 +125,12 @@ def eval_vae(epoch, args, trainer, eval_data):
     with open(args.dev_dir) as f:
         dataset_json = json.load(f)
         dataset = dataset_json["data"]
-    with open(os.path.join(args.model_dir, "pred.json")) as prediction_file:
-        predictions = json.load(prediction_file)
-    ret = evaluate(dataset, predictions)
+    with open(os.path.join(args.model_dir, "posterior_pred.json")) as prediction_file:
+        posterior_predictions = json.load(prediction_file)
+    with open(os.path.join(args.model_dir, "prior_pred.json")) as prediction_file:
+        prior_predictions = json.load(prediction_file)
+    posterior_ret = evaluate(dataset, posterior_predictions)
+    prior_ret = evaluate(dataset, posterior_predictions)
     bleu = eval_qg(res_dict, qg_results)
 
-    return ret, bleu, all_results
+    return posterior_ret, prior_ret, bleu

@@ -31,10 +31,9 @@ def sample_gaussian(mu, logvar, num_samples=None):
             return mu + torch.randn((num_samples, mu.size(1)), device=device)*torch.exp(0.5 * logvar)
 
 
-def return_mask_lengths(ids):
-    mask = torch.sign(ids).float()
-    lengths = torch.sum(mask, 1)
-    return mask, lengths
+def return_attention_mask(ids: torch.Tensor, pad_token_id):
+    mask = (ids != pad_token_id).float()
+    return mask
 
 
 def cal_attn(query, memories, mask):
