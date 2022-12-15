@@ -73,7 +73,8 @@ class QuestionDecoder(nn.Module):
                                            nn.Linear(2*hidden_size, 2*hidden_size),
                                            nn.Mish(True))
 
-        self.logit_linear = nn.Linear(hidden_size, ntokens, bias=False)
+        self.pre_logit_linear = nn.Linear(hidden_size, context_enc.get_input_embeddings().weight.size(0))
+        self.logit_linear = nn.Linear(context_enc.get_input_embeddings().weight.size(0), ntokens, bias=False)
 
         # fix output word matrix
         self.logit_linear.weight = context_enc.get_input_embeddings().weight
@@ -125,7 +126,7 @@ class QuestionDecoder(nn.Module):
         q_concated = self.concat_linear(q_concated)
         q_maxouted, _ = q_concated.view(
             batch_size, max_q_len, self.hidden_size, 2).max(dim=-1)
-        gen_logits = self.logit_linear(q_maxouted)
+        gen_logits = self.logit_linear(self.pre_logit_linear(q_maxouted))
 
         # copy logits
         bq = batch_size * max_q_len
@@ -188,7 +189,7 @@ class QuestionDecoder(nn.Module):
             q_concated = self.concat_linear(q_concated)
             q_maxouted, _ = q_concated.view(
                 batch_size, 1, self.hidden_size, 2).max(dim=-1)
-            gen_logits = self.logit_linear(q_maxouted)
+            gen_logits = self.logit_linear(self.pre_logit_linear(q_maxouted))
 
             # copy logits
             attn_logits = attn_logits.squeeze(1)
@@ -282,7 +283,7 @@ class QuestionDecoder(nn.Module):
             q_concated = torch.cat([q_outputs, c_attned_by_q], dim=2)
             q_concated = self.concat_linear(q_concated)
             q_maxouted, _ = q_concated.view(batch_size, 1, self.hidden_size, 2).max(dim=-1)
-            gen_logits = self.logit_linear(q_maxouted)
+            gen_logits = self.logit_linear(self.pre_logit_linear(q_maxouted))
 
             # copy logits
             attn_logits = attn_logits.squeeze(1)
