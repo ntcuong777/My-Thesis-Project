@@ -18,7 +18,7 @@ class PosteriorEncoder(nn.Module):
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=8,
                                                    activation="gelu", dropout=dropout,
-                                                   dim_feedforward=hidden_size + hidden_size // 2,
+                                                   dim_feedforward=hidden_size,
                                                    batch_first=True)
         self.finetune_encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_enc_layers)
 
