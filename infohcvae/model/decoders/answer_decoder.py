@@ -32,7 +32,7 @@ class AnswerDecoder(nn.Module):
                 nzadim is the categorical dim
         """
         batch_size, max_c_len = c_ids.size()
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_mask, c_mask_mat = return_attention_mask(c_ids, self.pad_token_id)
 
         decoded_a = self.za_linear(softargmax(za))  # shape = (N, hidden_size)
 
@@ -42,7 +42,7 @@ class AnswerDecoder(nn.Module):
 
         repeated_decoded_a = decoded_a.unsqueeze(1).repeat(1, max_c_len, 1)
         h = torch.cat([c_embeddings, repeated_decoded_a], dim=-1)
-        out_features = self.answer_decoder(h, mask=c_mask)
+        out_features = self.answer_decoder(h, mask=c_mask_mat)
 
         start_logits = self.start_linear(out_features).squeeze(-1)
         end_logits = self.end_linear(out_features).squeeze(-1)
@@ -56,7 +56,7 @@ class AnswerDecoder(nn.Module):
 
     def generate(self, c_ids, za):
         start_logits, end_logits = self.forward(c_ids, za)
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_mask, _ = return_attention_mask(c_ids, self.pad_token_id)
         batch_size, max_c_len = c_ids.size()
 
         mask = torch.matmul(c_mask.unsqueeze(2).float(),

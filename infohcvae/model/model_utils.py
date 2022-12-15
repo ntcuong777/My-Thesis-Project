@@ -41,7 +41,10 @@ def sample_gaussian(mu, logvar, num_samples=None):
 
 def return_attention_mask(ids: torch.Tensor, pad_token_id):
     mask = (ids != pad_token_id).float()
-    return mask
+    mask_mat = torch.matmul(mask.unsqueeze(2).float(),
+                        mask.unsqueeze(1).float())
+    mask_mat = torch.triu(mask_mat) == 0
+    return mask, mask_mat
 
 
 def cal_attn(query, memories, mask):

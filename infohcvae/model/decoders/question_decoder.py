@@ -20,16 +20,16 @@ class _ContextEncoderforQG(nn.Module):
         self.gate = nn.Linear(2 * hidden_size, hidden_size, bias=False)
 
     def forward(self, c_ids, a_ids):
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_mask, c_mask_mat = return_attention_mask(c_ids, self.pad_token_id)
 
         c_embeddings = self.context_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=a_ids)
-        c_outputs = self.finetune_encoder(c_embeddings, mask=c_mask)
+        c_outputs = self.finetune_encoder(c_embeddings, mask=c_mask_mat)
 
         c_a_ids = c_ids * a_ids
         c_a_ids[:, 0] = c_ids[:, 0] # add CLS token
-        c_a_mask = return_attention_mask(c_a_ids, self.pad_token_id)
+        c_a_mask, c_a_mask_mat = return_attention_mask(c_a_ids, self.pad_token_id)
         c_a_embeddings = self.context_encoder(input_ids=c_a_ids, attention_mask=c_a_mask)
-        c_a_outputs = self.finetune_encoder(c_a_embeddings, mask=c_a_mask)
+        c_a_outputs = self.finetune_encoder(c_a_embeddings, mask=c_a_mask_mat)
 
         c_concat = torch.cat([c_outputs, c_a_outputs], dim=2)
         c_fused = self.fusion(c_concat).tanh()
@@ -101,14 +101,14 @@ class QuestionDecoder(nn.Module):
 
         c_outputs = self.context_enc_finetuned(c_ids, a_ids)
 
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
+        c_mask, c_mask_mat = return_attention_mask(c_ids, self.pad_token_id)
+        q_mask, q_mask_mat = return_attention_mask(q_ids, self.pad_token_id)
 
         decoded_q = self.zq_decoder(zq)  # shape = (N, hidden_size)
 
         # question dec
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask)
-        q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q), dim=-1), mask=q_mask)
+        q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q), dim=-1), mask=q_mask_mat)
 
         # attention
         # For attention calculation, linear layer is there for projection
@@ -149,7 +149,7 @@ class QuestionDecoder(nn.Module):
             return logits
 
     def generate(self, c_ids, a_ids, zq):
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_mask, _ = return_attention_mask(c_ids, self.pad_token_id)
         c_outputs = self.context_enc_finetuned(c_ids, a_ids)
 
         batch_size = c_ids.size(0)
@@ -158,7 +158,7 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.to(c_ids.device)
         token_type_ids = torch.zeros_like(q_ids)
         position_ids = torch.zeros_like(q_ids)
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
+        q_mask, q_mask_mat = return_attention_mask(q_ids, self.pad_token_id)
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
                                             token_type_ids=token_type_ids, position_ids=position_ids)
 
@@ -168,7 +168,7 @@ class QuestionDecoder(nn.Module):
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
             position_ids = position_ids + 1
-            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q), dim=-1), mask=q_mask)
+            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q), dim=-1), mask=q_mask_mat)
 
             # attention
             mask = c_mask.unsqueeze(1)
@@ -195,7 +195,7 @@ class QuestionDecoder(nn.Module):
             q_ids = torch.argmax(logits, 2)
             all_q_ids.append(q_ids)
 
-            q_mask = return_attention_mask(q_ids, self.pad_token_id)
+            q_mask, q_mask_mat = return_attention_mask(q_ids, self.pad_token_id)
             q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask, token_type_ids=token_type_ids,
                                                 position_ids=position_ids)
 
@@ -240,7 +240,7 @@ class QuestionDecoder(nn.Module):
         return logits
 
     def sample(self, c_ids, a_ids, zq):
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_mask, _ = return_attention_mask(c_ids, self.pad_token_id)
         c_outputs = self.context_enc_finetuned(c_ids, a_ids)
 
         batch_size = c_ids.size(0)
@@ -249,7 +249,7 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.to(c_ids.device)
         token_type_ids = torch.zeros_like(q_ids)
         position_ids = torch.zeros_like(q_ids)
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
+        q_mask, q_mask_mat = return_attention_mask(q_ids, self.pad_token_id)
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
                                             token_type_ids=token_type_ids, position_ids=position_ids)
 
@@ -260,7 +260,7 @@ class QuestionDecoder(nn.Module):
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
             position_ids = position_ids + 1
-            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q), dim=-1), mask=q_mask)
+            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q), dim=-1), mask=q_mask_mat)
 
             # attention
             c_attned_by_q, attn_logits = cal_attn(self.question_linear(q_outputs),
@@ -287,7 +287,7 @@ class QuestionDecoder(nn.Module):
             q_ids = torch.multinomial(probs, num_samples=1)  # [b,1]
             all_q_ids.append(q_ids)
 
-            q_mask = return_attention_mask(q_ids, self.pad_token_id)
+            q_mask, q_mask_mat = return_attention_mask(q_ids, self.pad_token_id)
             q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
                                                 token_type_ids=token_type_ids, position_ids=position_ids)
 
