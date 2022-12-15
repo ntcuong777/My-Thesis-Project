@@ -63,7 +63,7 @@ class QuestionDecoder(nn.Module):
         self.question_enc_finetuned = nn.TransformerEncoder(encoder_layer, num_layers=n_dec_layers)
         self.question_enc_linear = nn.Linear(2*hidden_size, hidden_size, bias=False)
 
-        self.question_linear = nn.Linear(2 * hidden_size, hidden_size)
+        self.question_linear = nn.Linear(hidden_size, hidden_size)
 
         self.zq_decoder = nn.Linear(nzqdim, hidden_size)
 
