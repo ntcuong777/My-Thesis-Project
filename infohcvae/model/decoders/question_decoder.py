@@ -75,7 +75,7 @@ class QuestionDecoder(nn.Module):
         self.logit_linear = nn.Linear(hidden_size, ntokens, bias=False)
 
         # fix output word matrix
-        self.logit_linear.weight = context_enc.get_input_embeddings()
+        self.logit_linear.weight = context_enc.get_input_embeddings().weight
         for param in self.logit_linear.parameters():
             param.requires_grad = False
 
