@@ -176,6 +176,7 @@ class QuestionDecoder(nn.Module):
             repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, q_ids.size(1), 1)
             q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
                                                     src_key_padding_mask=q_mask)
+            q_outputs = self.question_enc_linear(q_outputs)
 
             # attention
             mask = c_mask.unsqueeze(1)
@@ -270,6 +271,7 @@ class QuestionDecoder(nn.Module):
             repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, q_ids.size(1), 1)
             q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
                                                     src_key_padding_mask=q_mask)
+            q_outputs = self.question_enc_linear(q_outputs)
 
             # attention
             c_attned_by_q, attn_logits = cal_attn(self.question_linear(q_outputs),
