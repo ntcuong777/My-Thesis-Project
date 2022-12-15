@@ -73,7 +73,7 @@ class QuestionDecoder(nn.Module):
                                            nn.Linear(2*hidden_size, 2*hidden_size),
                                            nn.Mish(True))
 
-        self.pre_logit_linear = nn.Linear(hidden_size, context_enc.get_input_embeddings().weight.size(0))
+        self.pre_logit_linear = nn.Linear(hidden_size, context_enc.get_input_embeddings().weight.size(1))
         self.logit_linear = nn.Linear(context_enc.get_input_embeddings().weight.size(0), ntokens, bias=False)
 
         # fix output word matrix
