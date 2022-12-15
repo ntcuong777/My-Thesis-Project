@@ -15,7 +15,7 @@ class AnswerDecoder(nn.Module):
 
         self.za_linear = nn.Linear(nza, hidden_size)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=2*hidden_size, nhead=24,
+        encoder_layer = nn.TransformerEncoderLayer(d_model=2*hidden_size, nhead=8,
                                                    activation="gelu", dropout=dropout,
                                                    dim_feedforward=2*hidden_size,
                                                    batch_first=True)
