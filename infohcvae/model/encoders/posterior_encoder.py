@@ -85,7 +85,7 @@ class PosteriorEncoder(nn.Module):
         q_attned_by_za = cal_attn(self.za_attention(za.view(-1, self.nza*self.nzadim)).unsqueeze(1),
                                     q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
-        h = torch.cat([q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, za], dim=-1)
+        h = torch.cat([q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, za.view(-1, self.nza*self.nzadim)], dim=-1)
 
         zq_mu, zq_logvar = torch.split(self.zq_linear(h), self.nzqdim, dim=1)
         zq = sample_gaussian(zq_mu, zq_logvar)
