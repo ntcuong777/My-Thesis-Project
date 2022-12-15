@@ -4,7 +4,7 @@ from copy import deepcopy
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from squad_utils import (convert_examples_to_features_answer_id,
+from infohcvae.squad_utils import (convert_examples_to_features_answer_id,
                          convert_examples_to_harv_features,
                          read_squad_examples)
 
