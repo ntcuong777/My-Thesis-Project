@@ -22,12 +22,12 @@ class PosteriorEncoder(nn.Module):
                                                    batch_first=True)
         self.finetune_encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_enc_layers)
 
-        # self.question_attention = nn.Linear(hidden_size, hidden_size)
+        self.question_attention = nn.Linear(hidden_size, hidden_size)
         self.context_attention = nn.Linear(hidden_size, hidden_size)
         self.za_attention = nn.Linear(nza, hidden_size)
 
         self.za_linear = nn.Linear(2 * hidden_size, nza * nzadim)
-        self.zq_linear = nn.Linear(3 * hidden_size + nza, 2 * nzqdim)
+        self.zq_linear = nn.Linear(4 * hidden_size + nza, 2 * nzqdim)
 
     def forward(self, c_ids, q_ids, a_ids):
         N, _ = c_ids.size()
@@ -64,10 +64,10 @@ class PosteriorEncoder(nn.Module):
         q_hs = self.finetune_encoder(q_embeddings, src_key_padding_mask=q_mask)
         q_h = q_hs[:, 0]  # CLS token
 
-        # # attention q, c
-        # # For attention calculation, linear layer is there for projection
-        # c_attned_by_q = cal_attn(self.question_attention(q_h).unsqueeze(1),
-        #                         c_hs, c_mask.unsqueeze(1))[0].squeeze(1)
+        # attention q, c
+        # For attention calculation, linear layer is there for projection
+        c_attned_by_q = cal_attn(self.question_attention(q_h).unsqueeze(1),
+                                c_hs, c_mask.unsqueeze(1))[0].squeeze(1)
 
         # attetion c, q
         # For attention calculation, linear layer is there for projection
@@ -78,7 +78,7 @@ class PosteriorEncoder(nn.Module):
         q_attned_by_za = cal_attn(self.za_attention(argmax_za).unsqueeze(1),
                                     q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
-        h = torch.cat([q_h, q_attned_by_c, q_attned_by_za, argmax_za], dim=-1)
+        h = torch.cat([q_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, argmax_za], dim=-1)
 
         zq_mu, zq_logvar = torch.split(self.zq_linear(h), self.nzqdim, dim=1)
         zq = sample_gaussian(zq_mu, zq_logvar)
