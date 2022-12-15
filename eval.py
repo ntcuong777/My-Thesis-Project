@@ -4,7 +4,7 @@ import os
 from transformers import MobileBertTokenizer
 from tqdm import tqdm
 
-from infohcvae.qgevalcap.eval import eval_qg
+from qgevalcap.eval import eval_qg
 from infohcvae.squad_utils import evaluate, write_predictions
 from infohcvae.utils import batch_to_device
 
