@@ -1,7 +1,7 @@
 import collections
 import json
 import os
-from transformers import BertTokenizer
+from transformers import MobileBertTokenizer
 from tqdm import tqdm
 
 from infohcvae.qgevalcap.eval import eval_qg
@@ -49,7 +49,7 @@ class Result(object):
 def eval_vae(args, trainer, eval_data):
     trainer.set_eval_mode(True)
 
-    tokenizer = BertTokenizer.from_pretrained(args.huggingface_model)
+    tokenizer = MobileBertTokenizer.from_pretrained(args.huggingface_model)
     RawResult = collections.namedtuple("RawResult",
                                        ["unique_id", "start_logits", "end_logits"])
 

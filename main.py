@@ -5,7 +5,7 @@ import random
 import numpy as np
 import torch
 from tqdm import tqdm, trange
-from transformers import BertTokenizer
+from transformers import MobileBertTokenizer
 
 from eval import eval_vae
 from infohcvae.trainer import VAETrainer
@@ -53,7 +53,7 @@ def evaluate_model(epoch, args, trainer, eval_data, best_bleu, best_em, best_f1)
 
 
 def main(args):
-    tokenizer = BertTokenizer.from_pretrained(args.huggingface_model)
+    tokenizer = MobileBertTokenizer.from_pretrained(args.huggingface_model)
 
     train_data, eval_data = None, None
     if args.load_saved_dataloader:
