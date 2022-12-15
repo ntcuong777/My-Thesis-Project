@@ -70,13 +70,10 @@ def main(args):
     args.device = torch.cuda.current_device()
 
     trainer = VAETrainer(args)
+    if args.multi_gpu:
+        trainer.set_data_parallel()
     if args.checkpoint_file is not None:
         trainer.load_model_state_dict(args.checkpoint_file)
-
-    # loss_log1 = tqdm(total=0, bar_format='{desc}', position=2)
-    # loss_log2 = tqdm(total=0, bar_format='{desc}', position=3)
-    # eval_log = tqdm(total=0, bar_format='{desc}', position=5)
-    # best_eval_log = tqdm(total=0, bar_format='{desc}', position=6)
 
     print("MODEL DIR: " + args.model_dir)
 
@@ -155,7 +152,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--max_c_len", default=384, type=int, help="max context length")
     parser.add_argument("--max_q_len", default=64, type=int, help="max query length")
-    parser.add_argument("--load_saved_dataloader", dest="load_saved_dataloader", action="store_true")
+    parser.add_argument("--load_saved_dataloader", dest="load_saved_dataloader", action="store_true", default=False)
+    parser.add_argument("--multi_gpu", dest="multi_gpu", action="store_true", default=True)
 
     parser.add_argument("--model_dir", default="./save/vae-checkpoint", type=str)
     parser.add_argument("--dataloader_dir", default="./save/dataloader", type=str)

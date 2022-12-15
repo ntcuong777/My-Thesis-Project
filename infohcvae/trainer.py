@@ -1,5 +1,6 @@
 import os
 import torch
+from torch.nn import DataParallel
 from infohcvae.model.qag_vae import DiscreteVAE
 import torch_optimizer as additional_optim
 import torch.optim as optim
@@ -27,6 +28,10 @@ class VAETrainer(object):
 
         self.losses = dict()
         self.cnt_steps = 0
+
+    def set_data_parallel(self):
+        print("Using", torch.cuda.device_count(), "GPUs!")
+        self.vae = DataParallel(self.vae).to(self.args.device)
 
     def adjust_infomax_weight(self, infomax_loss):
         if infomax_loss > 1.0:
@@ -104,15 +109,15 @@ class VAETrainer(object):
         self.cnt_steps = 0
         self._reset_loss_values()
 
-    def generate_posterior(self, c_ids, q_ids, a_ids):
+    def generate_qa_from_posterior(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
             return self.vae.generate_qa_from_posterior(c_ids, q_ids, a_ids)
 
-    def generate_answer_logits(self, c_ids, q_ids, a_ids):
+    def generate_answer_logits_from_posterior(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
             return self.vae.generate_answer_logits_from_posterior(c_ids, q_ids, a_ids)
 
-    def generate_prior(self, c_ids):
+    def generate_qa_from_prior(self, c_ids):
         with torch.no_grad():
             return self.vae.generate_qa_from_prior(c_ids)
 
