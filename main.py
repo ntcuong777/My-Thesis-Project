@@ -8,8 +8,8 @@ from tqdm import tqdm, trange
 from transformers import BertTokenizer
 
 from eval import eval_vae
-from trainer import VAETrainer
-from utils import batch_to_device, get_squad_data_loader, generate_testing_dataset_for_model_choosing
+from infohcvae.trainer import VAETrainer
+from infohcvae.utils import batch_to_device, get_squad_data_loader, generate_testing_dataset_for_model_choosing
 
 
 def evaluate_model(epoch, args, trainer, eval_data, best_bleu, best_em, best_f1):
