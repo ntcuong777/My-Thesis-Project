@@ -61,17 +61,17 @@ class PosteriorEncoder(nn.Module):
 
         # attention q, c
         # For attention calculation, linear layer is there for projection
-        c_attned_by_q, _ = cal_attn(self.question_attention(q_h).unsqueeze(1),
-                                    c_hs, c_mask.unsqueeze(1)).squeeze(1)
+        c_attned_by_q = cal_attn(self.question_attention(q_h).unsqueeze(1),
+                                    c_hs, c_mask.unsqueeze(1))[0].squeeze(1)
 
         # attetion c, q
         # For attention calculation, linear layer is there for projection
-        q_attned_by_c, _ = cal_attn(self.context_attention(c_h).unsqueeze(1),
-                                    q_hs, q_mask.unsqueeze(1)).squeeze(1)
+        q_attned_by_c = cal_attn(self.context_attention(c_h).unsqueeze(1),
+                                    q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
         # attention za, q
-        q_attned_by_za, _ = cal_attn(self.za_attention(softargmax(za)).unsqueeze(1),
-                                    q_hs, q_mask.unsqueeze(1))
+        q_attned_by_za = cal_attn(self.za_attention(softargmax(za)).unsqueeze(1),
+                                    q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
         h = torch.cat([softargmax(za), q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za], dim=-1)
 
