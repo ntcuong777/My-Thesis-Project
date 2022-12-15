@@ -27,8 +27,8 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
     start_positions = start_positions - 1
     end_positions = end_positions - 1
 
-    q_lengths = return_seq_lengths(return_attention_mask(q_ids, pad_token_id)[0])
-    c_lengths = return_seq_lengths(return_attention_mask(c_ids, pad_token_id)[0])
+    q_lengths = return_seq_lengths(return_attention_mask(q_ids, pad_token_id))
+    c_lengths = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
 
     all_input_ids = []
     all_seg_ids = []
@@ -131,7 +131,7 @@ def main(args):
             num_steps_to_run = num_steps_to_run - 1
 
             c_ids = batch[0]
-            c_len = return_seq_lengths(return_attention_mask(c_ids, pad_token_id)[0])
+            c_len = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
             max_c_len = torch.max(c_len)
             c_ids = c_ids[:, :max_c_len].to(device)
 

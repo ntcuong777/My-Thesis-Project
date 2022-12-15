@@ -31,22 +31,22 @@ class PosteriorEncoder(nn.Module):
 
     def forward(self, c_ids, q_ids, a_ids):
         N, _ = c_ids.size()
-        c_mask, c_mask_mat = return_attention_mask(c_ids, self.pad_token_id)
-        q_mask, q_mask_mat = return_attention_mask(q_ids, self.pad_token_id)
+        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
         """ Answer encoder """
         # context enc
         c_embeddings = self.context_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
         # shape = (N, seq_len, hidden_size) and (N, hidden_size), in order
-        c_hs = self.finetune_encoder(c_embeddings, mask=c_mask_mat)
+        c_hs = self.finetune_encoder(c_embeddings, src_key_padding_mask=c_mask)
         c_h = c_hs[:, 0] # CLS token
 
         # context and answer enc
         c_a_ids = c_ids * a_ids
         c_a_ids[:, 0] = c_ids[:, 0] # CLS token is there for capturing context
-        c_a_mask, c_a_mask_mat = return_attention_mask(c_a_ids, self.pad_token_id)
+        c_a_mask = return_attention_mask(c_a_ids, self.pad_token_id)
         c_a_embeddings = self.context_encoder(input_ids=c_a_ids, attention_mask=c_a_mask)[0]
-        c_a_hs = self.finetune_encoder(c_a_embeddings, mask=c_a_mask_mat)
+        c_a_hs = self.finetune_encoder(c_a_embeddings, src_key_padding_mask=c_a_mask)
         c_a_h = c_a_hs[:, 0] # CLS token
 
         h = torch.cat([c_h, c_a_h], dim=-1)
@@ -56,8 +56,8 @@ class PosteriorEncoder(nn.Module):
         """ Question encoder """
         # shape = (N, seq_len, hidden_size)
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
-        q_hs = self.finetune_encoder(q_embeddings, mask=q_mask_mat)
-        q_h = q_hs[:, 0] # CLS token
+        q_hs = self.finetune_encoder(q_embeddings, src_key_padding_mask=q_mask)
+        q_h = q_hs[:, 0]  # CLS token
 
         # attention q, c
         # For attention calculation, linear layer is there for projection
