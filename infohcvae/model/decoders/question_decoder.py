@@ -172,7 +172,8 @@ class QuestionDecoder(nn.Module):
         for _ in range(self.max_q_len - 1):
             position_ids = position_ids + 1
             repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, q_ids.size(1), 1)
-            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1), src_key_padding_mask=q_mask)
+            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
+                                                    src_key_padding_mask=q_mask)
 
             # attention
             mask = c_mask.unsqueeze(1)
@@ -255,7 +256,7 @@ class QuestionDecoder(nn.Module):
         position_ids = torch.zeros_like(q_ids)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
-                                            token_type_ids=token_type_ids, position_ids=position_ids)
+                                            token_type_ids=token_type_ids, position_ids=position_ids)[0]
 
         decoded_q = self.zq_decoder(zq)
 
@@ -295,7 +296,7 @@ class QuestionDecoder(nn.Module):
 
             q_mask = return_attention_mask(q_ids, self.pad_token_id)
             q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
-                                                token_type_ids=token_type_ids, position_ids=position_ids)
+                                                token_type_ids=token_type_ids, position_ids=position_ids)[0]
 
         q_ids = torch.cat(all_q_ids, 1)
         q_ids = self.postprocess(q_ids)
