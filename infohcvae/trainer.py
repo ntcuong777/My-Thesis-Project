@@ -106,15 +106,15 @@ class VAETrainer(object):
 
     def generate_posterior(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
-            return self.vae.generate_posterior(c_ids, q_ids, a_ids)
+            return self.vae.generate_qa_from_posterior(c_ids, q_ids, a_ids)
 
     def generate_answer_logits(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
-            return self.vae.generate_answer_logits(c_ids, q_ids, a_ids)
+            return self.vae.generate_answer_logits_from_posterior(c_ids, q_ids, a_ids)
 
     def generate_prior(self, c_ids):
         with torch.no_grad():
-            return self.vae.generate_prior(c_ids)
+            return self.vae.generate_qa_from_prior(c_ids)
 
     def save(self, save_path, save_mode="epoch", epoch=None, save_freq=None, max_models_to_keep=4):
         assert save_mode in ["best_f1", "best_bleu"] or \

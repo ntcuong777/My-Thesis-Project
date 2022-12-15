@@ -68,10 +68,10 @@ def eval_vae(args, trainer, eval_data):
 
         batch_posterior_q_ids, \
         batch_posterior_start, batch_posterior_end, \
-        posterior_zq = trainer.generate_posterior(c_ids, q_ids, a_ids)
+        posterior_zq = trainer.generate_qa_from_posterior(c_ids, q_ids, a_ids)
 
         batch_start_logits, batch_end_logits \
-        = trainer.generate_answer_logits(c_ids, q_ids, a_ids)
+        = trainer.generate_answer_logits_from_posterior(c_ids, q_ids, a_ids)
 
         # in this case: prior_zq == posterior_zq
         # batch_prior_start_logits, batch_prior_end_logits = \

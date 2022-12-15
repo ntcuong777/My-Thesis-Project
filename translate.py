@@ -3,40 +3,20 @@ import math
 import h5py
 
 import torch
-from transformers import AutoTokenizer
+from transformers import MobileBertTokenizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
 from infohcvae.model.qag_vae import DiscreteVAE
+from infohcvae.model.model_utils import return_attention_mask
 from infohcvae.squad_utils import (convert_examples_to_harv_features,
                          read_examples, read_squad_examples)
 
 
-def return_mask_lengths(ids):
-    mask = torch.sign(ids).float()
-    lengths = torch.sum(mask, 1).long()
-    return mask, lengths
+def return_seq_lengths(mask):
+    return torch.sum(mask, dim=1)
 
-
-def gumbel_softmax(logits, tau=1, hard=False, eps=1e-20, dim=-1):
-    # type: (Tensor, float, bool, float, int) -> Tensor
-
-    gumbels = -(torch.empty_like(logits).exponential_() + eps).log()  # ~Gumbel(0,1), shape=(batch, nza, nzadim)
-    gumbels = (logits + gumbels) / tau  # ~Gumbel(logits,tau), shape=(batch, nza, nzadim)
-    y_soft = gumbels.softmax(dim) # shape=(batch, nza, nzadim)
-
-    if hard:
-        # Straight through.
-        index = y_soft.max(dim, keepdim=True)[1] # shape = (batch, nza, 1)
-        y_hard = torch.zeros_like(logits).scatter_(dim, index, 1.0) # sampling one-hot categorical variables
-        ret = y_hard - y_soft.detach() + y_soft
-    else:
-        # Re-parametrization trick.
-        ret = y_soft
-    return ret
-
-
-def post_process(q_ids, start_positions, end_positions, c_ids, total_max_len=512):
+def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, total_max_len=512):
     """
        concatenate question and context for BERT QA model:
        [CLS] Question [SEP] Context [SEP]
@@ -47,8 +27,8 @@ def post_process(q_ids, start_positions, end_positions, c_ids, total_max_len=512
     start_positions = start_positions - 1
     end_positions = end_positions - 1
 
-    _, q_lengths = return_mask_lengths(q_ids)
-    _, c_lengths = return_mask_lengths(c_ids)
+    q_lengths = return_seq_lengths(return_attention_mask(q_ids, pad_token_id))
+    c_lengths = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
 
     all_input_ids = []
     all_seg_ids = []
@@ -80,8 +60,9 @@ def post_process(q_ids, start_positions, end_positions, c_ids, total_max_len=512
 
 
 def main(args):
-    tokenizer = AutoTokenizer.from_pretrained(args.huggingface_model)
+    tokenizer = MobileBertTokenizer.from_pretrained(args.huggingface_model)
     args.tokenizer = tokenizer
+    pad_token_id = tokenizer.pad_token
 
     device = torch.cuda.current_device()
     checkpoint = torch.load(args.checkpoint, map_location="cpu")
@@ -150,7 +131,7 @@ def main(args):
             num_steps_to_run = num_steps_to_run - 1
 
             c_ids = batch[0]
-            _, c_len = return_mask_lengths(c_ids)
+            c_len = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
             max_c_len = torch.max(c_len)
             c_ids = c_ids[:, :max_c_len].to(device)
 
@@ -159,7 +140,7 @@ def main(args):
             # sample latent variable K times
             for idx in range(args.k):
                 with torch.no_grad():
-                    batch_q_ids, batch_start, batch_end = vae.generate_qa(c_ids)
+                    batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(c_ids)
 
                     if args.out_qa_json is not None: # out QA text to json
                         for idx in range(batch_q_ids.size(0)):
@@ -169,7 +150,8 @@ def main(args):
                             qa_text["data"].append({"context": c_texts[idx], "question": q_text, "answer": ans_text})
 
                     all_input_ids, all_seg_ids, \
-                    all_input_mask, all_start, all_end = post_process(batch_q_ids, batch_start, batch_end, c_ids, total_max_len=args.total_max_len)
+                    all_input_mask, all_start, all_end = post_process(batch_q_ids, batch_start, batch_end, c_ids,
+                                                                      pad_token_id, total_max_len=args.total_max_len)
 
                 for i in range(c_ids.size(0)):
                     input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
@@ -193,33 +175,29 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--debug', dest='debug', action='store_true')
     parser.add_argument('--squad', dest='squad', action='store_true', help="whether to generate QA from SQuAD context")
-    parser.add_argument("--load_saved_dataloader", default="False", type=str)
-    parser.add_argument("--output_text", default="False", type=str)
+    parser.add_argument("--load_saved_dataloader", dest="load_saved_dataloader", action="store_true", default=False)
+    parser.add_argument("--output_text", dest="output_text", action="store_true", default=False)
 
     parser.add_argument("--seed", default=1004, type=int)
-    parser.add_argument("--huggingface_model", default='bert-base-uncased', type=str)
+    parser.add_argument("--huggingface_model", default='google/mobilebert-uncased', type=str)
     parser.add_argument("--resume_steps", default=1, type=int, help="step to resume")
     parser.add_argument("--percent_of_runs", default=1.0, type=float, help="how many percent of steps to run at one execution")
-    parser.add_argument("--vietnamese", default=False, type=bool)
     parser.add_argument("--max_c_len", default=384 - 64, type=int, help="max context length")
     parser.add_argument("--total_max_len", default=384, type=int, help="total max length")
     parser.add_argument("--max_q_len", default=0, type=int, help="max query length")
 
     parser.add_argument("--batch_size", default=64, type=int, help="batch_size")
-    parser.add_argument("--data_file", default="../data/squad/train-v1.1.json", type=str)
-    parser.add_argument("--checkpoint", default="../save/vae-checkpoint/best_f1_model.pt", type=str, help="checkpoint for vae model")
-    parser.add_argument("--output_file", default="../data/1.0_squad_10x_features.h5", type=str)
-    parser.add_argument("--out_qa_json", default="../data/generated_qas.json", type=str)
-    parser.add_argument("--dataloader_dir", default="../save/dataloader", type=str)
+    parser.add_argument("--data_file", default="./data/squad/train-v1.1.json", type=str)
+    parser.add_argument("--checkpoint", default="./save/vae-checkpoint/best_f1_model.pt", type=str, help="checkpoint for vae model")
+    parser.add_argument("--output_file", default="./data/1.0_squad_10x_features.h5", type=str)
+    parser.add_argument("--out_qa_json", default="./data/generated_qas.json", type=str)
+    parser.add_argument("--dataloader_dir", default="./save/dataloader", type=str)
 
     parser.add_argument("--data_ratio", default=1.0, type=float, help="how many percentage of the number of paragraphs are considered for generation")
     parser.add_argument("--ratio", default=1.0, type=float)
     parser.add_argument("--k", default=10, type=int, help="the number of QA pairs for each paragraph")
 
     args = parser.parse_args()
-
-    args.load_saved_dataloader = True if args.load_saved_dataloader == "True" else False
-    args.output_text = True if args.output_text == "True" else False
 
     # set dataloader dir
     if not args.load_saved_dataloader:

@@ -123,7 +123,7 @@ class DiscreteVAE(nn.Module):
         q_ids = self.question_decoder.generate(c_ids, a_ids, zq)
         return q_ids, start_positions, end_positions
 
-    def generate_posterior(self, c_ids, q_ids, a_ids):
+    def generate_qa_from_posterior(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
             zq, za = self.posterior_encoder(c_ids, q_ids, a_ids)
             q_ids, start_positions, end_positions = self.generate_qa(
@@ -134,13 +134,13 @@ class DiscreteVAE(nn.Module):
         start_logits, end_logits = self.answer_decoder(c_ids, za)
         return start_logits, end_logits
 
-    def generate_answer_logits(self, c_ids, q_ids, a_ids):
+    def generate_answer_logits_from_posterior(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
             zq, za = self.posterior_encoder(c_ids, q_ids, a_ids)
             start_logits, end_logits = self.return_answer_logits(c_ids, zq=zq, za=za)
         return start_logits, end_logits
 
-    def generate_prior(self, c_ids):
+    def generate_qa_from_prior(self, c_ids):
         with torch.no_grad():
             zq = torch.randn(c_ids.size(0), self.nzqdim).to(c_ids.device)
             za = gumbel_latent_var_sampling(c_ids.size(0), self.nza, self.nzadim, zq.device)
