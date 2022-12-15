@@ -184,8 +184,9 @@ if __name__ == "__main__":
     parser.add_argument('--nza', type=int, default=32)
     parser.add_argument('--nzadim', type=int, default=16)
     parser.add_argument('--w_bce', type=float, default=1.5)
-    parser.add_argument('--alpha_kl', type=float, default=0.9)
-    parser.add_argument('--lambda_mmd_q', type=float, default=1.6)
+    parser.add_argument('--alpha_kl_q', type=float, default=0.999)
+    parser.add_argument('--alpha_kl_a', type=float, default=0.9)
+    parser.add_argument('--lambda_mmd_q', type=float, default=0.16)
     parser.add_argument('--lambda_mmd_a', type=float, default=1.6)
     parser.add_argument('--lambda_qa_info', type=float, default=1.5)
 
