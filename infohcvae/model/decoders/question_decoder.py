@@ -61,12 +61,13 @@ class QuestionDecoder(nn.Module):
                                                    dropout=dropout, activation="gelu",
                                                    batch_first=True)
         self.question_enc_finetuned = nn.TransformerEncoder(encoder_layer, num_layers=n_dec_layers)
+        self.question_enc_linear = nn.Linear(2*hidden_size, hidden_size, bias=False)
 
         self.question_linear = nn.Linear(2 * hidden_size, hidden_size)
 
         self.zq_decoder = nn.Linear(nzqdim, hidden_size)
 
-        self.concat_linear = nn.Sequential(nn.Linear(3*hidden_size, 2*hidden_size),
+        self.concat_linear = nn.Sequential(nn.Linear(2*hidden_size, 2*hidden_size),
                                            nn.Mish(True),
                                            nn.Dropout(dropout),
                                            nn.Linear(2*hidden_size, 2*hidden_size),
@@ -111,6 +112,7 @@ class QuestionDecoder(nn.Module):
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
         q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
                                                 src_key_padding_mask=q_mask)
+        q_outputs = self.question_enc_linear(q_outputs)
 
         # attention
         # For attention calculation, linear layer is there for projection
