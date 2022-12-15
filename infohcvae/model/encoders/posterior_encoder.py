@@ -42,11 +42,8 @@ class PosteriorEncoder(nn.Module):
         c_h = c_hs[:, 0] # CLS token
 
         # context and answer enc
-        c_a_ids = c_ids * a_ids
-        c_a_ids[:, 0] = c_ids[:, 0] # CLS token is there for capturing context
-        c_a_mask = return_attention_mask(c_a_ids, self.pad_token_id)
-        c_a_embeddings = self.context_encoder(input_ids=c_a_ids, attention_mask=c_a_mask)[0]
-        c_a_hs = self.finetune_encoder(c_a_embeddings, src_key_padding_mask=c_a_mask)
+        c_a_embeddings = self.context_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=a_ids)[0]
+        c_a_hs = self.finetune_encoder(c_a_embeddings, src_key_padding_mask=c_mask)
         c_a_h = c_a_hs[:, 0] # CLS token
 
         h = torch.cat([c_h, c_a_h], dim=-1)
@@ -70,10 +67,10 @@ class PosteriorEncoder(nn.Module):
                                     q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
         # attention za, q
-        q_attned_by_za = cal_attn(self.za_attention(softargmax(za)).unsqueeze(1),
+        q_attned_by_za = cal_attn(self.za_attention(softargmax(za) / self.nzadim).unsqueeze(1),
                                     q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
-        h = torch.cat([softargmax(za), q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za], dim=-1)
+        h = torch.cat([softargmax(za) / self.nzadim, q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za], dim=-1)
 
         zq_mu, zq_logvar = torch.split(self.zq_linear(h), self.nzqdim, dim=1)
         zq = sample_gaussian(zq_mu, zq_logvar)
