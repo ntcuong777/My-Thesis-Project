@@ -1,6 +1,6 @@
 import os
 import torch
-from model.qag_vae import DiscreteVAE
+from infohcvae.model.qag_vae import DiscreteVAE
 import torch_optimizer as additional_optim
 import torch.optim as optim
 from model.model_utils import gumbel_latent_var_sampling
