@@ -6,10 +6,10 @@ from infohcvae.model.model_utils import return_attention_mask, cal_attn, scatter
 from infohcvae.model.infomax.dim_bce_infomax import DimBceInfoMax
 
 class _ContextEncoderforQG(nn.Module):
-    def __init__(self, context_enc, hidden_size, nlayers, dropout=0.2):
+    def __init__(self, pad_id, context_enc, hidden_size, nlayers, dropout=0.2):
         super(_ContextEncoderforQG, self).__init__()
         self.context_encoder = context_enc
-        self.pad_token_id = context_enc.pad_token
+        self.pad_token_id = pad_id
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=8,
                                                    activation="gelu", dropout=dropout,
@@ -54,7 +54,7 @@ class QuestionDecoder(nn.Module):
         self.max_q_len = max_q_len
         self.pad_token_id = pad_id
 
-        self.context_enc_finetuned = _ContextEncoderforQG(context_enc, hidden_size, n_dec_layers, dropout)
+        self.context_enc_finetuned = _ContextEncoderforQG(pad_id, context_enc, hidden_size, n_dec_layers, dropout)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size*2, nhead=8,
                                                    dim_feedforward=2*hidden_size,
