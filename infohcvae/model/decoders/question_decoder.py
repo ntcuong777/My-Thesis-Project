@@ -22,13 +22,13 @@ class _ContextEncoderforQG(nn.Module):
     def forward(self, c_ids, a_ids):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        c_embeddings = self.context_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=a_ids)
+        c_embeddings = self.context_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=a_ids)[0]
         c_outputs = self.finetune_encoder(c_embeddings, src_key_padding_mask=c_mask)
 
         c_a_ids = c_ids * a_ids
         c_a_ids[:, 0] = c_ids[:, 0] # add CLS token
         c_a_mask = return_attention_mask(c_a_ids, self.pad_token_id)
-        c_a_embeddings = self.context_encoder(input_ids=c_a_ids, attention_mask=c_a_mask)
+        c_a_embeddings = self.context_encoder(input_ids=c_a_ids, attention_mask=c_a_mask)[0]
         c_a_outputs = self.finetune_encoder(c_a_embeddings, src_key_padding_mask=c_a_mask)
 
         c_concat = torch.cat([c_outputs, c_a_outputs], dim=2)
@@ -107,7 +107,7 @@ class QuestionDecoder(nn.Module):
         decoded_q = self.zq_decoder(zq)  # shape = (N, hidden_size)
 
         # question dec
-        q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask)
+        q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
         q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q), dim=-1),
                                                 src_key_padding_mask=q_mask)
 
@@ -161,7 +161,7 @@ class QuestionDecoder(nn.Module):
         position_ids = torch.zeros_like(q_ids)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
-                                            token_type_ids=token_type_ids, position_ids=position_ids)
+                                            token_type_ids=token_type_ids, position_ids=position_ids)[0]
 
         decoded_q = self.zq_decoder(zq)
         # unroll
@@ -198,7 +198,7 @@ class QuestionDecoder(nn.Module):
 
             q_mask = return_attention_mask(q_ids, self.pad_token_id)
             q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask, token_type_ids=token_type_ids,
-                                                position_ids=position_ids)
+                                                position_ids=position_ids)[0]
 
         q_ids = torch.cat(all_q_ids, dim=1)
         q_ids = self.postprocess(q_ids)
