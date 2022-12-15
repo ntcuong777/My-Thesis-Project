@@ -2,8 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from infohcvae.model.model_utils import return_attention_mask, cal_attn
-from torch_scatter import scatter_max
+from infohcvae.model.model_utils import return_attention_mask, cal_attn, scatter_max
 from infohcvae.model.infomax.dim_bce_infomax import DimBceInfoMax
 
 class _ContextEncoderforQG(nn.Module):
@@ -14,12 +13,11 @@ class _ContextEncoderforQG(nn.Module):
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=8,
                                                    activation="gelu", dropout=dropout,
-                                                   dim_feedforward=3*(hidden_size // 2),
+                                                   dim_feedforward=hidden_size,
                                                    batch_first=True)
         self.finetune_encoder = nn.TransformerEncoder(encoder_layer, num_layers=nlayers)
-        self.context_linear = nn.Linear(2 * hidden_size, 2 * hidden_size)
-        self.fusion = nn.Linear(4 * hidden_size, 2 * hidden_size, bias=False)
-        self.gate = nn.Linear(4 * hidden_size, 2 * hidden_size, bias=False)
+        self.fusion = nn.Linear(2 * hidden_size, hidden_size, bias=False)
+        self.gate = nn.Linear(2 * hidden_size, hidden_size, bias=False)
 
     def forward(self, c_ids, a_ids):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
@@ -59,18 +57,14 @@ class QuestionDecoder(nn.Module):
         self.context_enc_finetuned = _ContextEncoderforQG(context_enc, hidden_size, n_dec_layers, dropout)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size*2, nhead=8,
-                                                   dim_feedforward=3*hidden_size,
+                                                   dim_feedforward=2*hidden_size,
                                                    dropout=dropout, activation="gelu",
                                                    batch_first=True)
         self.question_enc_finetuned = nn.TransformerEncoder(encoder_layer, num_layers=n_dec_layers)
 
         self.question_linear = nn.Linear(2 * hidden_size, hidden_size)
 
-        self.zq_decoder = nn.Sequential([
-            nn.Linear(nzqdim, hidden_size // 2),
-            nn.Mish(True),
-            nn.Linear(hidden_size // 2, hidden_size)
-        ])
+        self.zq_decoder = nn.Linear(nzqdim, hidden_size)
 
         self.concat_linear = nn.Sequential(nn.Linear(2*hidden_size, 2*hidden_size),
                                            nn.Mish(True),
@@ -88,7 +82,7 @@ class QuestionDecoder(nn.Module):
         self.infomax_est = DimBceInfoMax(hidden_size, hidden_size, use_billinear=True)
 
     def postprocess(self, q_ids):
-        eos_mask = q_ids == self.eos_id
+        eos_mask = (q_ids == self.eos_id).float()
         no_eos_idx_sum = (eos_mask.sum(dim=1) == 0).long() * \
             (self.max_q_len - 1)
         eos_mask = eos_mask.cpu().numpy()
@@ -154,7 +148,6 @@ class QuestionDecoder(nn.Module):
         else:
             return logits
 
-
     def generate(self, c_ids, a_ids, zq):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_outputs = self.context_enc_finetuned(c_ids, a_ids)
@@ -206,37 +199,43 @@ class QuestionDecoder(nn.Module):
             q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask, token_type_ids=token_type_ids,
                                                 position_ids=position_ids)
 
-        q_ids = torch.cat(all_q_ids, 1)
+        q_ids = torch.cat(all_q_ids, dim=1)
         q_ids = self.postprocess(q_ids)
 
         return q_ids
 
-    def top_k_top_p_filtering(logits, top_k=0, top_p=0.0, filter_value=-float('Inf')):
-        """ Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
-            Args:
-                logits: logits distribution shape (vocabulary size)
-                top_k >0: keep only top k tokens with highest probability (top-k filtering).
-                top_p >0.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
-                    Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)
+    def top_k_top_p_filtering(self, logits: torch.Tensor, top_k: int = 0, top_p: float = 1.0,
+            filter_value: float = -float("Inf"), min_tokens_to_keep: int = 1) -> torch.Tensor:
+        """Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
+        Args:
+            logits: logits distribution shape (batch size, vocabulary size)
+            if top_k > 0: keep only top k tokens with highest probability (top-k filtering).
+            if top_p < 1.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
+                Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)
+            Make sure we keep at least min_tokens_to_keep per batch example in the output
+        From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
         """
-        assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
-        top_k = min(top_k, logits.size(-1))  # Safety check
         if top_k > 0:
+            top_k = min(max(top_k, min_tokens_to_keep), logits.size(-1))  # Safety check
             # Remove all tokens with a probability less than the last token of the top-k
             indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
             logits[indices_to_remove] = filter_value
 
-        if top_p > 0.0:
+        if top_p < 1.0:
             sorted_logits, sorted_indices = torch.sort(logits, descending=True)
             cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
 
-            # Remove tokens with cumulative probability above the threshold
+            # Remove tokens with cumulative probability above the threshold (token with 0 are kept)
             sorted_indices_to_remove = cumulative_probs > top_p
+            if min_tokens_to_keep > 1:
+                # Keep at least min_tokens_to_keep (set to min_tokens_to_keep-1 because we add the first one below)
+                sorted_indices_to_remove[..., :min_tokens_to_keep] = 0
             # Shift the indices to the right to keep also the first token above the threshold
             sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
             sorted_indices_to_remove[..., 0] = 0
 
-            indices_to_remove = sorted_indices[sorted_indices_to_remove]
+            # scatter sorted tensors to original indexing
+            indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
             logits[indices_to_remove] = filter_value
         return logits
 

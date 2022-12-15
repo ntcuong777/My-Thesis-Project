@@ -24,11 +24,7 @@ class PosteriorEncoder(nn.Module):
 
         self.question_attention = nn.Linear(hidden_size, hidden_size)
         self.context_attention = nn.Linear(hidden_size, hidden_size)
-        self.za_attention = nn.Sequential([
-            nn.Linear(nza, hidden_size // 2),
-            nn.Mish(True),
-            nn.Linear(hidden_size // 2, hidden_size)
-        ])
+        self.za_attention = nn.Linear(nza, hidden_size)
 
         self.za_linear = nn.Linear(2 * hidden_size, nza * nzadim)
         self.zq_linear = nn.Linear(5 * hidden_size + nza, 2 * nzqdim)

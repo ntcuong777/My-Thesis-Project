@@ -172,7 +172,7 @@ if __name__ == "__main__":
     parser.add_argument('--enc_nlayers', type=int, default=1)
     parser.add_argument('--enc_dropout', type=float, default=0.3)
     parser.add_argument('--dec_a_nlayers', type=int, default=1)
-    parser.add_argument('--dec_a_dropout', type=float, default=0.2)
+    parser.add_argument('--dec_a_dropout', type=float, default=0.3)
     parser.add_argument('--dec_q_nlayers', type=int, default=2)
     parser.add_argument('--dec_q_dropout', type=float, default=0.3)
     parser.add_argument('--nzqdim', type=int, default=64)

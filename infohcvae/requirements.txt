@@ -4,6 +4,5 @@ numpy
 tqdm
 torch
 torchvision
-torch_scatter
 h5py
 torch_optimizer

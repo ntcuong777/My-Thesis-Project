@@ -13,15 +13,11 @@ class AnswerDecoder(nn.Module):
         self.nzadim = nzadim
         self.hidden_size = hidden_size
 
-        self.za_decoder = nn.Sequential([
-            nn.Linear(nza, hidden_size // 2),
-            nn.Mish(True),
-            nn.Linear(hidden_size // 2, hidden_size)
-        ])
+        self.za_linear = nn.Linear(nza, hidden_size)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=2*hidden_size, nhead=24,
                                                    activation="gelu", dropout=dropout,
-                                                   dim_feedforward=3*hidden_size,
+                                                   dim_feedforward=2*hidden_size,
                                                    batch_first=True)
         self.answer_decoder = nn.TransformerEncoder(encoder_layer, num_layers=n_dec_layers)
 
@@ -35,10 +31,10 @@ class AnswerDecoder(nn.Module):
             za: shape = (N, nza, nzadim) where nza is the latent dim,
                 nzadim is the categorical dim
         """
-        N, max_c_len = c_ids.size()
+        batch_size, max_c_len = c_ids.size()
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        decoded_a = self.za_decoder(softargmax(za)) # shape = (N, hidden_size)
+        decoded_a = self.za_linear(softargmax(za))  # shape = (N, hidden_size)
 
         # context enc
         # shape = (N, seq_len, hidden_size)
