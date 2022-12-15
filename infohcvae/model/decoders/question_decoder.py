@@ -66,7 +66,7 @@ class QuestionDecoder(nn.Module):
 
         self.zq_decoder = nn.Linear(nzqdim, hidden_size)
 
-        self.concat_linear = nn.Sequential(nn.Linear(2*hidden_size, 2*hidden_size),
+        self.concat_linear = nn.Sequential(nn.Linear(3*hidden_size, 2*hidden_size),
                                            nn.Mish(True),
                                            nn.Dropout(dropout),
                                            nn.Linear(2*hidden_size, 2*hidden_size),
