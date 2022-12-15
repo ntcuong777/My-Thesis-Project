@@ -82,7 +82,7 @@ class PosteriorEncoder(nn.Module):
                                 q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
         # attention za, q
-        q_attned_by_za = cal_attn(self.za_attention(za).unsqueeze(1),
+        q_attned_by_za = cal_attn(self.za_attention(za.view(-1, self.nza*self.nzadim)).unsqueeze(1),
                                     q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
         h = torch.cat([q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, za], dim=-1)
