@@ -144,6 +144,7 @@ class DiscreteVAE(nn.Module):
     def generate_qa_from_prior(self, c_ids):
         with torch.no_grad():
             zq = torch.randn(c_ids.size(0), self.nzqdim).to(c_ids.device)
-            za = gumbel_latent_var_sampling(c_ids.size(0), self.nza, self.nzadim, zq.device)
+            za = torch.randn(c_ids.size(0), self.nzadim).to(c_ids.device)
+            # za = gumbel_latent_var_sampling(c_ids.size(0), self.nza, self.nzadim, zq.device)
             q_ids, start_positions, end_positions = self.generate_qa(c_ids, zq=zq, za=za)
         return q_ids, start_positions, end_positions, zq
