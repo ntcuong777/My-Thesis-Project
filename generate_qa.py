@@ -3,11 +3,11 @@ import json
 import os
 
 import torch
-from torch.utils.data import DataLoader, Dataset, TensorDataset
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from models import DiscreteVAE
+from infohcvae.model.qag_vae import DiscreteVAE
 
 
 class CustomDatset(Dataset):
@@ -60,7 +60,7 @@ def main(args):
         for _ in range(args.k):
             with torch.no_grad():
                 zq, za = vae.prior_encoder(c_ids)
-                batch_q_ids, batch_start, batch_end = vae.generate(
+                batch_q_ids, batch_start, batch_end = vae.generate_qa(
                     zq, za, c_ids)
 
             for i in range(c_ids.size(0)):

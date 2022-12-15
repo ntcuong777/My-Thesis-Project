@@ -3,7 +3,7 @@ import torch
 from model.qag_vae import DiscreteVAE
 import torch_optimizer as additional_optim
 import torch.optim as optim
-from model.model_utils import sample_gumbel
+from model.model_utils import gumbel_latent_var_sampling
 
 
 class VAETrainer(object):
@@ -107,24 +107,15 @@ class VAETrainer(object):
 
     def generate_posterior(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
-            zq, za = self.vae.posterior_encoder(c_ids, q_ids, a_ids)
-            q_ids, start_positions, end_positions = self.vae.generate(
-                c_ids, zq=zq, za=za)
-        return q_ids, start_positions, end_positions, zq
+            return self.vae.generate_posterior(c_ids, q_ids, a_ids)
 
     def generate_answer_logits(self, c_ids, q_ids, a_ids):
         with torch.no_grad():
-            zq, za = self.vae.posterior_encoder(c_ids, q_ids, a_ids)
-            start_logits, end_logits = self.vae.return_answer_logits(c_ids, zq=zq, za=za)
-        return start_logits, end_logits
+            return self.vae.generate_answer_logits(c_ids, q_ids, a_ids)
 
     def generate_prior(self, c_ids):
         with torch.no_grad():
-            zq = torch.randn(c_ids.size(0), self.vae.nzqdim).to(c_ids.device)
-            za = sample_gumbel((c_ids.size(0), self.vae.nza, self.vae.nzadim), zq.device)
-            q_ids, start_positions, end_positions = self.vae.generate(
-                c_ids, zq=zq, za=za)
-        return q_ids, start_positions, end_positions, zq
+            return self.vae.generate_prior(c_ids)
 
     def save(self, save_path, save_mode="epoch", epoch=None, save_freq=None, max_models_to_keep=4):
         assert save_mode in ["best_f1", "best_bleu"] or \

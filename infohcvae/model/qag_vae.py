@@ -8,7 +8,7 @@ from infohcvae.model.losses import GaussianKLLoss, CategoricalKLLoss, \
     GaussianJensenShannonDivLoss, CategoricalJensenShannonDivLoss, \
     ContinuousKernelMMDLoss, GumbelMMDLoss, GumbelKLLoss, \
     VaeGaussianKLLoss, VaeGumbelKLLoss
-from infohcvae.model.model_utils import sample_gumbel
+from infohcvae.model.model_utils import gumbel_latent_var_sampling
 
 
 class DiscreteVAE(nn.Module):
@@ -118,11 +118,31 @@ class DiscreteVAE(nn.Module):
             }
             return return_dict
 
-    def generate(self, c_ids, zq=None, za=None):
+    def generate_qa(self, c_ids, zq=None, za=None):
         a_ids, start_positions, end_positions = self.answer_decoder.generate(c_ids, za)
         q_ids = self.question_decoder.generate(c_ids, a_ids, zq)
         return q_ids, start_positions, end_positions
 
+    def generate_posterior(self, c_ids, q_ids, a_ids):
+        with torch.no_grad():
+            zq, za = self.posterior_encoder(c_ids, q_ids, a_ids)
+            q_ids, start_positions, end_positions = self.generate_qa(
+                c_ids, zq=zq, za=za)
+        return q_ids, start_positions, end_positions, zq
+
     def return_answer_logits(self, c_ids, za=None):
         start_logits, end_logits = self.answer_decoder(c_ids, za)
         return start_logits, end_logits
+
+    def generate_answer_logits(self, c_ids, q_ids, a_ids):
+        with torch.no_grad():
+            zq, za = self.posterior_encoder(c_ids, q_ids, a_ids)
+            start_logits, end_logits = self.return_answer_logits(c_ids, zq=zq, za=za)
+        return start_logits, end_logits
+
+    def generate_prior(self, c_ids):
+        with torch.no_grad():
+            zq = torch.randn(c_ids.size(0), self.nzqdim).to(c_ids.device)
+            za = gumbel_latent_var_sampling(c_ids.size(0), self.nza, self.nzadim, zq.device)
+            q_ids, start_positions, end_positions = self.generate_qa(c_ids, zq=zq, za=za)
+        return q_ids, start_positions, end_positions, zq
