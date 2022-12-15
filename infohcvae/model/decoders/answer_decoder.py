@@ -34,7 +34,7 @@ class AnswerDecoder(nn.Module):
         _, max_c_len = c_ids.size()
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        decoded_a = self.za_linear(za)  # shape = (N, hidden_size)
+        decoded_a = self.za_linear(za.view(-1, self.nza*self.nzadim))  # shape = (N, hidden_size)
 
         # context enc
         # shape = (N, seq_len, hidden_size)
