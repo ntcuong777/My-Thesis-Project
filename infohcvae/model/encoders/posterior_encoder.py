@@ -22,12 +22,10 @@ class PosteriorEncoder(nn.Module):
                                                    batch_first=True)
         self.finetune_encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_enc_layers)
 
-        self.question_attention = nn.Linear(hidden_size, hidden_size)
-        self.context_attention = nn.Linear(hidden_size, hidden_size)
-        self.za_attention = nn.Linear(nza, hidden_size)
+        self.za_attention = nn.Linear(nza * nzadim, hidden_size)
 
-        self.za_linear = nn.Linear(2 * hidden_size, nza * nzadim)
-        self.zq_linear = nn.Linear(4 * hidden_size + nza, 2 * nzqdim)
+        self.za_linear = nn.Linear(4 * hidden_size, nza * nzadim)
+        self.zq_linear = nn.Linear(5 * hidden_size + nza * nzadim, 2 * nzqdim)
 
     def forward(self, c_ids, q_ids, a_ids):
         N, _ = c_ids.size()
@@ -53,10 +51,19 @@ class PosteriorEncoder(nn.Module):
         a_hs = self.finetune_encoder(a_embeddings, src_key_padding_mask=a_ids_mask)
         a_h = a_hs[:, 0] # CLS token
 
-        h = torch.cat([a_h, c_a_h], dim=-1)
+        # attention a, c
+        # For attention calculation, linear layer is there for projection
+        c_attned_by_a = cal_attn(a_h.unsqueeze(1),
+                                c_hs, c_mask.unsqueeze(1))[0].squeeze(1)
+
+        # attention c, a
+        # For attention calculation, linear layer is there for projection
+        a_attned_by_c = cal_attn(c_h.unsqueeze(1),
+                                a_hs, c_mask.unsqueeze(1))[0].squeeze(1)
+
+        h = torch.cat([a_h, c_a_h, c_attned_by_a, a_attned_by_c], dim=-1)
         za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
         za = gumbel_softmax(za_logits, hard=True)
-        argmax_za = softargmax(za) / self.nzadim
 
         """ Question encoder """
         # shape = (N, seq_len, hidden_size)
@@ -66,19 +73,19 @@ class PosteriorEncoder(nn.Module):
 
         # attention q, c
         # For attention calculation, linear layer is there for projection
-        c_attned_by_q = cal_attn(self.question_attention(q_h).unsqueeze(1),
+        c_attned_by_q = cal_attn(q_h.unsqueeze(1),
                                 c_hs, c_mask.unsqueeze(1))[0].squeeze(1)
 
         # attetion c, q
         # For attention calculation, linear layer is there for projection
-        q_attned_by_c = cal_attn(self.context_attention(c_h).unsqueeze(1),
+        q_attned_by_c = cal_attn(c_h.unsqueeze(1),
                                 q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
         # attention za, q
-        q_attned_by_za = cal_attn(self.za_attention(argmax_za).unsqueeze(1),
+        q_attned_by_za = cal_attn(self.za_attention(za).unsqueeze(1),
                                     q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
-        h = torch.cat([q_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, argmax_za], dim=-1)
+        h = torch.cat([q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, za], dim=-1)
 
         zq_mu, zq_logvar = torch.split(self.zq_linear(h), self.nzqdim, dim=1)
         zq = sample_gaussian(zq_mu, zq_logvar)
