@@ -6,3 +6,4 @@ torch
 torchvision
 h5py
 torch_optimizer
+torch_scatter

@@ -2,7 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from infohcvae.model.model_utils import return_attention_mask, cal_attn, scatter_max
+from infohcvae.model.model_utils import return_attention_mask, cal_attn
+from torch_scatter import scatter_max
 from infohcvae.model.infomax.dim_bce_infomax import DimBceInfoMax
 
 class _ContextEncoderforQG(nn.Module):
