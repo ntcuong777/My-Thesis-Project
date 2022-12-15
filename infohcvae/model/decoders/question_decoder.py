@@ -105,10 +105,11 @@ class QuestionDecoder(nn.Module):
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
         decoded_q = self.zq_decoder(zq)  # shape = (N, hidden_size)
+        repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, max_q_len, 1)
 
         # question dec
         q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
-        q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q.unsqueeze(1)), dim=-1),
+        q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
                                                 src_key_padding_mask=q_mask)
 
         # attention
@@ -164,12 +165,14 @@ class QuestionDecoder(nn.Module):
                                             token_type_ids=token_type_ids, position_ids=position_ids)[0]
 
         decoded_q = self.zq_decoder(zq)
+
         # unroll
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
             position_ids = position_ids + 1
-            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q.unsqueeze(1)), dim=-1), src_key_padding_mask=q_mask)
+            repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, q_ids.size(1), 1)
+            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1), src_key_padding_mask=q_mask)
 
             # attention
             mask = c_mask.unsqueeze(1)
@@ -261,7 +264,8 @@ class QuestionDecoder(nn.Module):
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
             position_ids = position_ids + 1
-            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, decoded_q.unsqueeze(1)), dim=-1),
+            repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, q_ids.size(1), 1)
+            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
                                                     src_key_padding_mask=q_mask)
 
             # attention
