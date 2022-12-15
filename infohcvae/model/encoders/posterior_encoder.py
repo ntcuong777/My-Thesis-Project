@@ -6,13 +6,13 @@ from infohcvae.model.model_utils import return_attention_mask, \
 
 class PosteriorEncoder(nn.Module):
     def __init__(self, pad_id, context_enc, hidden_size,
-                 nzqdim, nza, nzadim, n_enc_layers, dropout=0.0):
+                 nzqdim, nzadim, n_enc_layers, dropout=0.0):
         super(PosteriorEncoder, self).__init__()
 
         self.context_encoder = context_enc
         self.hidden_size = hidden_size
         self.nzqdim = nzqdim
-        self.nza = nza
+        # self.nza = nza
         self.nzadim = nzadim
         self.pad_token_id = pad_id
 
@@ -22,10 +22,10 @@ class PosteriorEncoder(nn.Module):
                                                    batch_first=True)
         self.finetune_encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_enc_layers)
 
-        self.za_attention = nn.Linear(nza * nzadim, hidden_size)
+        self.za_attention = nn.Linear(nzadim, hidden_size)
 
-        self.za_linear = nn.Linear(4 * hidden_size, nza * nzadim)
-        self.zq_linear = nn.Linear(5 * hidden_size + nza * nzadim, 2 * nzqdim)
+        self.za_linear = nn.Linear(4 * hidden_size, 2 * nzadim)
+        self.zq_linear = nn.Linear(5 * hidden_size + nzadim, 2 * nzqdim)
 
     def forward(self, c_ids, q_ids, a_ids):
         N, _ = c_ids.size()
@@ -62,8 +62,10 @@ class PosteriorEncoder(nn.Module):
                                 a_hs, c_mask.unsqueeze(1))[0].squeeze(1)
 
         h = torch.cat([a_h, c_a_h, c_attned_by_a, a_attned_by_c], dim=-1)
-        za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
-        za = gumbel_softmax(za_logits, hard=True)
+        za_mu, za_logvar = torch.split(self.za_linear(h), self.nzadim, dim=1)
+        za = sample_gaussian(za_mu, za_logvar)
+        # za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
+        # za = gumbel_softmax(za_logits, hard=True)
 
         """ Question encoder """
         # shape = (N, seq_len, hidden_size)
@@ -82,15 +84,15 @@ class PosteriorEncoder(nn.Module):
                                 q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
         # attention za, q
-        q_attned_by_za = cal_attn(self.za_attention(za.view(-1, self.nza*self.nzadim)).unsqueeze(1),
+        q_attned_by_za = cal_attn(self.za_attention(za).unsqueeze(1),
                                     q_hs, q_mask.unsqueeze(1))[0].squeeze(1)
 
-        h = torch.cat([q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, za.view(-1, self.nza*self.nzadim)], dim=-1)
+        h = torch.cat([q_h, c_h, q_attned_by_c, c_attned_by_q, q_attned_by_za, za], dim=-1)
 
         zq_mu, zq_logvar = torch.split(self.zq_linear(h), self.nzqdim, dim=1)
         zq = sample_gaussian(zq_mu, zq_logvar)
 
         if self.training:
-            return zq_mu, zq_logvar, zq, za_logits, za
+            return zq_mu, zq_logvar, zq, za_mu, za_logvar, za
         else:
             return zq, za

@@ -31,7 +31,7 @@ class DiscreteVAE(nn.Module):
         self.dec_q_nlayers = dec_q_nlayers = args.dec_q_nlayers
         dec_q_dropout = args.dec_q_dropout
         self.nzqdim = nzqdim = args.nzqdim
-        self.nza = nza = args.nza
+        # self.nza = nza = args.nza
         self.nzadim = nzadim = args.nzadim
 
         self.w_bce = args.w_bce
@@ -49,10 +49,10 @@ class DiscreteVAE(nn.Module):
             param.requires_grad = False
 
         self.posterior_encoder = PosteriorEncoder(padding_idx, context_encoder, hidden_size,
-                                                  nzqdim, nza, nzadim, enc_nlayers, enc_dropout)
+                                                  nzqdim, nzadim, enc_nlayers, enc_dropout)
 
         self.answer_decoder = AnswerDecoder(padding_idx, context_encoder, hidden_size,
-                                            nza, nzadim, dec_a_nlayers, dec_a_dropout)
+                                            nzadim, dec_a_nlayers, dec_a_dropout)
 
         self.question_decoder = QuestionDecoder(sos_id, eos_id, padding_idx,
                                                 context_encoder, nzqdim, hidden_size,
@@ -62,14 +62,14 @@ class DiscreteVAE(nn.Module):
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=padding_idx)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=args.max_c_len)
         self.gaussian_kl_criterion = VaeGaussianKLLoss()
-        self.categorical_kl_criterion = VaeGumbelKLLoss(categorical_dim=nzadim)
+        # self.categorical_kl_criterion = VaeGumbelKLLoss(categorical_dim=nzadim)
 
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
-        self.gumbel_mmd_criterion = GumbelMMDLoss()
+        # self.gumbel_mmd_criterion = GumbelMMDLoss()
 
     def forward(self, c_ids, q_ids, a_ids, start_positions, end_positions):
         posterior_zq_mu, posterior_zq_logvar, posterior_zq, \
-            posterior_za_logits, posterior_za \
+            posterior_za_mu, posterior_za_logvar, posterior_za \
             = self.posterior_encoder(c_ids, q_ids, a_ids)
 
         # answer decoding
@@ -94,10 +94,10 @@ class DiscreteVAE(nn.Module):
 
             # kl loss
             loss_zq_kl = (1. - self.alpha_kl_q) * self.gaussian_kl_criterion(posterior_zq_mu, posterior_zq_logvar)
-            loss_za_kl = (1. - self.alpha_kl_a) * self.categorical_kl_criterion(posterior_za_logits)
+            loss_za_kl = (1. - self.alpha_kl_a) * self.gaussian_kl_criterion(posterior_za_mu, posterior_za_logvar)
 
             loss_zq_mmd = (self.alpha_kl_q + self.lambda_mmd_q - 1.) * self.cont_mmd_criterion(posterior_zq)
-            loss_za_mmd = (self.alpha_kl_a + self.lambda_mmd_a - 1.) * self.gumbel_mmd_criterion(posterior_za)
+            loss_za_mmd = (self.alpha_kl_a + self.lambda_mmd_a - 1.) * self.cont_mmd_criterion(posterior_za)
             loss_mmd = loss_zq_mmd + loss_za_mmd
 
             loss_kl = loss_zq_kl + loss_za_kl

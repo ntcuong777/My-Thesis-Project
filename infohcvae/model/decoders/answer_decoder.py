@@ -4,16 +4,16 @@ from infohcvae.model.model_utils import return_attention_mask, softargmax
 
 
 class AnswerDecoder(nn.Module):
-    def __init__(self, pad_id, context_enc, hidden_size, nza, nzadim, n_dec_layers, dropout=0.0):
+    def __init__(self, pad_id, context_enc, hidden_size, nzadim, n_dec_layers, dropout=0.0):
         super(AnswerDecoder, self).__init__()
 
         self.context_encoder = context_enc
         self.pad_token_id = pad_id
-        self.nza = nza
+        # self.nza = nza
         self.nzadim = nzadim
         self.hidden_size = hidden_size
 
-        self.za_linear = nn.Linear(nza * nzadim, hidden_size)
+        self.za_linear = nn.Linear(nzadim, hidden_size)
 
         encoder_layer = nn.TransformerEncoderLayer(d_model=2*hidden_size, nhead=8,
                                                    activation="gelu", dropout=dropout,
@@ -34,7 +34,7 @@ class AnswerDecoder(nn.Module):
         _, max_c_len = c_ids.size()
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        decoded_a = self.za_linear(za.view(-1, self.nza*self.nzadim))  # shape = (N, hidden_size)
+        decoded_a = self.za_linear(za)  # shape = (N, hidden_size)
 
         # context enc
         # shape = (N, seq_len, hidden_size)
