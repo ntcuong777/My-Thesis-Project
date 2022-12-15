@@ -54,7 +54,7 @@ class PosteriorEncoder(nn.Module):
         a_h = a_hs[:, 0] # CLS token
 
         h = torch.cat([a_h, c_a_h], dim=-1)
-        za_logits = self.za_linear(c_a_h).view(-1, self.nza, self.nzadim)
+        za_logits = self.za_linear(h).view(-1, self.nza, self.nzadim)
         za = gumbel_softmax(za_logits, hard=True)
         argmax_za = softargmax(za) / self.nzadim
 
