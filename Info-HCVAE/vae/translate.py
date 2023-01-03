@@ -8,7 +8,8 @@ from transformers import AutoTokenizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
-from models import DiscreteVAE
+from model.qag_vae import DiscreteVAE
+from model.model_utils import sample_gaussian
 from squad_utils import (InputFeatures, convert_examples_to_harv_features,
                          read_examples, read_squad_examples)
 
@@ -133,7 +134,7 @@ def main(args):
 
         # new_features = []
         qa_text = None
-        if args.out_qa_json is not None:
+        if args.out_qa_json is not None and args.output_text:
             qa_text = dict({"data": []})
 
         num_steps_to_run = math.ceil(args.percent_of_runs * len(data_loader))
@@ -157,19 +158,15 @@ def main(args):
 
             c_texts = [args.tokenizer.decode(c_ids[idx]) for idx in range(c_ids.size(0))]
 
-            zq_mu, zq_logvar, zq, za_logits, za = None, None, None, None, None
             # sample latent variable K times
             for idx in range(args.k):
-                if idx == 0:
-                    zq_mu, zq_logvar, zq, za_logits, za = vae.prior_encoder(c_ids)
-                else:
-                    zq = zq_mu + torch.randn_like(zq_mu)*torch.exp(0.5*zq_logvar)
-                    za = gumbel_softmax(za_logits, hard=True)
+                zq, za = vae.prior_encoder(c_ids)
 
                 with torch.no_grad():
                     batch_q_ids, batch_start, batch_end = vae.generate(zq, za, c_ids)
+                    # batch_q_ids, batch_start, batch_end = vae.generate(c_ids)
 
-                    if args.out_qa_json is not None: # out QA text to json
+                    if args.out_qa_json is not None and args.output_text: # out QA text to json
                         for idx in range(batch_q_ids.size(0)):
                             q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
                             q_text = args.tokenizer.decode(q_ids)
@@ -201,8 +198,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--debug', dest='debug', action='store_true')
     parser.add_argument('--squad', dest='squad', action='store_true', help="whether to generate QA from SQuAD context")
-    parser.add_argument("--load_saved_dataloader", default="False", type=str)
-    parser.add_argument("--output_text", default="False", type=str)
+    parser.add_argument("--load_saved_dataloader", dest="load_saved_dataloader", action="store_true")
+    parser.add_argument("--output_text", dest="output_text", action="store_true")
 
     parser.add_argument("--seed", default=1004, type=int)
     parser.add_argument("--huggingface_model", default='bert-base-uncased', type=str)
