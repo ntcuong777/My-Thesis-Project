@@ -137,3 +137,4 @@ dmypy.json
 .idea/My-Thesis-Project.iml
 .idea/vcs.xml
 .idea/workspace.xml
+.idea/.gitignore
