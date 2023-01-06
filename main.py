@@ -124,8 +124,10 @@ def main(args):
 
         trainer.reset_cnt_steps()
         for batch in tqdm(train_loader, leave=False, position=1):
-            input_ids, a_ids, start_positions, end_positions \
+            input_ids, c_ids, input_qa_ids, context_a_ids, \
+            start_positions, end_positions, noq_start_positions, noq_end_positions \
                 = batch_to_device(batch, args.device)
+            # TODO: stop here
             trainer.train(input_ids, a_ids, start_positions, end_positions)
 
             if epoch == 0 and first_run: # first iteration
@@ -181,8 +183,8 @@ if __name__ == "__main__":
     parser.add_argument('--dec_q_nlayers', type=int, default=2)
     parser.add_argument('--dec_q_dropout', type=float, default=0.3)
     parser.add_argument('--nzqdim', type=int, default=64)
-    # parser.add_argument('--nza', type=int, default=32)
-    parser.add_argument('--nzadim', type=int, default=16)
+    parser.add_argument('--nzadim', type=int, default=32)
+    parser.add_argument('--nza_values', type=int, default=16)
     parser.add_argument('--w_bce', type=float, default=1.5)
     parser.add_argument('--alpha_kl_q', type=float, default=0.999)
     parser.add_argument('--alpha_kl_a', type=float, default=0.999)

@@ -2,27 +2,22 @@ import torch
 import torch.nn as nn
 from infohcvae.model.model_utils import return_attention_mask, softargmax
 
-
+# TODO: major work to do here
 class AnswerDecoder(nn.Module):
-    def __init__(self, pad_id, context_enc, hidden_size, nzadim, n_dec_layers, dropout=0.0):
+    def __init__(self, pad_id, context_enc, hidden_size, nzadim, nza_values, n_dec_layers, dropout=0.0):
         super(AnswerDecoder, self).__init__()
 
         self.context_encoder = context_enc
         self.pad_token_id = pad_id
         # self.nza = nza
         self.nzadim = nzadim
+        self.nza_values = nza_values
         self.hidden_size = hidden_size
 
-        self.za_linear = nn.Linear(nzadim, hidden_size)
+        self.za_linear = nn.Linear(nzadim * nza_values, hidden_size)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=2*hidden_size, nhead=8,
-                                                   activation="gelu", dropout=dropout,
-                                                   dim_feedforward=2*hidden_size,
-                                                   batch_first=True)
-        self.answer_decoder = nn.TransformerEncoder(encoder_layer, num_layers=n_dec_layers)
-
-        self.start_linear = nn.Linear(2 * hidden_size, 1)
-        self.end_linear = nn.Linear(2 * hidden_size, 1)
+        self.start_linear = nn.Linear(hidden_size, 1)
+        self.end_linear = nn.Linear(hidden_size, 1)
         self.ls = nn.LogSoftmax(dim=1)
 
     def forward(self, c_ids, za):

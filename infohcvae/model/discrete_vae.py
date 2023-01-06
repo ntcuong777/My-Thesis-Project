@@ -24,14 +24,14 @@ class DiscreteVAE(nn.Module):
         config = MobileBertConfig.from_pretrained(huggingface_model)
         hidden_size = config.hidden_size
 
-        enc_nlayers = args.enc_nlayers
         enc_dropout = args.enc_dropout
         dec_a_nlayers = args.dec_a_nlayers
         dec_a_dropout = args.dec_a_dropout
         self.dec_q_nlayers = dec_q_nlayers = args.dec_q_nlayers
         dec_q_dropout = args.dec_q_dropout
-        self.latent_dim = latent_dim = args.latent_dim
-        self.nvalues = nvalues = args.nvalues
+        self.nzqdim = nzqdim = args.nzqdim
+        self.nzadim = nzadim = args.nzadim
+        self.nza_values = nza_values = args.nza_values
 
         self.w_bce = args.w_bce
         self.alpha_kl_q = args.alpha_kl_q
@@ -48,9 +48,10 @@ class DiscreteVAE(nn.Module):
         #     param.requires_grad = False
 
         self.posterior_encoder = PosteriorEncoder(padding_idx, context_encoder, hidden_size,
-                                                  latent_dim, nvalues, args.max_c_len + args.max_q_len,
+                                                  nzqdim, nzadim, nza_values, args.max_c_len + args.max_q_len,
                                                   enc_dropout)
 
+        # TODO: currently stop at answer decoder
         self.answer_decoder = AnswerDecoder(padding_idx, context_encoder, hidden_size,
                                             nzadim, dec_a_nlayers, dec_a_dropout)
 
@@ -62,10 +63,10 @@ class DiscreteVAE(nn.Module):
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=padding_idx)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=args.max_c_len)
         self.gaussian_kl_criterion = VaeGaussianKLLoss()
-        # self.categorical_kl_criterion = VaeGumbelKLLoss(categorical_dim=nzadim)
+        self.categorical_kl_criterion = VaeGumbelKLLoss(categorical_dim=nzadim)
 
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
-        # self.gumbel_mmd_criterion = GumbelMMDLoss()
+        self.gumbel_mmd_criterion = GumbelMMDLoss()
 
     def forward(self, input_ids, a_ids, start_positions, end_positions):
         z_logits, z \

@@ -397,9 +397,10 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
     return features
 
 
-def convert_examples_to_features_answer_id(examples, tokenizer, max_seq_length, doc_stride, is_training):
+def convert_examples_to_features_answer_id(examples, tokenizer, max_context_length,
+                                           doc_stride, max_query_length, is_training):
     """Loads a data file into a list of `InputBatch`s.
-       In addition to the original InputFeature class, it contains 
+       In addition to the original InputFeature class, it contains
        c_ids: ids for context
        tag ids: indicate the answer span of context,
        noq_start_position: start position of answer in context without concatenation of question
@@ -441,7 +442,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_seq_length, 
                 example.orig_answer_text)
 
         # The -3 accounts for [CLS], [SEP] and [SEP]
-        max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
+        max_tokens_for_doc = max_context_length - len(query_tokens) - 3
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -460,48 +461,55 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_seq_length, 
             start_offset += min(length, doc_stride)
 
         for (doc_span_index, doc_span) in enumerate(doc_spans):
-            input_tokens = []
+            tokens = []
             token_to_orig_map = {}
             token_is_max_context = {}
-            input_segment_ids = []
-            input_tokens.append("[CLS]")
-            input_segment_ids.append(0)
+            segment_ids = []
+            tokens.append("[CLS]")
+            segment_ids.append(0)
             for token in query_tokens:
-                input_tokens.append(token)
-                input_segment_ids.append(0)
-            input_tokens.append("[SEP]")
-            input_segment_ids.append(0)
+                tokens.append(token)
+                segment_ids.append(0)
+            tokens.append("[SEP]")
+            segment_ids.append(0)
 
+            context_tokens = list()
+            context_tokens.append("[CLS]")
             for i in range(doc_span.length):
                 split_token_index = doc_span.start + i
                 token_to_orig_map[len(
-                    input_tokens)] = tok_to_orig_index[split_token_index]
+                    tokens)] = tok_to_orig_index[split_token_index]
 
-                is_max_context = _check_is_max_context(doc_spans, doc_span_index, split_token_index)
-                token_is_max_context[len(input_tokens)] = is_max_context
-                input_tokens.append(all_doc_tokens[split_token_index])
-                input_segment_ids.append(1)
-            input_tokens.append("[SEP]")
-            input_segment_ids.append(1)
+                is_max_context = _check_is_max_context(doc_spans, doc_span_index,
+                                                       split_token_index)
+                token_is_max_context[len(tokens)] = is_max_context
+                tokens.append(all_doc_tokens[split_token_index])
+                segment_ids.append(1)
+                context_tokens.append(all_doc_tokens[split_token_index])
+            tokens.append("[SEP]")
+            segment_ids.append(1)
+            context_tokens.append("[SEP]")
 
-            input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
+            input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
             # The mask has 1 for real tokens and 0 for padding tokens. Only real
             # tokens are attended to.
             input_mask = [1] * len(input_ids)
 
             # Zero-pad up to the sequence length.
-            while len(input_ids) < max_seq_length:
+            while len(input_ids) < max_context_length:
                 input_ids.append(0)
                 input_mask.append(0)
-                input_segment_ids.append(0)
+                segment_ids.append(0)
 
-            assert len(input_ids) == max_seq_length
-            assert len(input_mask) == max_seq_length
-            assert len(input_segment_ids) == max_seq_length
+            assert len(input_ids) == max_context_length
+            assert len(input_mask) == max_context_length
+            assert len(segment_ids) == max_context_length
 
             start_position = None
             end_position = None
+            noq_start_position = None
+            noq_end_position = None
             if is_training and not example.is_impossible:
                 # For training, if our document chunk does not contain an annotation
                 # we throw it out, since there is nothing to predict.
@@ -514,10 +522,16 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_seq_length, 
                 if out_of_span:
                     start_position = 0
                     end_position = 0
+                    noq_start_position = 0
+                    noq_end_position = 0
                 else:
                     doc_offset = len(query_tokens) + 2
                     start_position = tok_start_position - doc_start + doc_offset
                     end_position = tok_end_position - doc_start + doc_offset
+
+                    # plus one for [CLS] token
+                    noq_start_position = tok_start_position - doc_start + 1
+                    noq_end_position = tok_end_position - doc_start + 1
 
                 # skip the context that does not contain any answer span
                 if out_of_span:
@@ -526,12 +540,37 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_seq_length, 
             if is_training and example.is_impossible:
                 start_position = 0
                 end_position = 0
+                noq_start_position = 0
+                noq_end_position = 0
+            q_tokens = deepcopy(query_tokens)[:max_query_length - 2]
+            q_tokens.insert(0, "[CLS]")
+            q_tokens.append("[SEP]")
+            q_ids = tokenizer.convert_tokens_to_ids(q_tokens)
+            c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
 
-            # Marking where is the answer span in input_ids
+            # pad up to maximum length
+            while len(q_ids) < max_query_length:
+                q_ids.append(0)
+
+            while len(c_ids) < max_context_length:
+                c_ids.append(0)
+
+            context_segment_ids = [0] * len(c_ids)
+            for answer_idx in range(noq_start_position, noq_end_position + 1):
+                context_segment_ids[answer_idx] = 1
+
+            input_segment_ids = [0] * len(input_ids)
             for answer_idx in range(start_position, end_position + 1):
-                input_segment_ids[answer_idx] = 2
+                input_segment_ids[answer_idx] = 1
 
             # BIO tagging scheme
+            context_tag_ids = [0] * len(c_ids)  # Outside
+            if noq_start_position is not None and noq_end_position is not None:
+                context_tag_ids[noq_start_position] = 1  # Begin
+                # Inside tag
+                for idx in range(noq_start_position + 1, noq_end_position + 1):
+                    context_tag_ids[idx] = 2
+
             input_tag_ids = [0] * len(input_ids)  # Outside
             if start_position is not None and end_position is not None:
                 input_tag_ids[start_position] = 1  # Begin
@@ -539,28 +578,29 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_seq_length, 
                 for idx in range(start_position + 1, end_position + 1):
                     input_tag_ids[idx] = 2
 
-            assert len(input_tag_ids) == len(input_ids), "length of tag :{}, length of c :{}".format(
+            assert len(context_tag_ids) == len(c_ids), "length of tag :{}, length of c :{}".format(
+                len(context_tag_ids), len(c_ids))
+            assert len(input_tag_ids) == len(input_ids), "length of tag :{}, length of input :{}".format(
                 len(input_tag_ids), len(input_ids))
             features.append(
                 InputFeatures(
                     unique_id=unique_id,
                     example_index=example_index,
                     doc_span_index=doc_span_index,
-                    tokens=input_tokens,
+                    tokens=tokens,
                     token_to_orig_map=token_to_orig_map,
                     token_is_max_context=token_is_max_context,
                     input_ids=input_ids,
                     input_mask=input_mask,
-                    c_ids=None,
-                    context_tokens=None,
-                    q_ids=None,
-                    q_tokens=None,
+                    c_ids=c_ids,
+                    context_tokens=context_tokens,
+                    q_ids=q_ids,
+                    q_tokens=q_tokens,
                     answer_text=example.orig_answer_text,
-                    tag_ids=input_tag_ids,
-                    segment_ids=input_segment_ids,
-                    context_segment_ids=None,
-                    noq_start_position=None,
-                    noq_end_position=None,
+                    tag_ids=(input_tag_ids, context_tag_ids),
+                    segment_ids=(input_segment_ids, context_segment_ids),
+                    noq_start_position=noq_start_position,
+                    noq_end_position=noq_end_position,
                     start_position=start_position,
                     end_position=end_position,
                     is_impossible=example.is_impossible))

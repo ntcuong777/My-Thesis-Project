@@ -6,17 +6,18 @@ from infohcvae.model.model_utils import return_attention_mask, \
 
 class PosteriorEncoder(nn.Module):
     def __init__(self, pad_id, context_enc, hidden_size,
-                 latent_dim, nvalues, max_len, dropout=0.0):
+                 nzqdim, nzadim, nza_values, max_len, dropout=0.0):
         super(PosteriorEncoder, self).__init__()
 
         self.context_encoder = context_enc
         self.hidden_size = hidden_size
-        # self.nza = nza
-        self.latent_dim = latent_dim
-        self.nvalues = nvalues
+        self.nzqdim = nzqdim
+        self.nzadim = nzadim
+        self.nza_values = nza_values
         self.pad_token_id = pad_id
 
-        self.z_linear = nn.Linear(max_len * hidden_size, latent_dim * nvalues)
+        self.zq_linear = nn.Linear(max_len * hidden_size, nzqdim)
+        self.za_linear = nn.Linear(max_len * hidden_size, nzadim * nza_values)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, input_ids, a_ids):
@@ -27,12 +28,16 @@ class PosteriorEncoder(nn.Module):
         # context enc
         input_embeddings = self.context_encoder(input_ids=input_ids, attention_mask=input_mask,
                                                 token_type_ids=a_ids)[0]
-        # c_h = c_embeddings[:, 0] # CLS token
+        # input_h = input_embeddings[:, 0] # CLS token
+        # can try mean-, max-pooling, or some other pooling scheme
 
-        z_logits = self.za_linear(input_embeddings).view(-1, self.latent_dim, self.nvalues)
-        z = gumbel_softmax(z_logits, hard=True)
+        zq_mu, zq_logvar = torch.split(self.zq_linear(self.dropout(input_embeddings)), self.nzqdim, dim=1)
+        zq = sample_gaussian(zq_mu, zq_logvar)
+
+        za_logits = self.za_linear(self.dropout(input_embeddings)).view(-1, self.nzadim, self.nza_values)
+        za = gumbel_softmax(za_logits, hard=True)
 
         if self.training:
-            return z_logits, z
+            return zq_mu, zq_logvar, zq, za_logits, za
         else:
-            return z
+            return zq, za
