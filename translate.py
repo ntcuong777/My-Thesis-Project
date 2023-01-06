@@ -7,7 +7,7 @@ from transformers import MobileBertTokenizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
-from infohcvae.model.qag_vae import DiscreteVAE
+from infohcvae.model.discrete_vae import DiscreteVAE
 from infohcvae.model.model_utils import return_attention_mask
 from infohcvae.squad_utils import (convert_examples_to_harv_features,
                          read_examples, read_squad_examples)

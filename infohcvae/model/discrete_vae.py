@@ -1,7 +1,7 @@
 import random
 import torch
 import torch.nn as nn
-from transformers import MobileBertTokenizer, MobileBertConfig, MobileBertModel
+from transformers import AutoTokenizer, AutoConfig, AutoModel
 from infohcvae.model.encoders import PosteriorEncoder
 from infohcvae.model.decoders import QuestionDecoder, AnswerDecoder
 from infohcvae.model.losses import GaussianKLLoss, CategoricalKLLoss, \
@@ -14,7 +14,7 @@ from infohcvae.model.model_utils import gumbel_latent_var_sampling
 class DiscreteVAE(nn.Module):
     def __init__(self, args):
         super(DiscreteVAE, self).__init__()
-        tokenizer = MobileBertTokenizer.from_pretrained(args.huggingface_model)
+        tokenizer = AutoTokenizer.from_pretrained(args.huggingface_model)
         padding_idx = tokenizer.pad_token_id
         sos_id = tokenizer.cls_token_id
         eos_id = tokenizer.sep_token_id
@@ -30,9 +30,8 @@ class DiscreteVAE(nn.Module):
         dec_a_dropout = args.dec_a_dropout
         self.dec_q_nlayers = dec_q_nlayers = args.dec_q_nlayers
         dec_q_dropout = args.dec_q_dropout
-        self.nzqdim = nzqdim = args.nzqdim
-        # self.nza = nza = args.nza
-        self.nzadim = nzadim = args.nzadim
+        self.latent_dim = latent_dim = args.latent_dim
+        self.nvalues = nvalues = args.nvalues
 
         self.w_bce = args.w_bce
         self.alpha_kl_q = args.alpha_kl_q
@@ -43,13 +42,14 @@ class DiscreteVAE(nn.Module):
 
         max_q_len = args.max_q_len
 
-        context_encoder = MobileBertModel.from_pretrained(huggingface_model)
+        context_encoder = AutoModel.from_pretrained(huggingface_model)
         # freeze embedding
-        for param in context_encoder.parameters():
-            param.requires_grad = False
+        # for param in context_encoder.parameters():
+        #     param.requires_grad = False
 
         self.posterior_encoder = PosteriorEncoder(padding_idx, context_encoder, hidden_size,
-                                                  nzqdim, nzadim, enc_nlayers, enc_dropout)
+                                                  latent_dim, nvalues, args.max_c_len + args.max_q_len,
+                                                  enc_dropout)
 
         self.answer_decoder = AnswerDecoder(padding_idx, context_encoder, hidden_size,
                                             nzadim, dec_a_nlayers, dec_a_dropout)
@@ -67,11 +67,11 @@ class DiscreteVAE(nn.Module):
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
         # self.gumbel_mmd_criterion = GumbelMMDLoss()
 
-    def forward(self, c_ids, q_ids, a_ids, start_positions, end_positions):
-        posterior_zq_mu, posterior_zq_logvar, posterior_zq, \
-            posterior_za_mu, posterior_za_logvar, posterior_za \
-            = self.posterior_encoder(c_ids, q_ids, a_ids)
+    def forward(self, input_ids, a_ids, start_positions, end_positions):
+        z_logits, z \
+            = self.posterior_encoder(input_ids, a_ids)
 
+        # TODO: Continue from the decoder stage
         # answer decoding
         start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
         # question decoding

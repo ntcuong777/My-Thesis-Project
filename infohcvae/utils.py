@@ -36,20 +36,17 @@ def get_squad_data_loader(tokenizer, file, shuffle, is_train_set, args):
 
     features = convert_examples_to_features_answer_id(examples,
                                                       tokenizer=tokenizer,
-                                                      max_seq_length=args.max_c_len,
-                                                      max_query_length=args.max_q_len,
-                                                      max_ans_length=args.max_q_len,
+                                                      max_seq_length=args.max_c_len + args.max_q_len,
                                                       doc_stride=128,
                                                       is_training=True)
 
-    all_c_ids = torch.tensor([f.c_ids for f in features], dtype=torch.long)
-    all_q_ids = torch.tensor([f.q_ids for f in features], dtype=torch.long)
+    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_tag_ids = torch.tensor([f.tag_ids for f in features], dtype=torch.long)
     all_a_ids = (all_tag_ids != 0).long()
-    all_start_positions = torch.tensor([f.noq_start_position for f in features], dtype=torch.long)
-    all_end_positions = torch.tensor([f.noq_end_position for f in features], dtype=torch.long)
+    all_start_positions = torch.tensor([f.start_position for f in features], dtype=torch.long)
+    all_end_positions = torch.tensor([f.end_position for f in features], dtype=torch.long)
 
-    all_data = TensorDataset(all_c_ids, all_q_ids, all_a_ids, all_start_positions, all_end_positions)
+    all_data = TensorDataset(all_input_ids, all_a_ids, all_start_positions, all_end_positions)
     data_loader = DataLoader(all_data, args.batch_size, shuffle=shuffle)
 
     return data_loader, examples, features

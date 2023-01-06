@@ -124,9 +124,9 @@ def main(args):
 
         trainer.reset_cnt_steps()
         for batch in tqdm(train_loader, leave=False, position=1):
-            c_ids, q_ids, a_ids, start_positions, end_positions \
+            input_ids, a_ids, start_positions, end_positions \
                 = batch_to_device(batch, args.device)
-            trainer.train(c_ids, q_ids, a_ids, start_positions, end_positions)
+            trainer.train(input_ids, a_ids, start_positions, end_positions)
 
             if epoch == 0 and first_run: # first iteration
                 trainer.print_log() # get first run loss to verify correctness
