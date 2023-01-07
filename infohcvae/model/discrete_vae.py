@@ -60,7 +60,6 @@ class DiscreteVAE(nn.Module):
         zq_mu, zq_logvar, zq, za_logits, za \
             = self.posterior_encoder(c_ids, q_ids, a_mask)
 
-        # TODO: Continue from the decoder stage
         # answer decoding
         start_logits, end_logits = self.answer_decoder(c_ids, za, zq)
         # question decoding
