@@ -46,6 +46,7 @@ def return_attention_mask(ids: torch.Tensor, pad_token_id):
 
 def cal_attn(query, memories, mask):
     mask = (1.0 - mask.float()) * -10000.0
+    # query (N, len, hidden_size), memories (N, len, hidden_size)
     attn_logits = torch.matmul(query, memories.transpose(-1, -2).contiguous())
     attn_logits = attn_logits + mask
     attn_weights = F.softmax(attn_logits, dim=-1)

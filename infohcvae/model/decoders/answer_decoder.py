@@ -1,26 +1,55 @@
 import torch
 import torch.nn as nn
-from infohcvae.model.model_utils import return_attention_mask, softargmax
+from infohcvae.model.model_utils import return_attention_mask
+from transformers import T5Config
+from infohcvae.model.custom import T5ModelWithDecoderOnly
 
-# TODO: major work to do here
 class AnswerDecoder(nn.Module):
-    def __init__(self, pad_id, context_enc, hidden_size, nzadim, nza_values, n_dec_layers, dropout=0.0):
+    def __init__(self, pad_id, nzqdim, nzadim, nza_values,
+                 n_dec_finetune_layers=2, base_model="t5-base"):
         super(AnswerDecoder, self).__init__()
 
-        self.context_encoder = context_enc
+        config = T5Config.from_pretrained(base_model)
+        self.config = config
+        self.t5_model_with_removed_encoder = T5ModelWithDecoderOnly.from_pretrained(base_model)
+
+        # Freeze all T5 layers
+        for param in self.t5_model_with_removed_encoder.parameters():
+            param.requires_grad = False
+        # Only some top layers of the decoder are for fine-tuning
+        for idx in range(config.num_layers - n_dec_finetune_layers, config.num_layers):
+            for param in self.t5_model_with_removed_encoder.get_decoder().block[idx].parameters():
+                param.requires_grad = True
+
         self.pad_token_id = pad_id
-        # self.nza = nza
+        self.nzqdim = nzqdim
         self.nzadim = nzadim
         self.nza_values = nza_values
-        self.hidden_size = hidden_size
+        self.embed_size_per_head = config.d_model // config.num_heads
 
-        self.za_linear = nn.Linear(nzadim * nza_values, hidden_size)
+        self.memory_projection = nn.Linear(
+            nzqdim + nzadim * nza_values,
+            config.num_decoder_layers * config.num_heads * self.embed_size_per_head,
+            bias=False,
+        )
 
-        self.start_linear = nn.Linear(hidden_size, 1)
-        self.end_linear = nn.Linear(hidden_size, 1)
+        self.start_linear = nn.Linear(config.d_model, 1)
+        self.end_linear = nn.Linear(config.d_model, 1)
         self.ls = nn.LogSoftmax(dim=1)
 
-    def forward(self, c_ids, za):
+    def build_past(self, za, zq):
+        projection = self.memory_projection(torch.cat([za, zq], dim=-1))
+        cross_attn = projection.reshape(
+            self.config.num_decoder_layers,
+            projection.shape[0],
+            self.config.num_heads,
+            1,
+            self.embed_size_per_head,
+        )
+        past_key_values = tuple((ca, ca) for ca in cross_attn)
+        return past_key_values
+
+    def forward(self, c_ids, za, zq):
         """
             c_ids: shape = (N, seq_len)
             za: shape = (N, nza, nzadim) where nza is the latent dim,
@@ -29,15 +58,10 @@ class AnswerDecoder(nn.Module):
         _, max_c_len = c_ids.size()
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        decoded_a = self.za_linear(za)  # shape = (N, hidden_size)
+        decoding_init_state = self.build_past(za, zq)
 
-        # context enc
-        # shape = (N, seq_len, hidden_size)
-        c_embeddings = self.context_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
-
-        repeated_decoded_a = decoded_a.unsqueeze(1).repeat(1, max_c_len, 1)
-        h = torch.cat([c_embeddings, repeated_decoded_a], dim=-1)
-        out_features = self.answer_decoder(h, src_key_padding_mask=c_mask)
+        out_features = self.t5_model_with_removed_encoder(decoder_input_ids=c_ids, decoder_attention_mask=c_mask,
+                                                          past_key_values=decoding_init_state)
 
         start_logits = self.start_linear(out_features).squeeze(-1)
         end_logits = self.end_linear(out_features).squeeze(-1)
@@ -49,8 +73,8 @@ class AnswerDecoder(nn.Module):
 
         return masked_start_logits, masked_end_logits
 
-    def generate(self, c_ids, za):
-        start_logits, end_logits = self.forward(c_ids, za)
+    def generate(self, c_ids, za, zq):
+        start_logits, end_logits = self.forward(c_ids, za, zq)
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         batch_size, max_c_len = c_ids.size()
 
@@ -74,6 +98,6 @@ class AnswerDecoder(nn.Module):
         start_mask = (idxes >= start_positions).long()
         end_positions = end_positions.unsqueeze(1)
         end_mask = (idxes <= end_positions).long()
-        a_ids = start_mask + end_mask - 1
+        a_mask = start_mask + end_mask - 1
 
-        return a_ids, start_positions.squeeze(1), end_positions.squeeze(1)
+        return a_mask, start_positions.squeeze(1), end_positions.squeeze(1)

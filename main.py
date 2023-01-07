@@ -55,6 +55,7 @@ def evaluate_model(epoch, args, trainer, eval_data, best_bleu, best_em, best_f1)
 def main(args):
     tokenizer = MobileBertTokenizer.from_pretrained(args.huggingface_model)
 
+    # TODO: fix from the data preparation part for this file
     train_data, eval_data = None, None
     if args.load_saved_dataloader:
         train_data = torch.load(os.path.join(args.dataloader_dir, "train_data.pt"))
@@ -127,7 +128,6 @@ def main(args):
             input_ids, c_ids, input_qa_ids, context_a_ids, \
             start_positions, end_positions, noq_start_positions, noq_end_positions \
                 = batch_to_device(batch, args.device)
-            # TODO: stop here
             trainer.train(input_ids, a_ids, start_positions, end_positions)
 
             if epoch == 0 and first_run: # first iteration
@@ -176,12 +176,9 @@ if __name__ == "__main__":
     parser.add_argument("--clip", default=5.0, type=float, help="max grad norm")
 
     parser.add_argument("--huggingface_model", default='google/mobilebert-uncased', type=str)
-    parser.add_argument('--enc_nlayers', type=int, default=1)
-    parser.add_argument('--enc_dropout', type=float, default=0.3)
-    parser.add_argument('--dec_a_nlayers', type=int, default=1)
-    parser.add_argument('--dec_a_dropout', type=float, default=0.3)
+    parser.add_argument('--enc_finetune_nlayers', type=int, default=1)
+    parser.add_argument('--dec_a_finetune_nlayers', type=int, default=1)
     parser.add_argument('--dec_q_nlayers', type=int, default=2)
-    parser.add_argument('--dec_q_dropout', type=float, default=0.3)
     parser.add_argument('--nzqdim', type=int, default=64)
     parser.add_argument('--nzadim', type=int, default=32)
     parser.add_argument('--nza_values', type=int, default=16)

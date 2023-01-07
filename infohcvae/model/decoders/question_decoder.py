@@ -3,91 +3,87 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from infohcvae.model.model_utils import return_attention_mask, cal_attn
-from torch_scatter import scatter_max
+from transformers import T5Config, T5EncoderModel
 from infohcvae.model.infomax.dim_bce_infomax import DimBceInfoMax
+from infohcvae.model.custom import T5ForConditionalGenerationDecoderOnly
+
 
 class _ContextEncoderforQG(nn.Module):
-    def __init__(self, pad_id, context_enc, hidden_size, nlayers, dropout=0.2):
+    def __init__(self, config: T5Config, pad_id, base_model="t5-base", n_finetune_layers=2):
         super(_ContextEncoderforQG, self).__init__()
-        self.context_encoder = context_enc
+        self.t5_encoder = T5EncoderModel.from_pretrained(base_model)
         self.pad_token_id = pad_id
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size, nhead=8,
-                                                   activation="gelu", dropout=dropout,
-                                                   dim_feedforward=hidden_size,
-                                                   batch_first=True)
-        self.finetune_encoder = nn.TransformerEncoder(encoder_layer, num_layers=nlayers)
-        self.fusion = nn.Linear(2 * hidden_size, hidden_size, bias=False)
-        self.gate = nn.Linear(2 * hidden_size, hidden_size, bias=False)
+        # Freeze all layers
+        for param in self.t5_encoder.parameters():
+            param.requires_grad = False
+        # Only some top layers are for fine-tuning
+        for idx in range(config.num_layers - n_finetune_layers, config.num_layers):
+            for param in self.t5_encoder.get_encoder().block[idx].parameters():
+                param.requires_grad = True
 
-    def forward(self, c_ids, a_ids):
+        self.context_linear = nn.Linear(2 * config.d_model, 2 * config.d_model)
+        self.fusion = nn.Linear(4 * config.d_model, config.d_model, bias=False)
+        self.gate = nn.Linear(4 * config.d_model, config.d_model, bias=False)
+
+    def forward(self, c_ids, a_mask):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        c_embeddings = self.context_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=a_ids)[0]
-        c_outputs = self.finetune_encoder(c_embeddings, src_key_padding_mask=c_mask)
+        # context enc
+        c_hidden_states = self.t5_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
 
-        c_a_ids = c_ids * a_ids
-        c_a_ids[:, 0] = c_ids[:, 0] # add CLS token
-        c_a_mask = return_attention_mask(c_a_ids, self.pad_token_id)
-        c_a_embeddings = self.context_encoder(input_ids=c_a_ids, attention_mask=c_a_mask)[0]
-        c_a_outputs = self.finetune_encoder(c_a_embeddings, src_key_padding_mask=c_a_mask)
+        # context and answer enc
+        a_ids = c_ids * a_mask
+        a_hidden_states = self.t5_encoder(input_ids=a_ids, attention_mask=a_mask)[0]
+        a_attned_by_c, _ = cal_attn(a_hidden_states, c_hidden_states,
+                                    c_mask.unsqueeze(1))  # output shape = (N, seq_len, d_model)
+        c_attned_by_a, _ = cal_attn(c_hidden_states, a_hidden_states,
+                                    a_mask.unsqueeze(1))  # output shape = (N, seq_len, d_model)
+        c_a_hidden_states = torch.cat([a_attned_by_c, c_attned_by_a], dim=-1)
 
-        c_concat = torch.cat([c_outputs, c_a_outputs], dim=2)
+        # gated attention
+        mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
+        c_attned_by_c, _ = cal_attn(self.context_linear(c_a_hidden_states),
+                                    c_a_hidden_states, mask)
+        c_concat = torch.cat([c_a_hidden_states, c_attned_by_c], dim=2)
         c_fused = self.fusion(c_concat).tanh()
         c_gate = self.gate(c_concat).sigmoid()
-        c_outputs = c_gate * c_fused + (1 - c_gate) * c_outputs
+        c_outputs = c_gate * c_fused + (1 - c_gate) * c_a_hidden_states
         return c_outputs
 
 
 class QuestionDecoder(nn.Module):
-    def __init__(self, sos_id, eos_id, pad_id, context_enc, nzqdim,
-                 hidden_size, ntokens, n_dec_layers,
-                 dropout=0.2, max_q_len=64):
+    def __init__(self, sos_id, eos_id, pad_id, nzqdim,
+                 num_dec_finetune_layers=2, base_model="t5-base", max_q_len=64):
         super(QuestionDecoder, self).__init__()
+
+        config = T5Config.from_pretrained(base_model)
+
+        self.t5_question_decoder = T5ForConditionalGenerationDecoderOnly.from_pretrained(base_model, nzqdim=nzqdim)
+        # Freeze all decoder layers
+        for param in self.t5_question_decoder.parameters():
+            param.requires_grad = False
+        # Only some top layers are for fine-tuning
+        for idx in range(config.num_layers - num_dec_finetune_layers, config.num_layers):
+            for param in self.t5_question_decoder.get_decoder().block[idx].parameters():
+                param.requires_grad = True
 
         self.sos_id = sos_id
         self.eos_id = eos_id
-        self.context_encoder = context_enc
-        self.hidden_size = hidden_size
-        self.n_dec_layers = n_dec_layers
-        self.ntokens = ntokens
+        self.num_dec_finetune_layers = num_dec_finetune_layers
         # this max_len include sos eos
         self.max_q_len = max_q_len
         self.pad_token_id = pad_id
 
-        self.context_enc_finetuned = _ContextEncoderforQG(pad_id, context_enc, hidden_size, n_dec_layers, dropout)
+        self.context_enc_finetuned = _ContextEncoderforQG(config, pad_id, base_model=base_model,
+                                                          n_finetune_layers=num_dec_finetune_layers)
 
-        encoder_layer = nn.TransformerEncoderLayer(d_model=hidden_size*2, nhead=8,
-                                                   dim_feedforward=2*hidden_size,
-                                                   dropout=dropout, activation="gelu",
-                                                   batch_first=True)
-        self.question_enc_finetuned = nn.TransformerEncoder(encoder_layer, num_layers=n_dec_layers)
-        self.question_enc_linear = nn.Linear(2*hidden_size, hidden_size, bias=False)
-
-        self.question_linear = nn.Linear(hidden_size, hidden_size)
-
-        self.zq_decoder = nn.Linear(nzqdim, hidden_size)
-
-        self.concat_linear = nn.Sequential(nn.Linear(2*hidden_size, 2*hidden_size),
-                                           nn.Mish(True),
-                                           nn.Dropout(dropout),
-                                           nn.Linear(2*hidden_size, 2*hidden_size),
-                                           nn.Mish(True))
-
-        self.pre_logit_linear = nn.Linear(hidden_size, context_enc.get_input_embeddings().weight.size(1))
-        self.logit_linear = nn.Linear(context_enc.get_input_embeddings().weight.size(0), ntokens, bias=False)
-
-        # fix output word matrix
-        self.logit_linear.weight = context_enc.get_input_embeddings().weight
-        for param in self.logit_linear.parameters():
-            param.requires_grad = False
-
-        self.infomax_est = DimBceInfoMax(hidden_size, hidden_size, use_billinear=True)
+        self.infomax_est = DimBceInfoMax(config.d_model, config.d_model, use_billinear=True)
 
     def postprocess(self, q_ids):
         eos_mask = (q_ids == self.eos_id).float()
         no_eos_idx_sum = (eos_mask.sum(dim=1) == 0).long() * \
-            (self.max_q_len - 1)
+                         (self.max_q_len - 1)
         eos_mask = eos_mask.cpu().numpy()
         q_lengths = np.argmax(eos_mask, axis=1) + 1
         q_lengths = torch.tensor(q_lengths).to(
@@ -99,53 +95,23 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.long() * q_mask.long()
         return q_ids
 
-    def forward(self, c_ids, q_ids, a_ids, zq):
-        batch_size, max_q_len = q_ids.size()
-
-        c_outputs = self.context_enc_finetuned(c_ids, a_ids)
+    def forward(self, c_ids, q_ids, a_mask, zq):
+        c_hidden_states = self.context_enc_finetuned(c_ids, a_mask)
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
-        decoded_q = self.zq_decoder(zq)  # shape = (N, hidden_size)
-        repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, max_q_len, 1)
-
         # question dec
-        q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
-        q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
-                                                src_key_padding_mask=q_mask)
-        q_outputs = self.question_enc_linear(q_outputs)
-
-        # attention
-        # For attention calculation, linear layer is there for projection
-        mask = torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))
-        c_attned_by_q, attn_logits = cal_attn(self.question_linear(q_outputs),
-                                              c_outputs, mask)
-
-        # gen logits
-        q_concated = torch.cat([q_outputs, c_attned_by_q], dim=2)
-        q_concated = self.concat_linear(q_concated)
-        q_maxouted, _ = q_concated.view(
-            batch_size, max_q_len, self.hidden_size, 2).max(dim=-1)
-        gen_logits = self.logit_linear(self.pre_logit_linear(q_maxouted))
-
-        # copy logits
-        bq = batch_size * max_q_len
-        c_ids = c_ids.unsqueeze(1).repeat(
-            1, max_q_len, 1).view(bq, -1).contiguous()
-        attn_logits = attn_logits.view(bq, -1).contiguous()
-        copy_logits = torch.zeros(bq, self.ntokens).to(c_ids.device)
-        copy_logits = copy_logits - 10000.0
-        copy_logits, _ = scatter_max(attn_logits, c_ids, out=copy_logits)
-        copy_logits = copy_logits.masked_fill(copy_logits == -10000.0, 0)
-        copy_logits = copy_logits.view(batch_size, max_q_len, -1).contiguous()
-
-        logits = gen_logits + copy_logits
+        q_outputs = self.t5_question_decoder(sampled_zq=zq, input_ids=q_ids,
+                                             attention_mask=q_mask, context_ids=c_ids,
+                                             context_embeds=c_hidden_states, context_mask=c_mask)
+        logits = q_outputs[1]
+        q_maxouted = q_outputs[3]
 
         if self.training:
             # mutual information btw answer and question (customized: use bi-lstm to average the question & answer)
-            a_emb = c_outputs * a_ids.float().unsqueeze(2)
-            a_mean_emb = torch.sum(a_emb, dim=1) / a_ids.sum(1).unsqueeze(1).float()
+            a_emb = c_hidden_states * a_mask.float().unsqueeze(2)
+            a_mean_emb = torch.sum(a_emb, dim=1) / a_mask.sum(1).unsqueeze(1).float()
 
             q_emb = q_maxouted * q_mask.unsqueeze(2)
             q_mean_emb = torch.sum(q_emb, dim=1) / q_mask.sum(dim=1, keepdim=True).float()
@@ -154,60 +120,26 @@ class QuestionDecoder(nn.Module):
         else:
             return logits
 
-    def generate(self, c_ids, a_ids, zq):
+    def generate(self, c_ids, a_mask, zq):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_outputs = self.context_enc_finetuned(c_ids, a_ids)
+        c_hidden_states = self.context_enc_finetuned(c_ids, a_mask)
 
         batch_size = c_ids.size(0)
 
         q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1)
         q_ids = q_ids.to(c_ids.device)
-        token_type_ids = torch.zeros_like(q_ids)
-        position_ids = torch.zeros_like(q_ids)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
-        q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
-                                            token_type_ids=token_type_ids, position_ids=position_ids)[0]
-
-        decoded_q = self.zq_decoder(zq)
 
         # unroll
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
-            position_ids = position_ids + 1
-            repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, q_ids.size(1), 1)
-            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
-                                                    src_key_padding_mask=q_mask)
-            q_outputs = self.question_enc_linear(q_outputs)
-
-            # attention
-            mask = c_mask.unsqueeze(1)
-            c_attned_by_q, attn_logits = cal_attn(self.question_linear(q_outputs),
-                                                  c_outputs, mask)
-
-            # gen logits
-            q_concated = torch.cat([q_outputs, c_attned_by_q], dim=2)
-            q_concated = self.concat_linear(q_concated)
-            q_maxouted, _ = q_concated.view(
-                batch_size, 1, self.hidden_size, 2).max(dim=-1)
-            gen_logits = self.logit_linear(self.pre_logit_linear(q_maxouted))
-
-            # copy logits
-            attn_logits = attn_logits.squeeze(1)
-            copy_logits = torch.zeros(
-                batch_size, self.ntokens).to(c_ids.device)
-            copy_logits = copy_logits - 10000.0
-            copy_logits, _ = scatter_max(attn_logits, c_ids, out=copy_logits)
-            copy_logits = copy_logits.masked_fill(copy_logits == -10000.0, 0)
-
-            logits = gen_logits + copy_logits.unsqueeze(1)
-
-            q_ids = torch.argmax(logits, 2)
+            logits = self.t5_question_decoder(sampled_zq=zq, input_ids=q_ids,
+                                              attention_mask=q_mask, context_ids=c_ids,
+                                              context_embeds=c_hidden_states, context_mask=c_mask)[1]
+            q_ids = torch.argmax(logits, dim=2)
             all_q_ids.append(q_ids)
-
             q_mask = return_attention_mask(q_ids, self.pad_token_id)
-            q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask, token_type_ids=token_type_ids,
-                                                position_ids=position_ids)[0]
 
         q_ids = torch.cat(all_q_ids, dim=1)
         q_ids = self.postprocess(q_ids)
@@ -215,7 +147,7 @@ class QuestionDecoder(nn.Module):
         return q_ids
 
     def top_k_top_p_filtering(self, logits: torch.Tensor, top_k: int = 0, top_p: float = 1.0,
-            filter_value: float = -float("Inf"), min_tokens_to_keep: int = 1) -> torch.Tensor:
+                              filter_value: float = -float("Inf"), min_tokens_to_keep: int = 1) -> torch.Tensor:
         """Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
         Args:
             logits: logits distribution shape (batch size, vocabulary size)
@@ -249,62 +181,30 @@ class QuestionDecoder(nn.Module):
             logits[indices_to_remove] = filter_value
         return logits
 
-    def sample(self, c_ids, a_ids, zq):
+    def sample(self, c_ids, a_mask, zq):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_outputs = self.context_enc_finetuned(c_ids, a_ids)
+        c_hidden_states = self.context_enc_finetuned(c_ids, a_mask)
 
         batch_size = c_ids.size(0)
 
         q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1)
         q_ids = q_ids.to(c_ids.device)
-        token_type_ids = torch.zeros_like(q_ids)
-        position_ids = torch.zeros_like(q_ids)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
-        q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
-                                            token_type_ids=token_type_ids, position_ids=position_ids)[0]
-
-        decoded_q = self.zq_decoder(zq)
 
         # unroll
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
-            position_ids = position_ids + 1
-            repeated_decoded_q = decoded_q.unsqueeze(1).repeat(1, q_ids.size(1), 1)
-            q_outputs = self.question_enc_finetuned(torch.cat((q_embeddings, repeated_decoded_q), dim=-1),
-                                                    src_key_padding_mask=q_mask)
-            q_outputs = self.question_enc_linear(q_outputs)
-
-            # attention
-            c_attned_by_q, attn_logits = cal_attn(self.question_linear(q_outputs),
-                                                  c_outputs,
-                                                  c_mask.unsqueeze(1))
-
-            # gen logits
-            q_concated = torch.cat([q_outputs, c_attned_by_q], dim=2)
-            q_concated = self.concat_linear(q_concated)
-            q_maxouted, _ = q_concated.view(batch_size, 1, self.hidden_size, 2).max(dim=-1)
-            gen_logits = self.logit_linear(self.pre_logit_linear(q_maxouted))
-
-            # copy logits
-            attn_logits = attn_logits.squeeze(1)
-            copy_logits = torch.zeros(batch_size, self.ntokens).to(c_ids.device)
-            copy_logits = copy_logits - 10000.0
-            copy_logits, _ = scatter_max(attn_logits, c_ids, out=copy_logits)
-            copy_logits = copy_logits.masked_fill(copy_logits == -10000.0, 0)
-
-            logits = gen_logits + copy_logits.unsqueeze(1)
+            logits = self.t5_question_decoder(sampled_zq=zq, input_ids=q_ids,
+                                              attention_mask=q_mask, context_ids=c_ids,
+                                              context_embeds=c_hidden_states, context_mask=c_mask)[1]
             logits = logits.squeeze(1)
             logits = self.top_k_top_p_filtering(logits, 2, 0.8)
             probs = F.softmax(logits, dim=-1)
             q_ids = torch.multinomial(probs, num_samples=1)  # [b,1]
             all_q_ids.append(q_ids)
-
             q_mask = return_attention_mask(q_ids, self.pad_token_id)
-            q_embeddings = self.context_encoder(input_ids=q_ids, attention_mask=q_mask,
-                                                token_type_ids=token_type_ids, position_ids=position_ids)[0]
 
         q_ids = torch.cat(all_q_ids, 1)
         q_ids = self.postprocess(q_ids)
-
         return q_ids
