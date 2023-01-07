@@ -186,10 +186,7 @@ class T5ForConditionalGenerationDecoderOnly(T5ForConditionalGeneration):
         copy_logits = copy_logits.masked_fill(copy_logits == -10000.0, 0)
         copy_logits = copy_logits.view(batch_size, max_q_len, -1).contiguous()
 
-        if self.training:
-            lm_logits = gen_logits + copy_logits
-        else: # using model for generation
-            lm_logits = gen_logits + copy_logits.unsqueeze(1)
+        lm_logits = gen_logits + copy_logits
         """ CUSTOM END: Question decoding language modeling head specific to this QAG problem """
 
         loss = None
