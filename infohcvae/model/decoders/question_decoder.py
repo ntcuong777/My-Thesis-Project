@@ -4,8 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from infohcvae.model.model_utils import return_attention_mask, cal_attn
 from transformers import T5Config, T5EncoderModel
-from infohcvae.model.infomax.dim_bce_infomax import DimBceInfoMax
-from infohcvae.model.custom import T5ForConditionalGenerationDecoderOnly
+from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
+from infohcvae.model.custom import CustomT5ForConditionalGeneration
 
 
 class _ContextEncoderforQG(nn.Module):
@@ -22,34 +22,21 @@ class _ContextEncoderforQG(nn.Module):
             for param in self.t5_encoder.get_encoder().block[idx].parameters():
                 param.requires_grad = True
 
-        self.context_linear = nn.Linear(2 * config.d_model, 2 * config.d_model)
-        self.fusion = nn.Linear(4 * config.d_model, config.d_model, bias=False)
-        self.gate = nn.Linear(4 * config.d_model, config.d_model, bias=False)
-
     def forward(self, c_ids, a_mask):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
         # context enc
-        c_hidden_states = self.t5_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
+        outputs = self.t5_encoder(input_ids=c_ids, attention_mask=c_mask, output_hidden_states=True)
+        c_last_hidden_states = outputs[0]
+        c_hidden_states = outputs[1]
 
         # context and answer enc
         a_ids = c_ids * a_mask
         a_hidden_states = self.t5_encoder(input_ids=a_ids, attention_mask=a_mask)[0]
-        a_attned_by_c, _ = cal_attn(a_hidden_states, c_hidden_states,
+        c_a_hidden_states, _ = cal_attn(a_hidden_states, c_last_hidden_states,
                                     c_mask.unsqueeze(1))  # output shape = (N, seq_len, d_model)
-        c_attned_by_a, _ = cal_attn(c_hidden_states, a_hidden_states,
-                                    a_mask.unsqueeze(1))  # output shape = (N, seq_len, d_model)
-        c_a_hidden_states = torch.cat([a_attned_by_c, c_attned_by_a], dim=-1)
 
-        # gated attention
-        mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
-        c_attned_by_c, _ = cal_attn(self.context_linear(c_a_hidden_states),
-                                    c_a_hidden_states, mask)
-        c_concat = torch.cat([c_a_hidden_states, c_attned_by_c], dim=2)
-        c_fused = self.fusion(c_concat).tanh()
-        c_gate = self.gate(c_concat).sigmoid()
-        c_outputs = c_gate * c_fused + (1 - c_gate) * c_a_hidden_states
-        return c_outputs
+        return c_a_hidden_states
 
 
 class QuestionDecoder(nn.Module):
@@ -57,16 +44,8 @@ class QuestionDecoder(nn.Module):
                  num_dec_finetune_layers=2, base_model="t5-base", max_q_len=64):
         super(QuestionDecoder, self).__init__()
 
-        config = T5Config.from_pretrained(base_model)
-
-        self.t5_question_decoder = T5ForConditionalGenerationDecoderOnly.from_pretrained(base_model, nzqdim=nzqdim)
-        # Freeze all decoder layers
-        for param in self.t5_question_decoder.parameters():
-            param.requires_grad = False
-        # Only some top layers are for fine-tuning
-        for idx in range(config.num_layers - num_dec_finetune_layers, config.num_layers):
-            for param in self.t5_question_decoder.get_decoder().block[idx].parameters():
-                param.requires_grad = True
+        self.t5_generator = CustomT5ForConditionalGeneration.from_pretrained(base_model, nzqdim=nzqdim,
+                                                                             n_finetune_layers=num_dec_finetune_layers)
 
         self.sos_id = sos_id
         self.eos_id = eos_id
@@ -74,11 +53,6 @@ class QuestionDecoder(nn.Module):
         # this max_len include sos eos
         self.max_q_len = max_q_len
         self.pad_token_id = pad_id
-
-        self.context_enc_finetuned = _ContextEncoderforQG(config, pad_id, base_model=base_model,
-                                                          n_finetune_layers=num_dec_finetune_layers)
-
-        self.infomax_est = DimBceInfoMax(config.d_model, config.d_model, use_billinear=True)
 
     def postprocess(self, q_ids):
         eos_mask = (q_ids == self.eos_id).float()
@@ -96,15 +70,14 @@ class QuestionDecoder(nn.Module):
         return q_ids
 
     def forward(self, c_ids, q_ids, a_mask, zq):
-        c_hidden_states = self.context_enc_finetuned(c_ids, a_mask)
-
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
-        # question dec
-        q_outputs = self.t5_question_decoder(sampled_zq=zq, input_ids=q_ids,
-                                             attention_mask=q_mask, context_ids=c_ids,
-                                             context_embeds=c_hidden_states, context_mask=c_mask)
+        # context & question enc-dec
+        # TODO: continue check the implementation of the generator later
+        q_outputs = self.t5_generator(sampled_zq=zq, question_ids=q_ids, question_mask=q_mask,
+                                      context_ids=c_ids, context_mask=c_mask, answer_mask=a_mask)
+        c_hidden_states = q_outputs[6]
         logits = q_outputs[1]
         q_maxouted = q_outputs[3]
 
@@ -116,13 +89,13 @@ class QuestionDecoder(nn.Module):
             q_emb = q_maxouted * q_mask.unsqueeze(2)
             q_mean_emb = torch.sum(q_emb, dim=1) / q_mask.sum(dim=1, keepdim=True).float()
 
-            return logits, self.infomax_est(q_mean_emb, a_mean_emb)
+            # return logits, self.infomax_est(q_mean_emb, a_mean_emb)
+            return logits, (q_mean_emb, a_mean_emb)
         else:
             return logits
 
     def generate(self, c_ids, a_mask, zq):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_hidden_states = self.context_enc_finetuned(c_ids, a_mask)
 
         batch_size = c_ids.size(0)
 
@@ -130,13 +103,17 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.to(c_ids.device)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
+        past_key_values = None # need to store this to speedup decoding
+
         # unroll
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
-            logits = self.t5_question_decoder(sampled_zq=zq, input_ids=q_ids,
-                                              attention_mask=q_mask, context_ids=c_ids,
-                                              context_embeds=c_hidden_states, context_mask=c_mask)[1]
+            outputs = self.t5_question_decoder(sampled_zq=zq, question_ids=q_ids, question_mask=q_mask,
+                                               past_key_values=past_key_values, context_ids=c_ids,
+                                               context_mask=c_mask, answer_mask=a_mask, use_cache=True)
+            logits = outputs[1]
+            past_key_values = outputs[2]
             q_ids = torch.argmax(logits, dim=2)
             all_q_ids.append(q_ids)
             q_mask = return_attention_mask(q_ids, self.pad_token_id)
@@ -183,7 +160,6 @@ class QuestionDecoder(nn.Module):
 
     def sample(self, c_ids, a_mask, zq):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_hidden_states = self.context_enc_finetuned(c_ids, a_mask)
 
         batch_size = c_ids.size(0)
 
@@ -191,13 +167,17 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.to(c_ids.device)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
+        past_key_values = None  # need to store this to speedup decoding
+
         # unroll
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
-            logits = self.t5_question_decoder(sampled_zq=zq, input_ids=q_ids,
-                                              attention_mask=q_mask, context_ids=c_ids,
-                                              context_embeds=c_hidden_states, context_mask=c_mask)[1]
+            outputs = self.t5_question_decoder(sampled_zq=zq, question_ids=q_ids, question_mask=q_mask,
+                                               past_key_values=past_key_values, context_ids=c_ids,
+                                               context_mask=c_mask, answer_mask=a_mask, use_cache=True)
+            logits = outputs[1]
+            past_key_values = outputs[2]
             logits = logits.squeeze(1)
             logits = self.top_k_top_p_filtering(logits, 2, 0.8)
             probs = F.softmax(logits, dim=-1)

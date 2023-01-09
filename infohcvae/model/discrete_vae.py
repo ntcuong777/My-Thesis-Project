@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import T5Tokenizer
+from transformers import T5Tokenizer, T5Config
 from infohcvae.model.encoders import PosteriorEncoder
 from infohcvae.model.decoders import QuestionDecoder, AnswerDecoder
 from infohcvae.model.losses import (
@@ -10,9 +10,11 @@ from infohcvae.model.losses import (
     VaeGumbelKLLoss,
 )
 from infohcvae.model.model_utils import gumbel_latent_var_sampling
+from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
+import pytorch_lightning as pl
 
 
-class DiscreteVAE(nn.Module):
+class DiscreteVAE(pl.LightningModule):
     def __init__(self, args):
         super(DiscreteVAE, self).__init__()
         tokenizer = T5Tokenizer.from_pretrained(args.huggingface_model)
@@ -56,56 +58,80 @@ class DiscreteVAE(nn.Module):
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
         self.gumbel_mmd_criterion = GumbelMMDLoss()
 
-    def forward(self, c_ids, q_ids, a_mask, start_positions, end_positions):
+        config = T5Config.from_pretrained(base_model)
+
+        # Define QA infomax model
+        preprocessor = nn.Sigmoid()
+        qa_discriminator = nn.Bilinear(config.d_model, config.d_model, 1)
+        self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
+                                               discriminator=qa_discriminator)
+
+        self.current_losses = {}
+
+    def forward(self, c_ids, q_ids, a_mask):
         zq_mu, zq_logvar, zq, za_logits, za \
             = self.posterior_encoder(c_ids, q_ids, a_mask)
 
         # answer decoding
         start_logits, end_logits = self.answer_decoder(c_ids, za, zq)
         # question decoding
-        q_logits, loss_info = self.question_decoder(c_ids, q_ids, a_mask, zq)
+        q_logits, (q_mean_emb, a_mean_emb) = self.question_decoder(c_ids, q_ids, a_mask, zq)
+
+        return dict({ "latent_codes": (zq_mu, zq_logvar, zq, za_logits, za),
+                    "answer_rec": (start_logits, end_logits),
+                    "question_rec": (q_logits, q_mean_emb, a_mean_emb) })
+
+    def training_step(self, batch, batch_idx):
+        c_ids, q_ids, a_mask, start_positions, end_positions = batch
+        outputs = self.forward(c_ids, q_ids, a_mask)
+        zq_mu, zq_logvar, zq, za_logits, za = outputs["latent_codes"]
+        start_logits, end_logits = outputs["answer_rec"]
+        q_logits, q_mean_emb, a_mean_emb = outputs["question_rec"]
 
         # Compute losses
-        if self.training:
-            # q rec loss
-            loss_q_rec = self.q_rec_criterion(q_logits[:, :-1, :].transpose(1, 2).contiguous(),
-                                              q_ids[:, 1:])
+        # q rec loss
+        loss_q_rec = self.q_rec_criterion(q_logits[:, :-1, :].transpose(1, 2).contiguous(),
+                                          q_ids[:, 1:])
 
-            # a rec loss
-            max_c_len = c_ids.size(1)
-            start_positions.clamp_(0, max_c_len)
-            end_positions.clamp_(0, max_c_len)
-            loss_start_a_rec = self.a_rec_criterion(
-                start_logits, start_positions)
-            loss_end_a_rec = self.a_rec_criterion(end_logits, end_positions)
-            loss_a_rec = loss_start_a_rec + loss_end_a_rec
+        # a rec loss
+        max_c_len = c_ids.size(1)
+        start_positions.clamp_(0, max_c_len)
+        end_positions.clamp_(0, max_c_len)
+        loss_start_a_rec = self.a_rec_criterion(
+            start_logits, start_positions)
+        loss_end_a_rec = self.a_rec_criterion(end_logits, end_positions)
+        loss_a_rec = loss_start_a_rec + loss_end_a_rec
 
-            # kl loss
-            loss_zq_kl = (1. - self.alpha_kl_q) * self.gaussian_kl_criterion(zq_mu, zq_logvar)
-            loss_za_kl = (1. - self.alpha_kl_a) * self.categorical_kl_criterion(za_logits)
+        # kl loss
+        loss_zq_kl = (1. - self.alpha_kl_q) * self.gaussian_kl_criterion(zq_mu, zq_logvar)
+        loss_za_kl = (1. - self.alpha_kl_a) * self.categorical_kl_criterion(za_logits)
 
-            loss_zq_mmd = (self.alpha_kl_q + self.lambda_mmd_q - 1.) * self.cont_mmd_criterion(zq)
-            loss_za_mmd = (self.alpha_kl_a + self.lambda_mmd_a - 1.) * self.cont_mmd_criterion(za)
-            loss_mmd = loss_zq_mmd + loss_za_mmd
+        loss_zq_mmd = (self.alpha_kl_q + self.lambda_mmd_q - 1.) * self.cont_mmd_criterion(zq)
+        loss_za_mmd = (self.alpha_kl_a + self.lambda_mmd_a - 1.) * self.cont_mmd_criterion(za)
+        loss_mmd = loss_zq_mmd + loss_za_mmd
 
-            loss_kl = loss_zq_kl + loss_za_kl
-            loss_qa_info = self.lambda_qa_info * loss_info
-            loss = self.w_bce * (loss_q_rec + loss_a_rec) + \
-                loss_kl + loss_qa_info + loss_mmd
+        # QA info loss
+        loss_qa_info = self.qa_infomax(q_mean_emb, a_mean_emb)
 
-            return_dict = {
-                "total_loss": loss,
-                "loss_q_rec": loss_q_rec,
-                "loss_a_rec": loss_a_rec,
-                "loss_kl": loss_kl,
-                "loss_zq_kl": loss_zq_kl,
-                "loss_za_kl": loss_za_kl,
-                "loss_mmd": loss_mmd,
-                "loss_zq_mmd": loss_zq_mmd,
-                "loss_za_mmd": loss_za_mmd,
-                "loss_qa_info": loss_qa_info,
-            }
-            return return_dict
+        loss_kl = loss_zq_kl + loss_za_kl
+        loss_qa_info = self.lambda_qa_info * loss_qa_info
+        total_loss = self.w_bce * (loss_q_rec + loss_a_rec) + \
+            loss_kl + loss_qa_info + loss_mmd
+
+        self.current_losses = {
+            "total_loss": total_loss,
+            "loss_q_rec": loss_q_rec,
+            "loss_a_rec": loss_a_rec,
+            "loss_kl": loss_kl,
+            "loss_zq_kl": loss_zq_kl,
+            "loss_za_kl": loss_za_kl,
+            "loss_mmd": loss_mmd,
+            "loss_zq_mmd": loss_zq_mmd,
+            "loss_za_mmd": loss_za_mmd,
+            "loss_qa_info": loss_qa_info,
+        }
+
+        return total_loss
 
     def generate_qa(self, c_ids, zq=None, za=None):
         a_mask, start_positions, end_positions = self.answer_decoder.generate(c_ids, za, zq)
