@@ -2,50 +2,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from infohcvae.model.model_utils import return_attention_mask, cal_attn
-from transformers import T5Config, T5EncoderModel
-from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
-from infohcvae.model.custom import CustomT5ForConditionalGeneration
-
-
-class _ContextEncoderforQG(nn.Module):
-    def __init__(self, config: T5Config, pad_id, base_model="t5-base", n_finetune_layers=2):
-        super(_ContextEncoderforQG, self).__init__()
-        self.t5_encoder = T5EncoderModel.from_pretrained(base_model)
-        self.pad_token_id = pad_id
-
-        # Freeze all layers
-        for param in self.t5_encoder.parameters():
-            param.requires_grad = False
-        # Only some top layers are for fine-tuning
-        for idx in range(config.num_layers - n_finetune_layers, config.num_layers):
-            for param in self.t5_encoder.get_encoder().block[idx].parameters():
-                param.requires_grad = True
-
-    def forward(self, c_ids, a_mask):
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-
-        # context enc
-        outputs = self.t5_encoder(input_ids=c_ids, attention_mask=c_mask, output_hidden_states=True)
-        c_last_hidden_states = outputs[0]
-        c_hidden_states = outputs[1]
-
-        # context and answer enc
-        a_ids = c_ids * a_mask
-        a_hidden_states = self.t5_encoder(input_ids=a_ids, attention_mask=a_mask)[0]
-        c_a_hidden_states, _ = cal_attn(a_hidden_states, c_last_hidden_states,
-                                    c_mask.unsqueeze(1))  # output shape = (N, seq_len, d_model)
-
-        return c_a_hidden_states
+from infohcvae.model.model_utils import return_attention_mask
+from infohcvae.model.custom import CustomT5ForQuestionGeneration
 
 
 class QuestionDecoder(nn.Module):
-    def __init__(self, sos_id, eos_id, pad_id, nzqdim,
+    def __init__(self, sos_id, eos_id, pad_id, nzqdim, nzadim, nza_values, c_a_encoder,
                  num_dec_finetune_layers=2, base_model="t5-base", max_q_len=64):
         super(QuestionDecoder, self).__init__()
 
-        self.t5_generator = CustomT5ForConditionalGeneration.from_pretrained(base_model, nzqdim=nzqdim,
-                                                                             n_finetune_layers=num_dec_finetune_layers)
+        self.t5_generator = CustomT5ForQuestionGeneration.from_pretrained(base_model, nzqdim=nzqdim,
+                                                                          n_finetune_layers=num_dec_finetune_layers)
+        # Re-use the encoder of posterior network
+        self.t5_generator.set_custom_encoder(c_a_encoder)
 
         self.sos_id = sos_id
         self.eos_id = eos_id
@@ -69,7 +38,7 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.long() * q_mask.long()
         return q_ids
 
-    def forward(self, c_ids, q_ids, a_mask, zq):
+    def forward(self, c_ids, q_ids, a_mask, zq, return_qa_mean_embeds=None):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
@@ -79,28 +48,25 @@ class QuestionDecoder(nn.Module):
                                       context_ids=c_ids, context_mask=c_mask, answer_mask=a_mask)
         c_hidden_states = q_outputs[6]
         logits = q_outputs[1]
-        q_maxouted = q_outputs[3]
+        q_hidden_states = q_outputs[3]
 
-        if self.training:
-            # mutual information btw answer and question (customized: use bi-lstm to average the question & answer)
+        if return_qa_mean_embeds is not None and return_qa_mean_embeds:
+            # mutual information btw averged answer and question representations
             a_emb = c_hidden_states * a_mask.float().unsqueeze(2)
             a_mean_emb = torch.sum(a_emb, dim=1) / a_mask.sum(1).unsqueeze(1).float()
 
-            q_emb = q_maxouted * q_mask.unsqueeze(2)
+            q_emb = q_hidden_states * q_mask.unsqueeze(2)
             q_mean_emb = torch.sum(q_emb, dim=1) / q_mask.sum(dim=1, keepdim=True).float()
 
-            # return logits, self.infomax_est(q_mean_emb, a_mean_emb)
             return logits, (q_mean_emb, a_mean_emb)
         else:
             return logits
 
     def generate(self, c_ids, a_mask, zq):
+        batch_size = c_ids.size(0)
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        batch_size = c_ids.size(0)
-
-        q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1)
-        q_ids = q_ids.to(c_ids.device)
+        q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1).to(c_ids.device)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
         past_key_values = None # need to store this to speedup decoding
@@ -159,12 +125,10 @@ class QuestionDecoder(nn.Module):
         return logits
 
     def sample(self, c_ids, a_mask, zq):
+        batch_size = c_ids.size(0)
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        batch_size = c_ids.size(0)
-
-        q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1)
-        q_ids = q_ids.to(c_ids.device)
+        q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1).to(c_ids.device)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
         past_key_values = None  # need to store this to speedup decoding

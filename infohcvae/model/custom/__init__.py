@@ -1,2 +1,2 @@
-from t5_model_with_decoder_only import T5ModelWithDecoderOnly
-from t5_for_conditional_generation import CustomT5ForConditionalGeneration
+from .t5_model_answer_decoder import T5ModelAnswerDecoder
+from .t5_for_question_generation import CustomT5ForQuestionGeneration

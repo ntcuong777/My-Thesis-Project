@@ -5,12 +5,13 @@ import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 from torch_scatter import scatter_max
-from transformers import T5ForConditionalGeneration, T5Config
+from transformers import T5ForConditionalGeneration, T5Config, T5EncoderModel, T5Model
 from transformers.modeling_outputs import (
     Seq2SeqLMOutput,
     BaseModelOutput,
 )
 from infohcvae.model.model_utils import cal_attn
+from infohcvae.model.encoders import T5ContextAnswerEncoder
 
 # Warning message for FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
 __HEAD_MASK_WARNING_MSG = """
@@ -21,11 +22,12 @@ num_heads)`.
 """
 
 
-class CustomT5ForConditionalGeneration(T5ForConditionalGeneration):
+class CustomT5ForQuestionGeneration(T5ForConditionalGeneration):
     def __init__(self, config: T5Config, nzqdim, n_finetune_layers, dropout=0.3):
         super().__init__(config)
 
         self.config = config
+        self.nzqdim = nzqdim
 
         # Freeze all layers
         for param in self.parameters():
@@ -50,6 +52,23 @@ class CustomT5ForConditionalGeneration(T5ForConditionalGeneration):
         self.concat_linear = nn.Sequential(nn.Linear(2 * config.max_length, 2 * config.d_model),
                                            nn.Dropout(dropout),
                                            nn.Linear(2 * config.d_model, 2 * config.d_model))
+
+    def set_custom_encoder(self, custom_encoder: T5ContextAnswerEncoder):
+        # Change the T5Stack definition of `encoder` to the project's customed implementation
+        # for encoding context and answer
+        self.encoder = custom_encoder
+
+    def build_past(self, zq):
+        projection = self.memory_projection(zq)
+        cross_attn = projection.reshape(
+            self.config.num_decoder_layers,
+            projection.shape[0],
+            self.config.num_heads,
+            1,
+            self.embed_size_per_head,
+        )
+        past_key_values = tuple((ca, ca) for ca in cross_attn)
+        return past_key_values
 
     def forward(
             self,
@@ -98,44 +117,14 @@ class CustomT5ForConditionalGeneration(T5ForConditionalGeneration):
 
         # CUSTOM: Encode context & answer to have `encoder_outputs`
         # Convert encoder inputs in embeddings if needed
-        c_outputs = self.encoder(
-            input_ids=context_ids,
-            attention_mask=context_mask,
-            inputs_embeds=inputs_embeds,
-            head_mask=head_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=True,
-            return_dict=return_dict,
-        )
+        _, c_a_hidden_states = self.encoder(context_ids=context_ids, context_mask=context_mask, answer_mask=answer_mask)
 
-        # context and answer enc
-        answer_ids = context_ids * answer_mask
-        a_outputs = self.encoder(
-            input_ids=answer_ids,
-            attention_mask=answer_mask,
-            inputs_embeds=inputs_embeds,
-            head_mask=head_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=True,
-            return_dict=return_dict,
-        )
-
-        c_a_hidden_states = []
-        c_a_attentions = []
-        mask = torch.matmul(answer_mask.unsqueeze(2), context_mask.unsqueeze(1))
-        for i in range(self.config.num_layers):
-            c_a_hidden, c_a_attention = cal_attn(a_outputs[2][i], c_outputs[2][i], mask)
-            c_a_hidden_states.append(c_a_hidden)
-            if output_attentions:
-                c_a_attentions.append(c_a_attention)
-        # just use `c_outputs` attention as placeholder anw
         if not return_dict:
-            encoder_outputs = BaseModelOutput(last_hidden_state=c_a_hidden_states[-1],
-                                              hidden_states=tuple(c_a_hidden_states),
-                                              attentions=tuple(c_a_attention) if output_attentions else None)
+            encoder_outputs = BaseModelOutput(last_hidden_state=c_a_hidden_states,
+                                              hidden_states=None,
+                                              attentions=None)
         else:
-            encoder_outputs = (c_a_hidden_states[-1], tuple(c_a_hidden_states),
-                               tuple(c_a_attention) if output_attentions else None)
+            encoder_outputs = (c_a_hidden_states, None, None)
 
         hidden_states = encoder_outputs[0]
 
@@ -172,12 +161,12 @@ class CustomT5ForConditionalGeneration(T5ForConditionalGeneration):
 
         # Decode
         decoder_outputs = self.decoder(
-            input_ids=question_ids,
-            attention_mask=question_mask,
+            input_ids=question_ids, # CUSTOM: decode `question_ids`
+            attention_mask=question_mask, # CUSTOM: use `question_mask`
             inputs_embeds=None,  # CUSTOM: set to none, since we dont need to use this
             past_key_values=past_key_values,
             encoder_hidden_states=hidden_states,
-            encoder_attention_mask=context_mask,
+            encoder_attention_mask=context_mask, # CUSTOM: set to `context_mask`
             head_mask=decoder_head_mask,
             cross_attn_head_mask=cross_attn_head_mask,
             use_cache=use_cache,
@@ -207,14 +196,13 @@ class CustomT5ForConditionalGeneration(T5ForConditionalGeneration):
         # copy logits
         # context-question attention
         mask = torch.matmul(question_mask.unsqueeze(2), context_mask.unsqueeze(1))
-        _, attn_logits = cal_attn(sequence_output, c_a_hidden_states[-1], mask)
+        _, attn_logits = cal_attn(sequence_output, c_a_hidden_states, mask)
 
         bq = batch_size * max_q_len
         context_ids = context_ids.unsqueeze(1).repeat(
             1, max_q_len, 1).view(bq, -1).contiguous()
         attn_logits = attn_logits.view(bq, -1).contiguous()
-        copy_logits = torch.zeros(bq, self.ntokens).to(context_ids.device)
-        copy_logits = copy_logits - 10000.0
+        copy_logits = torch.zeros(bq, self.ntokens).to(context_ids.device) - 10000.0
         copy_logits, _ = scatter_max(attn_logits, context_ids, out=copy_logits)
         copy_logits = copy_logits.masked_fill(copy_logits == -10000.0, 0)
         copy_logits = copy_logits.view(batch_size, max_q_len, -1).contiguous()
@@ -249,14 +237,3 @@ class CustomT5ForConditionalGeneration(T5ForConditionalGeneration):
         )
         return out
 
-    def build_past(self, z):
-        projection = self.memory_projection(z)
-        cross_attn = projection.reshape(
-            self.config.num_decoder_layers,
-            projection.shape[0],
-            self.config.num_heads,
-            1,
-            self.embed_size_per_head,
-        )
-        past_key_values = tuple((ca, ca) for ca in cross_attn)
-        return past_key_values

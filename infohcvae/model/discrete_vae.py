@@ -44,11 +44,13 @@ class DiscreteVAE(pl.LightningModule):
                                                   pooling_strategy=args.pooling_strategy,
                                                   num_enc_finetune_layers=enc_finetune_nlayers)
 
-        self.answer_decoder = AnswerDecoder(padding_idx, nzqdim, nzadim, nza_values,
+        self.answer_decoder = AnswerDecoder(padding_idx, nzadim, nza_values,
                                             base_model=base_model, n_dec_finetune_layers=dec_a_finetune_nlayers)
 
-        self.question_decoder = QuestionDecoder(sos_id, eos_id, padding_idx,
-                                                nzqdim, dec_q_nlayers, max_q_len)
+        self.question_decoder = QuestionDecoder(sos_id, eos_id, padding_idx, nzqdim, nzadim, nza_values,
+                                                c_a_encoder=self.posterior_encoder.get_context_answer_t5_encoder(),
+                                                num_dec_finetune_layers=dec_q_nlayers, base_model=base_model,
+                                                max_q_len=max_q_len)
 
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=padding_idx)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=args.max_c_len)
@@ -70,12 +72,12 @@ class DiscreteVAE(pl.LightningModule):
 
     def forward(self, c_ids, q_ids, a_mask):
         zq_mu, zq_logvar, zq, za_logits, za \
-            = self.posterior_encoder(c_ids, q_ids, a_mask)
+            = self.posterior_encoder(c_ids, q_ids, a_mask, return_distribution_parameters=True)
 
         # answer decoding
-        start_logits, end_logits = self.answer_decoder(c_ids, za, zq)
+        start_logits, end_logits = self.answer_decoder(c_ids, za)
         # question decoding
-        q_logits, (q_mean_emb, a_mean_emb) = self.question_decoder(c_ids, q_ids, a_mask, zq)
+        q_logits, (q_mean_emb, a_mean_emb) = self.question_decoder(c_ids, q_ids, a_mask, zq, return_qa_mean_embeds=True)
 
         return dict({ "latent_codes": (zq_mu, zq_logvar, zq, za_logits, za),
                     "answer_rec": (start_logits, end_logits),
@@ -134,7 +136,7 @@ class DiscreteVAE(pl.LightningModule):
         return total_loss
 
     def generate_qa(self, c_ids, zq=None, za=None):
-        a_mask, start_positions, end_positions = self.answer_decoder.generate(c_ids, za, zq)
+        a_mask, start_positions, end_positions = self.answer_decoder.generate(c_ids, za)
         q_ids = self.question_decoder.generate(c_ids, a_mask, zq)
         return q_ids, start_positions, end_positions
 
@@ -145,14 +147,14 @@ class DiscreteVAE(pl.LightningModule):
                 c_ids, zq=zq, za=za)
         return q_ids, start_positions, end_positions, zq
 
-    def return_answer_logits(self, c_ids, zq=None, za=None):
-        start_logits, end_logits = self.answer_decoder(c_ids, za, zq)
+    def return_answer_logits(self, c_ids, za=None):
+        start_logits, end_logits = self.answer_decoder(c_ids, za)
         return start_logits, end_logits
 
     def generate_answer_logits_from_posterior(self, c_ids, q_ids, a_mask):
         with torch.no_grad():
             zq, za = self.posterior_encoder(c_ids, q_ids, a_mask)
-            start_logits, end_logits = self.return_answer_logits(c_ids, zq=zq, za=za)
+            start_logits, end_logits = self.return_answer_logits(c_ids, za=za)
         return start_logits, end_logits
 
     def generate_qa_from_prior(self, c_ids):
