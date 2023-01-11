@@ -503,6 +503,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 input_mask.append(0)
                 segment_ids.append(0)
 
+            print(len(input_ids))
+            print(max_tokens_for_doc)
             assert len(input_ids) == max_tokens_for_doc
             assert len(input_mask) == max_tokens_for_doc
             assert len(segment_ids) == max_tokens_for_doc
