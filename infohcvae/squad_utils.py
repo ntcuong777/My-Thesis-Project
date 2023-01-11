@@ -498,14 +498,14 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             input_mask = [1] * len(input_ids)
 
             # Zero-pad up to the sequence length.
-            while len(input_ids) < max_context_length:
+            while len(input_ids) < max_tokens_for_doc:
                 input_ids.append(0)
                 input_mask.append(0)
                 segment_ids.append(0)
 
-            assert len(input_ids) == max_context_length
-            assert len(input_mask) == max_context_length
-            assert len(segment_ids) == max_context_length
+            assert len(input_ids) == max_tokens_for_doc
+            assert len(input_mask) == max_tokens_for_doc
+            assert len(segment_ids) == max_tokens_for_doc
 
             start_position = None
             end_position = None
