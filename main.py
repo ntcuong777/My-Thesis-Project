@@ -5,20 +5,20 @@ import random
 import numpy as np
 import torch
 from tqdm import tqdm, trange
-from transformers import MobileBertTokenizer
+from transformers import T5Tokenizer
 
 from evaluation.training_eval import eval_vae
 from infohcvae.trainer import VAETrainer
-from infohcvae.utils import batch_to_device, get_squad_data_loader, generate_testing_dataset_for_model_choosing
+from infohcvae.utils import (
+    batch_to_device, get_squad_data_loader,
+    generate_testing_dataset_for_model_choosing,
+)
 
 
 def evaluate_model(epoch, args, trainer, eval_data, best_bleu, best_em, best_f1):
-    # posterior_metrics, prior_metrics, bleu = eval_vae(args, trainer, eval_data)
     posterior_metrics, bleu = eval_vae(args, trainer, eval_data)
     posterior_f1 = posterior_metrics["f1"]
     posterior_em = posterior_metrics["exact_match"]
-    # prior_f1 = prior_metrics["f1"]
-    # prior_em = prior_metrics["exact_match"]
     bleu = bleu * 100
 
     if posterior_em > best_em:
@@ -30,19 +30,11 @@ def evaluate_model(epoch, args, trainer, eval_data, best_bleu, best_em, best_f1)
         best_bleu = bleu
         trainer.save(args.best_model_dir, save_mode="best_bleu")
 
-    # with open(os.path.join(args.model_dir, "metrics.json"), "wt") as f:
-    #     import json
-    #     json.dump({ "latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
-    #                 "latest_pri_em": prior_em, "latest_pri_f1": prior_f1,
-    #                 "best_bleu": best_bleu, "best_em": best_em, "best_f1": best_f1 }, f, indent=4)
     with open(os.path.join(args.model_dir, "metrics.json"), "wt") as f:
         import json
         json.dump({ "latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
                     "best_bleu": best_bleu, "best_em": best_em, "best_f1": best_f1 }, f, indent=4)
 
-    # log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f} " + \
-    #           "PRI_EM : {:02.2f} PRI_F1 : {:02.2f}"
-    # log_str = log_str.format(epoch, bleu, posterior_em, posterior_f1, prior_em, prior_f1)
     log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
     log_str = log_str.format(epoch, bleu, posterior_em, posterior_f1)
     print(log_str)
@@ -53,9 +45,8 @@ def evaluate_model(epoch, args, trainer, eval_data, best_bleu, best_em, best_f1)
 
 
 def main(args):
-    tokenizer = MobileBertTokenizer.from_pretrained(args.huggingface_model)
+    tokenizer = T5Tokenizer.from_pretrained(args.huggingface_model)
 
-    # TODO: fix from the data preparation part for this file
     train_data, eval_data = None, None
     if args.load_saved_dataloader:
         train_data = torch.load(os.path.join(args.dataloader_dir, "train_data.pt"))
@@ -84,7 +75,6 @@ def main(args):
         eval_data = test_eval_data
 
     train_loader, _, _ = train_data
-    current_lr = args.lr
     best_bleu, best_em, best_f1 = 0.0, 0.0, 0.0
     first_run = True
 
@@ -103,32 +93,11 @@ def main(args):
         if epoch+1 < args.resume_epochs:
             continue
 
-        if not args.is_test_run and args.optimizer == "manual":
-            if epoch + 1 >= 31:
-                current_lr = current_lr / 10
-                trainer.change_optimizer(args, optimizer="sgd", lr=current_lr, weight_decay=args.weight_decay)
-            elif epoch + 1 >= 21:
-                # reduce by 10 at epoch > 20 = 0.00001 = 1e-5
-                current_lr = current_lr / 2
-                trainer.change_optimizer(args, optimizer="sgd", lr=current_lr, weight_decay=args.weight_decay)
-            elif epoch+1 >= 15:
-                # reduce the LR by 5 times at epoch 15 = 0.0001 = 1e-4
-                current_lr = current_lr / 2
-                trainer.change_optimizer(args, optimizer="sgd", lr=current_lr, weight_decay=args.weight_decay)
-            elif epoch+1 >= 11:
-                # change optimizer to sgd
-                trainer.change_optimizer(args, optimizer="sgd", lr=current_lr, weight_decay=args.weight_decay)
-            elif epoch+1 >= 5:
-                # boost grad descent by reset Adam with LR / 2 = 0.0005 = 5e-4
-                current_lr = current_lr / 2
-                trainer.change_optimizer(args, optimizer="adam", lr=current_lr, weight_decay=args.weight_decay)
-
         trainer.reset_cnt_steps()
         for batch in tqdm(train_loader, leave=False, position=1):
-            input_ids, c_ids, input_qa_ids, context_a_ids, \
-            start_positions, end_positions, noq_start_positions, noq_end_positions \
+            q_ids, c_ids, a_mask, start_positions, end_positions \
                 = batch_to_device(batch, args.device)
-            trainer.train(input_ids, a_ids, start_positions, end_positions)
+            trainer.train(c_ids, q_ids, a_mask, start_positions, end_positions)
 
             if epoch == 0 and first_run: # first iteration
                 trainer.print_log() # get first run loss to verify correctness

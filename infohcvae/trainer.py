@@ -37,11 +37,11 @@ class VAETrainer(object):
         if infomax_loss > 1.0:
             self.vae.reduce_infomax_weight_by_10()
 
-    def train(self, input_ids, a_ids, start_positions, end_positions):
+    def train(self, c_ids, q_ids, a_mask, start_positions, end_positions):
         self.vae.train()
 
         # Forward
-        return_dict = self.vae(input_ids, a_ids, start_positions, end_positions)
+        return_dict = self.vae(c_ids, q_ids, a_mask, start_positions, end_positions)
 
         # Backward
         self.optimizer.zero_grad()

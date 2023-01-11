@@ -19,6 +19,7 @@ class SquadExample(object):
        A single training/test example for the Squad dataset.
        For examples without an answer, the start and end position are -1.
        """
+
     def __init__(self,
                  qas_id,
                  question_text,
@@ -52,9 +53,9 @@ class SquadExample(object):
         return s
 
 
-
 class InputFeatures(object):
     """A single set of features of data."""
+
     def __init__(self,
                  unique_id,
                  example_index,
@@ -442,7 +443,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 example.orig_answer_text)
 
         # The -3 accounts for [CLS], [SEP] and [SEP]
-        max_tokens_for_doc = max_context_length - len(query_tokens) - 3
+        max_tokens_for_doc = max_context_length + max_query_length - 3
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -597,8 +598,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                     q_ids=q_ids,
                     q_tokens=q_tokens,
                     answer_text=example.orig_answer_text,
-                    tag_ids=(input_tag_ids, context_tag_ids),
-                    segment_ids=(input_segment_ids, context_segment_ids),
+                    tag_ids=context_tag_ids,
+                    segment_ids=context_segment_ids,
                     noq_start_position=noq_start_position,
                     noq_end_position=noq_end_position,
                     start_position=start_position,
@@ -607,7 +608,6 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             unique_id += 1
 
     return features
-
 
 
 def read_examples(input_file, debug=False, is_training=False):
@@ -816,7 +816,7 @@ def _check_is_max_context(doc_spans, cur_span_index, position):
         num_left_context = position - doc_span.start
         num_right_context = end - position
         score = min(num_left_context, num_right_context) + \
-            0.01 * doc_span.length
+                0.01 * doc_span.length
         if best_score is None or score > best_score:
             best_score = score
             best_span_index = span_index
@@ -864,7 +864,7 @@ def extract_predictions_to_dict(all_examples, all_features, all_results, n_best_
             # if we could have irrelevant answers, get the min score of irrelevant
             if version_2_with_negative:
                 feature_null_score = result.start_logits[0] + \
-                    result.end_logits[0]
+                                     result.end_logits[0]
                 if feature_null_score < score_null:
                     score_null = feature_null_score
                     min_null_feature_index = feature_index
@@ -940,11 +940,11 @@ def extract_predictions_to_dict(all_examples, all_features, all_results, n_best_
             feature = features[pred.feature_index]
             if pred.start_index > 0:  # this is a non-null prediction
                 tok_tokens = feature.tokens[pred.start_index:(
-                    pred.end_index + 1)]
+                        pred.end_index + 1)]
                 orig_doc_start = feature.token_to_orig_map[pred.start_index]
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
                 orig_tokens = example.doc_tokens[orig_doc_start:(
-                    orig_doc_end + 1)]
+                        orig_doc_end + 1)]
                 tok_text = " ".join(tok_tokens)
 
                 # De-tokenize WordPieces that have been split off.
@@ -1202,7 +1202,7 @@ def write_answer_predictions(all_examples, all_features, all_results, n_best_siz
             # if we could have irrelevant answers, get the min score of irrelevant
             if version_2_with_negative:
                 feature_null_score = result.start_logits[0] + \
-                    result.end_logits[0]
+                                     result.end_logits[0]
                 if feature_null_score < score_null:
                     score_null = feature_null_score
                     min_null_feature_index = feature_index
@@ -1265,11 +1265,11 @@ def write_answer_predictions(all_examples, all_features, all_results, n_best_siz
             feature = features[pred.feature_index]
             if pred.start_index > 0:  # this is a non-null prediction
                 tok_tokens = feature.tokens[pred.start_index:(
-                    pred.end_index + 1)]
+                        pred.end_index + 1)]
                 orig_doc_start = feature.token_to_orig_map[pred.start_index]
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
                 orig_tokens = example.doc_tokens[orig_doc_start:(
-                    orig_doc_end + 1)]
+                        orig_doc_end + 1)]
                 tok_text = " ".join(tok_tokens)
 
                 # De-tokenize WordPieces that have been split off.
