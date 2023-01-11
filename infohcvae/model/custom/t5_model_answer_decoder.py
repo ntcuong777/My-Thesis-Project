@@ -26,11 +26,7 @@ class T5ModelAnswerDecoder(T5Model):
             bias=False,
         )
 
-    def __post_init__(self):
         """ We not gonna use the encoder """
-        self.__remove_encoder()
-
-    def __remove_encoder(self):
         self.encoder = None
 
     def build_past(self, za):

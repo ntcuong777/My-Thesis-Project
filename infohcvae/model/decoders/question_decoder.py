@@ -7,14 +7,14 @@ from infohcvae.model.custom import CustomT5ForQuestionGeneration
 
 
 class QuestionDecoder(nn.Module):
-    def __init__(self, sos_id, eos_id, pad_id, nzqdim, nzadim, nza_values, c_a_encoder,
+    def __init__(self, sos_id, eos_id, pad_id, base_encoder, nzqdim,
                  num_dec_finetune_layers=2, base_model="t5-base", max_q_len=64):
         super(QuestionDecoder, self).__init__()
 
-        self.t5_generator = CustomT5ForQuestionGeneration.from_pretrained(base_model, nzqdim=nzqdim,
-                                                                          n_finetune_layers=num_dec_finetune_layers)
         # Re-use the encoder of posterior network
-        self.t5_generator.set_custom_encoder(c_a_encoder)
+        self.t5_generator = CustomT5ForQuestionGeneration.from_pretrained(base_model,
+                                                                          custom_encoder=base_encoder, nzqdim=nzqdim,
+                                                                          n_finetune_layers=num_dec_finetune_layers)
 
         self.sos_id = sos_id
         self.eos_id = eos_id
@@ -43,14 +43,14 @@ class QuestionDecoder(nn.Module):
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
         # context & question enc-dec
-        # TODO: continue check the implementation of the generator later
         q_outputs = self.t5_generator(sampled_zq=zq, question_ids=q_ids, question_mask=q_mask,
                                       context_ids=c_ids, context_mask=c_mask, answer_mask=a_mask)
-        c_hidden_states = q_outputs[6]
         logits = q_outputs[1]
-        q_hidden_states = q_outputs[3]
 
         if return_qa_mean_embeds is not None and return_qa_mean_embeds:
+            c_hidden_states = q_outputs[6]
+            q_hidden_states = q_outputs[3]
+
             # mutual information btw averged answer and question representations
             a_emb = c_hidden_states * a_mask.float().unsqueeze(2)
             a_mean_emb = torch.sum(a_emb, dim=1) / a_mask.sum(1).unsqueeze(1).float()
@@ -142,6 +142,7 @@ class QuestionDecoder(nn.Module):
                                                context_mask=c_mask, answer_mask=a_mask, use_cache=True)
             logits = outputs[1]
             past_key_values = outputs[2]
+
             logits = logits.squeeze(1)
             logits = self.top_k_top_p_filtering(logits, 2, 0.8)
             probs = F.softmax(logits, dim=-1)

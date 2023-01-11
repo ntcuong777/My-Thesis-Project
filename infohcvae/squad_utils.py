@@ -824,10 +824,10 @@ def _check_is_max_context(doc_spans, cur_span_index, position):
     return cur_span_index == best_span_index
 
 
-def write_predictions(all_examples, all_features, all_results, n_best_size,
-                      max_answer_length, do_lower_case, output_prediction_file,
-                      verbose_logging, version_2_with_negative, null_score_diff_threshold,
-                      noq_position=False):
+def extract_predictions_to_dict(all_examples, all_features, all_results, n_best_size,
+                                max_answer_length, do_lower_case, verbose_logging,
+                                version_2_with_negative, null_score_diff_threshold,
+                                noq_position=False):
     """Write final predictions to the json file and log-odds of null if needed."""
     # logger.info("Writing predictions to: %s" % (output_prediction_file))
     # logger.info("Writing nbest to: %s" % (output_nbest_file))
@@ -1026,8 +1026,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
             else:
                 all_predictions[example.qas_id] = best_non_null_entry.text
             all_nbest_json[example.qas_id] = nbest_json
-    with open(output_prediction_file, "w") as writer:
-        writer.write(json.dumps(all_predictions, indent=4) + "\n")
+
+    return all_predictions
 
 
 def get_final_text(pred_text, orig_text, do_lower_case, verbose_logging=False):

@@ -5,7 +5,7 @@ from transformers import MobileBertTokenizer
 from tqdm import tqdm
 
 from qgevalcap.eval import eval_qg
-from infohcvae.squad_utils import evaluate, write_predictions
+from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from infohcvae.utils import batch_to_device
 
 def to_string(index, tokenizer):
@@ -104,22 +104,16 @@ def eval_vae(args, trainer, eval_data):
             #                         start_logits=prior_start_logits,
             #                         end_logits=prior_end_logits))
 
+    posterior_predictions = extract_predictions_to_dict(eval_examples, eval_features, posterior_qa_results, n_best_size=20,
+                                max_answer_length=30, do_lower_case=True,
+                                verbose_logging=False,
+                                version_2_with_negative=False,
+                                null_score_diff_threshold=0,
+                                noq_position=True)
+
     posterior_out_pred_file = os.path.join(args.model_dir, "posterior_pred.json")
-    # prior_out_pred_file = os.path.join(args.model_dir, "prior_pred.json")
-    write_predictions(eval_examples, eval_features, posterior_qa_results, n_best_size=20,
-                      max_answer_length=30, do_lower_case=True,
-                      output_prediction_file=posterior_out_pred_file,
-                      verbose_logging=False,
-                      version_2_with_negative=False,
-                      null_score_diff_threshold=0,
-                      noq_position=True)
-    # write_predictions(eval_examples, eval_features, prior_qa_result, n_best_size=20,
-    #                   max_answer_length=30, do_lower_case=True,
-    #                   output_prediction_file=prior_out_pred_file,
-    #                   verbose_logging=False,
-    #                   version_2_with_negative=False,
-    #                   null_score_diff_threshold=0,
-    #                   noq_position=True)
+    with open(posterior_out_pred_file, "w") as f:
+        json.dump(posterior_predictions, f, indent=4, ensure_ascii=True)
 
     with open(args.dev_dir) as f:
         dataset_json = json.load(f)

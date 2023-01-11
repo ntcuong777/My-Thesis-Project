@@ -1,2 +1,1 @@
-from .posterior_encoder import PosteriorEncoder
-from .t5_context_answer_encoder import T5ContextAnswerEncoder
+from .posterior_encoder import PosteriorQAEncoder

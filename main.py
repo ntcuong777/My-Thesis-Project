@@ -7,7 +7,7 @@ import torch
 from tqdm import tqdm, trange
 from transformers import MobileBertTokenizer
 
-from eval import eval_vae
+from evaluation.training_eval import eval_vae
 from infohcvae.trainer import VAETrainer
 from infohcvae.utils import batch_to_device, get_squad_data_loader, generate_testing_dataset_for_model_choosing
 
@@ -176,9 +176,9 @@ if __name__ == "__main__":
     parser.add_argument("--clip", default=5.0, type=float, help="max grad norm")
 
     parser.add_argument("--huggingface_model", default='google/mobilebert-uncased', type=str)
-    parser.add_argument('--enc_finetune_nlayers', type=int, default=1)
-    parser.add_argument('--dec_a_finetune_nlayers', type=int, default=1)
-    parser.add_argument('--dec_q_nlayers', type=int, default=2)
+    parser.add_argument('--enc_finetune_nlayers', type=int, default=3)
+    parser.add_argument('--dec_a_finetune_nlayers', type=int, default=3)
+    parser.add_argument('--dec_q_finetune_nlayers', type=int, default=2)
     parser.add_argument('--nzqdim', type=int, default=64)
     parser.add_argument('--nzadim', type=int, default=20)
     parser.add_argument('--nza_values', type=int, default=10)

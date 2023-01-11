@@ -11,7 +11,7 @@ from transformers.modeling_outputs import (
     BaseModelOutput,
 )
 from infohcvae.model.model_utils import cal_attn
-from infohcvae.model.encoders import T5ContextAnswerEncoder
+from infohcvae.model.custom import CustomT5Encoder
 
 # Warning message for FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
 __HEAD_MASK_WARNING_MSG = """
@@ -23,7 +23,7 @@ num_heads)`.
 
 
 class CustomT5ForQuestionGeneration(T5ForConditionalGeneration):
-    def __init__(self, config: T5Config, nzqdim, n_finetune_layers, dropout=0.3):
+    def __init__(self, config: T5Config, custom_encoder: CustomT5Encoder, nzqdim, n_finetune_layers, dropout=0.3):
         super().__init__(config)
 
         self.config = config
@@ -34,10 +34,16 @@ class CustomT5ForQuestionGeneration(T5ForConditionalGeneration):
             param.requires_grad = False
         # Only some top layers of encoder & decoders are for fine-tuning
         for idx in range(config.num_layers - n_finetune_layers, config.num_layers):
-            for param in self.encoder.block[idx].parameters():
-                param.requires_grad = True
             for param in self.decoder.block[idx].parameters():
                 param.requires_grad = True
+
+        # Freeze language modeling head
+        for param in self.lm_head.parameters():
+            param.requires_grad = False
+
+        # Change the T5Stack definition of `encoder` to the project's customed implementation
+        # for encoding context and answer
+        self.encoder = custom_encoder
 
         self.d_model = config.d_model
         self.ntokens = config.vocab_size
@@ -52,11 +58,6 @@ class CustomT5ForQuestionGeneration(T5ForConditionalGeneration):
         self.concat_linear = nn.Sequential(nn.Linear(2 * config.max_length, 2 * config.d_model),
                                            nn.Dropout(dropout),
                                            nn.Linear(2 * config.d_model, 2 * config.d_model))
-
-    def set_custom_encoder(self, custom_encoder: T5ContextAnswerEncoder):
-        # Change the T5Stack definition of `encoder` to the project's customed implementation
-        # for encoding context and answer
-        self.encoder = custom_encoder
 
     def build_past(self, zq):
         projection = self.memory_projection(zq)
@@ -117,7 +118,7 @@ class CustomT5ForQuestionGeneration(T5ForConditionalGeneration):
 
         # CUSTOM: Encode context & answer to have `encoder_outputs`
         # Convert encoder inputs in embeddings if needed
-        _, c_a_hidden_states = self.encoder(context_ids=context_ids, context_mask=context_mask, answer_mask=answer_mask)
+        c_a_hidden_states = self.encoder(context_ids=context_ids, context_mask=context_mask, answer_mask=answer_mask)
 
         if not return_dict:
             encoder_outputs = BaseModelOutput(last_hidden_state=c_a_hidden_states,
