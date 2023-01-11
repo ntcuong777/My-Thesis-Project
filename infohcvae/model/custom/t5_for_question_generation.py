@@ -5,13 +5,13 @@ import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 from torch_scatter import scatter_max
-from transformers import T5ForConditionalGeneration, T5Config, T5EncoderModel, T5Model
+from transformers import T5ForConditionalGeneration, T5Config
 from transformers.modeling_outputs import (
     Seq2SeqLMOutput,
     BaseModelOutput,
 )
 from infohcvae.model.model_utils import cal_attn
-from infohcvae.model.custom import CustomT5Encoder
+from .custom_t5_encoder import CustomT5Encoder
 
 # Warning message for FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
 __HEAD_MASK_WARNING_MSG = """
