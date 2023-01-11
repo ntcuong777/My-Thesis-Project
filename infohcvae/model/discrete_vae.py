@@ -16,7 +16,7 @@ from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
 from infohcvae.model.custom import CustomT5Encoder
 
 
-class DiscreteVAE(pl.LightningModule):
+class DiscreteVAE(nn.Module):
     def __init__(self, args):
         super(DiscreteVAE, self).__init__()
         self.tokenizer = T5Tokenizer.from_pretrained(args.huggingface_model)
