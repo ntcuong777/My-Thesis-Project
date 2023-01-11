@@ -2,7 +2,6 @@ import collections
 
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
 from transformers import T5Tokenizer, T5Config
 from infohcvae.model.encoders import PosteriorQAEncoder
 from infohcvae.model.decoders import QuestionDecoder, AnswerDecoder
