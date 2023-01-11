@@ -15,7 +15,6 @@ class VAETrainer(object):
 
         self.vae = DiscreteVAE(args).to(self.device)
         self.params = filter(lambda p: p.requires_grad, self.vae.parameters())
-        # self.params = self.vae.get_vae_params(lr=args.lr) + (self.vae.get_infomax_params(lr=args.lr/100) if args.lambda_z_info > 0 else [])
         if args.optimizer == "sgd":
             self.optimizer = optim.SGD(
                 self.params, lr=args.lr, momentum=0.9, nesterov=False, weight_decay=args.weight_decay)
