@@ -107,6 +107,10 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
 
     unique_id = 1000000000
 
+    cls_token = tokenizer.cls_token
+    sep_token = tokenizer.sep_token
+    pad_token = tokenizer.pad_token
+
     features = []
     for (example_index, example) in tqdm(enumerate(examples), total=len(examples)):
         query_tokens = tokenizer.tokenize(example.question_text)
@@ -139,8 +143,12 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 all_doc_tokens, tok_start_position, tok_end_position, tokenizer,
                 example.orig_answer_text)
 
-        # The -3 accounts for [CLS], [SEP] and [SEP]
-        max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
+        if cls_token is not None:
+            # The -3 accounts for [CLS], [SEP] and [SEP]
+            max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
+        else:
+            # The -2 accounts for [SEP] and [SEP]
+            max_tokens_for_doc = max_seq_length - len(query_tokens) - 2
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -163,16 +171,18 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
             token_to_orig_map = {}
             token_is_max_context = {}
             segment_ids = []
-            tokens.append("[CLS]")
-            segment_ids.append(0)
+            if cls_token is not None:
+                tokens.append(cls_token)
+                segment_ids.append(0)
             for token in query_tokens:
                 tokens.append(token)
                 segment_ids.append(0)
-            tokens.append("[SEP]")
+            tokens.append(sep_token)
             segment_ids.append(0)
 
             context_tokens = list()
-            context_tokens.append("[CLS]")
+            if cls_token is not None:
+                context_tokens.append(cls_token)
             for i in range(doc_span.length):
                 split_token_index = doc_span.start + i
                 token_to_orig_map[len(
@@ -184,9 +194,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 tokens.append(all_doc_tokens[split_token_index])
                 segment_ids.append(1)
                 context_tokens.append(all_doc_tokens[split_token_index])
-            tokens.append("[SEP]")
+            tokens.append(sep_token)
             segment_ids.append(1)
-            context_tokens.append("[SEP]")
+            context_tokens.append(sep_token)
 
             input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
@@ -196,9 +206,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
 
             # Zero-pad up to the sequence length.
             while len(input_ids) < max_seq_length:
-                input_ids.append(0)
-                input_mask.append(0)
-                segment_ids.append(0)
+                input_ids.append(pad_token)
+                input_mask.append(pad_token)
+                segment_ids.append(pad_token)
 
             input_ids = np.asarray(input_ids, dtype=np.int32)
             input_mask = np.asarray(input_mask, dtype=np.uint8)
@@ -236,8 +246,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 end_position = 0
             c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
 
+            # Zero padding up to max length
             while len(c_ids) < max_seq_length:
-                c_ids.append(0)
+                c_ids.append(pad_token)
             c_ids = np.asarray(c_ids, dtype=np.int32)
 
             features.append(
@@ -275,6 +286,10 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
 
     unique_id = 1000000000
 
+    cls_token = tokenizer.cls_token
+    sep_token = tokenizer.sep_token
+    pad_token = tokenizer.pad_token
+
     features = []
     for example in tqdm(examples, total=len(examples)):
         query_tokens = tokenizer.tokenize(example.question_text)
@@ -307,8 +322,11 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
                 all_doc_tokens, tok_start_position, tok_end_position, tokenizer,
                 example.orig_answer_text)
 
-        # The -3 accounts for [CLS], [SEP] and [SEP]
-        max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
+        if cls_token is not None:
+            # The -3 accounts for [CLS], [SEP] and [SEP]
+            max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
+        else:
+            max_tokens_for_doc = max_seq_length - len(query_tokens) - 2
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -331,15 +349,17 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
             token_to_orig_map = {}
             token_is_max_context = {}
             segment_ids = []
-            tokens.append("[CLS]")
-            segment_ids.append(0)
+            if cls_token is not None:
+                tokens.append(cls_token)
+                segment_ids.append(0)
             for token in query_tokens:
                 tokens.append(token)
                 segment_ids.append(0)
-            tokens.append("[SEP]")
+            tokens.append(sep_token)
 
             context_tokens = list()
-            context_tokens.append("[CLS]")
+            if cls_token is not None:
+                context_tokens.append(cls_token)
             for i in range(doc_span.length):
                 split_token_index = doc_span.start + i
                 token_to_orig_map[len(
@@ -351,8 +371,8 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
                 tokens.append(all_doc_tokens[split_token_index])
                 context_tokens.append(all_doc_tokens[split_token_index])
 
-            tokens.append("[SEP]")
-            context_tokens.append("[SEP]")
+            tokens.append(sep_token)
+            context_tokens.append(sep_token)
 
             if is_training and not example.is_impossible:
                 # For training, if our document chunk does not contain an annotation
@@ -368,8 +388,9 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
 
             c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
 
+            # Zero padding
             while len(c_ids) < max_seq_length:
-                c_ids.append(0)
+                c_ids.append(pad_token)
 
             features.append(
                 InputFeatures(
@@ -410,6 +431,10 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
 
     unique_id = 1000000000
 
+    cls_token = tokenizer.cls_token
+    sep_token = tokenizer.sep_token
+    pad_token = tokenizer.pad_token
+
     features = []
     for (example_index, example) in tqdm(enumerate(examples), total=len(examples)):
         query_tokens = tokenizer.tokenize(example.question_text)
@@ -442,8 +467,12 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 all_doc_tokens, tok_start_position, tok_end_position, tokenizer,
                 example.orig_answer_text)
 
-        # The -3 accounts for [CLS], [SEP] and [SEP]
-        max_tokens_for_doc = max_context_length + max_query_length - 3
+        if cls_token is not None:
+            # The -3 accounts for [CLS], [SEP] and [SEP]
+            max_tokens_for_doc = max_context_length + max_query_length - 3
+        else:
+            # The -3 accounts for [SEP] and [SEP]
+            max_tokens_for_doc = max_context_length + max_query_length - 2
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -466,20 +495,21 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             token_to_orig_map = {}
             token_is_max_context = {}
             segment_ids = []
-            tokens.append("[CLS]")
-            segment_ids.append(0)
+            if cls_token is not None:
+                tokens.append(cls_token)
+                segment_ids.append(0)
             for token in query_tokens:
                 tokens.append(token)
                 segment_ids.append(0)
-            tokens.append("[SEP]")
+            tokens.append(sep_token)
             segment_ids.append(0)
 
             context_tokens = list()
-            context_tokens.append("[CLS]")
+            if cls_token is not None:
+                context_tokens.append(cls_token)
             for i in range(doc_span.length):
                 split_token_index = doc_span.start + i
-                token_to_orig_map[len(
-                    tokens)] = tok_to_orig_index[split_token_index]
+                token_to_orig_map[len(tokens)] = tok_to_orig_index[split_token_index]
 
                 is_max_context = _check_is_max_context(doc_spans, doc_span_index,
                                                        split_token_index)
@@ -487,9 +517,9 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 tokens.append(all_doc_tokens[split_token_index])
                 segment_ids.append(1)
                 context_tokens.append(all_doc_tokens[split_token_index])
-            tokens.append("[SEP]")
+            tokens.append(sep_token)
             segment_ids.append(1)
-            context_tokens.append("[SEP]")
+            context_tokens.append(sep_token)
 
             input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
@@ -499,12 +529,10 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
 
             # Zero-pad up to the sequence length.
             while len(input_ids) < max_tokens_for_doc:
-                input_ids.append(0)
-                input_mask.append(0)
-                segment_ids.append(0)
+                input_ids.append(pad_token)
+                input_mask.append(pad_token)
+                segment_ids.append(pad_token)
 
-            print(len(input_ids))
-            print(max_tokens_for_doc)
             assert len(input_ids) == max_tokens_for_doc
             assert len(input_mask) == max_tokens_for_doc
             assert len(segment_ids) == max_tokens_for_doc
@@ -546,17 +574,18 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 noq_start_position = 0
                 noq_end_position = 0
             q_tokens = deepcopy(query_tokens)[:max_query_length - 2]
-            q_tokens.insert(0, "[CLS]")
-            q_tokens.append("[SEP]")
+            if cls_token is not None:
+                q_tokens.insert(0, cls_token)
+            q_tokens.append(sep_token)
             q_ids = tokenizer.convert_tokens_to_ids(q_tokens)
             c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
 
             # pad up to maximum length
             while len(q_ids) < max_query_length:
-                q_ids.append(0)
+                q_ids.append(pad_token)
 
             while len(c_ids) < max_context_length:
-                c_ids.append(0)
+                c_ids.append(pad_token)
 
             context_segment_ids = [0] * len(c_ids)
             for answer_idx in range(noq_start_position, noq_end_position + 1):

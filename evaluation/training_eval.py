@@ -14,9 +14,9 @@ def to_string(index, tokenizer):
     tok_text = " ".join(tok_tokens)
 
     # De-tokenize WordPieces that have been split off.
-    tok_text = tok_text.replace("[PAD]", "")
-    tok_text = tok_text.replace("[SEP]", "")
-    tok_text = tok_text.replace("[CLS]", "")
+    tok_text = tok_text.replace(tokenizer.pad_token, "")
+    tok_text = tok_text.replace(tokenizer.sep_token, "")
+    # tok_text = tok_text.replace(tokenizer.cls_token, "")
     tok_text = tok_text.replace(" ##", "")
     tok_text = tok_text.replace("##", "")
 
