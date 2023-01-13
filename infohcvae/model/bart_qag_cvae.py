@@ -11,7 +11,7 @@ import torch.optim as optim
 import numpy as np
 import pytorch_lightning as pl
 from torch_scatter import scatter_max
-from transformers import MobileBertConfig, MobileBertTokenizer, EncoderDecoderModel, EncoderDecoderConfig
+from transformers import BartModel, BartConfig, BartTokenizer
 from infohcvae.model.model_utils import (
     return_attention_mask, cal_attn,
     gumbel_softmax, sample_gaussian,
@@ -26,7 +26,7 @@ from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
 
 
-class MobileBertQAGConditionalVae(pl.LightningModule):
+class BartQAGConditionalVae(pl.LightningModule):
     def __init__(self, args, dropout=0.3):
         super().__init__()
         self.save_hyperparameters()
@@ -39,7 +39,7 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
         self.lr = args.lr
         self.optimizer_algorithm = args.optimizer
 
-        # self.num_finetune_layers = args.num_finetune_layers
+        self.num_finetune_layers = args.num_finetune_layers
 
         self.nzqdim = nzqdim = args.nzqdim
         self.nzadim = nzadim = args.nzadim
@@ -55,76 +55,68 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
 
         """ Initialize model """
         base_model = args.base_model
-        mobilebert_config = MobileBertConfig.from_pretrained(base_model)
-        mobilebert_encdec_model = EncoderDecoderModel.from_encoder_decoder_pretrained(base_model, base_model)
+        self.config = config = BartConfig.from_pretrained(base_model)
+        bart_model = BartModel.from_pretrained(base_model)
 
-        self.hidden_size = hidden_size = mobilebert_config.hidden_size
-        self.num_hidden_layers = num_hidden_layers = mobilebert_config.num_hidden_layers
-        self.num_attention_heads = num_attention_heads = mobilebert_config.num_attention_heads
-
-        self.tokenizer = MobileBertTokenizer.from_pretrained(base_model)
+        self.tokenizer = BartTokenizer.from_pretrained(base_model)
         self.pad_token_id = self.tokenizer.pad_token_id
         self.sos_id = self.tokenizer.cls_token_id
         self.eos_id = self.tokenizer.sep_token_id
 
-        self.encoder = mobilebert_encdec_model.get_encoder()
-        self.answer_decoder = mobilebert_encdec_model.get_decoder()
-        self.question_decoder = deepcopy(self.answer_decoder)
+        self.encoder = bart_model.get_encoder()
+        self.answer_decoder = bart_model.get_decoder()
+        self.question_decoder = deepcopy(bart_model.get_decoder())
 
-        # # FREEZE BERT - Freeze transformer layers (except some top layers) of encoder & decoder
-        # # freeze encoder
-        # for i in range(config.num_hidden_layers - self.num_finetune_layers):
-        #     for param in self.encoder.layer[i].parameters():
-        #         param.requires_grad = False
-        # # freeze decoders
-        # for i in range(config.num_hidden_layers - self.num_finetune_layers):
-        #     # freeze answer decoder
-        #     for param in self.answer_decoder.layer[i].parameters():
-        #         param.requires_grad = False
-        #     # freeze question decoder
-        #     for param in self.question_decoder.layer[i].parameters():
-        #         param.requires_grad = False
+        # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
+        # freeze encoder
+        for i in range(config.encoder_layers - self.num_finetune_layers):
+            for param in self.encoder.layers[i].parameters():
+                param.requires_grad = False
+        # freeze decoders
+        for i in range(config.decoder_layers - self.num_finetune_layers):
+            # freeze answer decoder
+            for param in self.answer_decoder.layers[i].parameters():
+                param.requires_grad = False
+            # freeze question decoder
+            for param in self.question_decoder.layers[i].parameters():
+                param.requires_grad = False
 
         """ Encoder properties """
-        self.c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(2 * hidden_size, hidden_size, bias=False),
-                                                     nn.Mish(True),
-                                                     nn.Linear(hidden_size, hidden_size, bias=False),
+        self.c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(5 * config.d_model, config.d_model, bias=False),
                                                      nn.Mish(True))
-        self.q_c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(2 * hidden_size, hidden_size, bias=False),
-                                                       nn.Mish(True),
-                                                       nn.Linear(hidden_size, hidden_size, bias=False),
+        self.q_c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(5 * config.d_model, config.d_model, bias=False),
                                                        nn.Mish(True))
 
-        self.embed_size_per_head = hidden_size // num_attention_heads
+        self.embed_size_per_head = config.d_model // config.decoder_attention_heads
 
-        self.za_attention = nn.Linear(nzqdim, hidden_size, bias=False)
+        self.za_attention = nn.Linear(nzqdim, config.d_model, bias=False)
 
-        self.zq_mu_linear = nn.Linear(hidden_size, nzqdim, bias=False)
-        self.zq_logvar_linear = nn.Linear(hidden_size, nzqdim, bias=False)
-        self.za_linear = nn.Linear(hidden_size, nzadim * nza_values, bias=False)
+        self.zq_mu_linear = nn.Linear(config.d_model, nzqdim, bias=False)
+        self.zq_logvar_linear = nn.Linear(config.d_model, nzqdim, bias=False)
+        self.za_linear = nn.Linear(config.d_model, nzadim * nza_values, bias=False)
 
         """ Answer decoder properties """
         self.za_memory_projection = nn.Linear(
             nzadim * nza_values,
-            num_hidden_layers * num_attention_heads * self.embed_size_per_head,
+            config.decoder_layers * config.decoder_attention_heads * self.embed_size_per_head,
             bias=False,
         )
-        self.start_linear = nn.Linear(hidden_size, 1)
-        self.end_linear = nn.Linear(hidden_size, 1)
+        self.start_linear = nn.Linear(config.d_model, 1)
+        self.end_linear = nn.Linear(config.d_model, 1)
 
         """ Question decoder properties """
         self.zq_memory_projection = nn.Linear(
             nzqdim,
-            num_hidden_layers * num_attention_heads * self.embed_size_per_head,
+            config.decoder_layers * config.decoder_attention_heads * self.embed_size_per_head,
             bias=False,
         )
 
-        self.question_linear = nn.Linear(hidden_size, hidden_size)
-        self.concat_linear = nn.Sequential(nn.Linear(2 * hidden_size, 2 * hidden_size),
+        self.question_linear = nn.Linear(config.d_model, config.d_model)
+        self.concat_linear = nn.Sequential(nn.Linear(2 * config.max_length, 2 * config.d_model),
                                            nn.Dropout(dropout),
-                                           nn.Linear(2 * hidden_size, 2 * hidden_size))
+                                           nn.Linear(2 * config.d_model, 2 * config.d_model))
 
-        self.lm_head = nn.Linear(hidden_size, mobilebert_config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -137,7 +129,7 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
 
         # Define QA infomax model
         preprocessor = nn.Sigmoid()
-        qa_discriminator = nn.Bilinear(hidden_size, hidden_size, 1)
+        qa_discriminator = nn.Bilinear(config.d_model, config.d_model, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
 
@@ -148,9 +140,9 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
 
     @staticmethod
     def add_model_specific_args(parent_parser):
-        parser = parent_parser.add_argument_group("MobileBertQAGConditionalVae")
-        parser.add_argument("--base_model", default='google/mobilebert-uncased', type=str)
-        # parser.add_argument('--num_finetune_layers', type=int, default=2)
+        parser = parent_parser.add_argument_group("BartQAGConditionalVae")
+        parser.add_argument("--base_model", default='facebook/bart-base', type=str)
+        parser.add_argument('--num_finetune_layers', type=int, default=6)
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
@@ -185,9 +177,9 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
     def build_zq_past(self, zq):
         projection = self.zq_memory_projection(zq)
         cross_attn = projection.reshape(
-            self.num_hidden_layers,
+            self.config.decoder_layers,
             projection.shape[0],
-            self.num_attention_heads,
+            self.config.decoder_attention_heads,
             1,
             self.embed_size_per_head,
         )
@@ -202,9 +194,9 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
     def build_za_past(self, za):
         projection = self.za_memory_projection(za.view(-1, self.nzadim * self.nza_values))
         cross_attn = projection.reshape(
-            self.num_hidden_layers,
+            self.config.decoder_layers,
             projection.shape[0],
-            self.num_attention_heads,
+            self.config.decoder_attention_heads,
             1,
             self.embed_size_per_head,
         )
@@ -224,7 +216,11 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
         subspan_with_cls_mask[:, 0] = 1  # attentive to [CLS] token
         subspan_ids = input_ids * subspan_with_cls_mask
         subspan_hidden_states = self.encoder(input_ids=subspan_ids, attention_mask=subspan_with_cls_mask)[0]
-        answer_aggr_hidden_states = aggregator(torch.cat([hidden_states, subspan_hidden_states], dim=-1))
+        answer_aggr_hidden_states = aggregator(torch.cat([hidden_states + subspan_hidden_states,
+                                                          torch.abs(hidden_states - subspan_hidden_states),
+                                                          hidden_states * subspan_hidden_states,
+                                                          hidden_states,
+                                                          subspan_hidden_states], dim=-1))
         if return_input_hidden_states is not None and return_input_hidden_states:
             return hidden_states, answer_aggr_hidden_states
         else:
@@ -256,7 +252,19 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
         za_past_key_values = self.build_za_past(za)
 
         answer_decoder_ouputs = self.answer_decoder(
-            input_ids=c_ids, attention_mask=c_mask, past_key_values=za_past_key_values)
+            input_ids=c_ids,
+            attention_mask=c_mask,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            head_mask=None,
+            cross_attn_head_mask=None,
+            past_key_values=za_past_key_values,
+            inputs_embeds=None,
+            use_cache=False,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+        )
         answer_out_hidden_states = answer_decoder_ouputs[0]
 
         start_logits = self.start_linear(answer_out_hidden_states).squeeze(-1)
@@ -297,10 +305,16 @@ class MobileBertQAGConditionalVae(pl.LightningModule):
         question_decoder_outputs = self.question_decoder(
             input_ids=q_ids,
             attention_mask=q_mask,
+            inputs_embeds=None,
             past_key_values=past_key_values,
             encoder_hidden_states=c_a_hidden_states,
             encoder_attention_mask=c_mask,
-            use_cache=use_cache
+            head_mask=None,
+            cross_attn_head_mask=None,
+            use_cache=use_cache,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
         )
         question_out_hidden_states = question_decoder_outputs[0]
 
