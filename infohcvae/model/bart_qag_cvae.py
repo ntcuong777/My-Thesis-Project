@@ -81,18 +81,6 @@ class BartQAGConditionalVae(pl.LightningModule):
             for param in self.question_decoder.layers[i].parameters():
                 param.requires_grad = False
 
-        # CUSTOM FINETUNE - Only unfreeze some top transformer layers
-        # unfreeze top layers of encoder
-        for i in range(config.encoder_layers - self.num_finetune_layers, config.encoder_layers):
-            for param in self.encoder.layers[i].parameters():
-                param.requires_grad = True
-        # unfreeze top layers of answer & question decoder
-        for i in range(config.decoder_layers - self.num_finetune_layers, config.decoder_layers):
-            for param in self.answer_decoder.layers[i].parameters():
-                param.requires_grad = True
-            for param in self.question_decoder.layers[i].parameters():
-                param.requires_grad = True
-
         """ Encoder properties """
         self.c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(5 * config.d_model, config.d_model, bias=False),
                                                      nn.Mish(True))
