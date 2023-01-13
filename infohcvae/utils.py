@@ -67,7 +67,7 @@ def get_squad_data_loader(tokenizer, file, shuffle, is_train_set, args):
                              to_device=args.device)
     data_loader = DataLoader(all_data, args.batch_size, shuffle=shuffle)
 
-    return data_loader
+    return data_loader, all_data
 
 
 def get_harv_data_loader(tokenizer, file, shuffle, ratio, args):

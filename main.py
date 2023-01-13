@@ -7,6 +7,7 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
+from torch.utils.data.dataloader import DataLoader
 from transformers import BartTokenizer
 
 from infohcvae.model.bart_qag_cvae import BartQAGConditionalVae
@@ -24,10 +25,12 @@ def main(run_args):
     if run_args.load_saved_dataloader:
         train_data = torch.load(os.path.join(run_args.dataloader_dir, "train_data.pt"))
         eval_data = torch.load(os.path.join(run_args.dataloader_dir, "eval_data.pt"))
+        train_dataloader = DataLoader(train_data, args.batch_size, shuffle=True)
+        eval_dataloader = DataLoader(eval_data, args.batch_size, shuffle=True)
     else:
-        train_data = get_squad_data_loader(tokenizer, run_args.train_dir,
+        train_dataloader, train_data = get_squad_data_loader(tokenizer, run_args.train_dir,
                                            shuffle=True, is_train_set=True, args=run_args)
-        eval_data = get_squad_data_loader(tokenizer, run_args.dev_dir,
+        eval_dataloader, eval_data = get_squad_data_loader(tokenizer, run_args.dev_dir,
                                           shuffle=False, is_train_set=False, args=run_args)
         torch.save(train_data, os.path.join(run_args.dataloader_dir, "train_data.pt"))
         torch.save(eval_data, os.path.join(run_args.dataloader_dir, "eval_data.pt"))
@@ -51,7 +54,7 @@ def main(run_args):
                  val_bleu_checkpoint_callback, train_loss_checkpoint_callback]
     trainer = Trainer.from_argparse_args(run_args, callbacks=callbacks)
     ckpt_path = args.checkpoint_file
-    trainer.fit(model, train_dataloaders=train_data, val_dataloaders=eval_data, ckpt_path=ckpt_path)
+    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader, ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":
