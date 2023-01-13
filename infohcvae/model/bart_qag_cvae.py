@@ -78,7 +78,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         """ Answer decoder properties """
         self.za_memory_projection = nn.Linear(
             nzadim * nza_values,
-            config.num_decoder_layers * config.num_heads * self.embed_size_per_head,
+            config.decoder_layers * config.decoder_attention_heads * self.embed_size_per_head,
             bias=False,
         )
         self.start_linear = nn.Linear(config.d_model, 1)
@@ -87,7 +87,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         """ Question decoder properties """
         self.zq_memory_projection = nn.Linear(
             nzqdim,
-            config.num_decoder_layers * config.num_heads * self.embed_size_per_head,
+            config.decoder_layers * config.decoder_attention_heads * self.embed_size_per_head,
             bias=False,
         )
 
