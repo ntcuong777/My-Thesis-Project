@@ -470,7 +470,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 example.orig_answer_text)
 
         # The -3 accounts for [CLS], [SEP] and [SEP]
-        max_tokens_for_doc = max_context_length - 3 #max_context_length - max_query_length - 3
+        max_tokens_for_context = max_context_length - 3 #max_context_length - max_query_length - 3
+        max_total_tokens = max_context_length + max_query_length
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -481,8 +482,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
         start_offset = 0
         while start_offset < len(all_doc_tokens):
             length = len(all_doc_tokens) - start_offset
-            if length > max_tokens_for_doc:
-                length = max_tokens_for_doc
+            if length > max_tokens_for_context:
+                length = max_tokens_for_context
             doc_spans.append(_DocSpan(start=start_offset, length=length))
             if start_offset + length == len(all_doc_tokens):
                 break
@@ -526,18 +527,14 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             input_mask = [1] * len(input_ids)
 
             # Zero-pad up to the sequence length.
-            while len(input_ids) < max_tokens_for_doc:
+            while len(input_ids) < max_total_tokens:
                 input_ids.append(pad_token)
                 input_mask.append(pad_token)
                 segment_ids.append(pad_token)
 
-            if len(input_ids) != max_tokens_for_doc:
-                print(len(input_ids))
-                print(max_tokens_for_doc)
-
-            assert len(input_ids) == max_tokens_for_doc
-            assert len(input_mask) == max_tokens_for_doc
-            assert len(segment_ids) == max_tokens_for_doc
+            assert len(input_ids) == max_total_tokens
+            assert len(input_mask) == max_total_tokens
+            assert len(segment_ids) == max_total_tokens
 
             start_position = None
             end_position = None
