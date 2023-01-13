@@ -39,6 +39,8 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.lr = args.lr
         self.optimizer_algorithm = args.optimizer
 
+        self.num_finetune_layers = args.num_finetune_layers
+
         self.nzqdim = nzqdim = args.nzqdim
         self.nzadim = nzadim = args.nzadim
         self.nza_values = nza_values = args.nza_values
@@ -64,6 +66,32 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.encoder = bart_model.get_encoder()
         self.answer_decoder = bart_model.get_decoder()
         self.question_decoder = deepcopy(bart_model.get_decoder())
+
+        # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
+        # freeze encoder
+        for i in range(config.encoder_layers - self.num_finetune_layers):
+            for param in self.encoder.layers[i].parameters():
+                param.requires_grad = False
+        # freeze decoders
+        for i in range(config.decoder_layers - self.num_finetune_layers):
+            # freeze answer decoder
+            for param in self.answer_decoder.layers[i].parameters():
+                param.requires_grad = False
+            # freeze question decoder
+            for param in self.question_decoder.layers[i].parameters():
+                param.requires_grad = False
+
+        # CUSTOM FINETUNE - Only unfreeze some top transformer layers
+        # unfreeze top layers of encoder
+        for i in range(config.encoder_layers - self.num_finetune_layers, config.encoder_layers):
+            for param in self.encoder.layers[i].parameters():
+                param.requires_grad = True
+        # unfreeze top layers of answer & question decoder
+        for i in range(config.decoder_layers - self.num_finetune_layers, config.decoder_layers):
+            for param in self.answer_decoder.layers[i].parameters():
+                param.requires_grad = True
+            for param in self.question_decoder.layers[i].parameters():
+                param.requires_grad = True
 
         """ Encoder properties """
         self.c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(5 * config.d_model, config.d_model, bias=False),
@@ -126,6 +154,7 @@ class BartQAGConditionalVae(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BartQAGConditionalVae")
         parser.add_argument("--base_model", default='facebook/bart-base', type=str)
+        parser.add_argument('--num_finetune_layers', type=int, default=3)
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
@@ -197,9 +226,6 @@ class BartQAGConditionalVae(pl.LightningModule):
         # input and answer enc
         subspan_with_cls_mask = subspan_mask.detach()
         subspan_with_cls_mask[:, 0] = 1  # attentive to [CLS] token
-        if self.debug:
-            print(input_ids.size())
-            print(subspan_with_cls_mask.size())
         subspan_ids = input_ids * subspan_with_cls_mask
         subspan_hidden_states = self.encoder(input_ids=subspan_ids, attention_mask=subspan_with_cls_mask)[0]
         answer_aggr_hidden_states = aggregator(torch.cat([hidden_states + subspan_hidden_states,
@@ -313,9 +339,9 @@ class BartQAGConditionalVae(pl.LightningModule):
         return lm_logits, question_out_hidden_states, present_key_values
 
     def forward(
-        self, q_c_ids: torch.Tensor = None, c_ids: torch.Tensor = None,
-        q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
-        q_c_qa_mask: torch.Tensor = None, return_qa_mean_embeds: Optional[bool] = None,
+            self, q_c_ids: torch.Tensor = None, c_ids: torch.Tensor = None,
+            q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
+            q_c_qa_mask: torch.Tensor = None, return_qa_mean_embeds: Optional[bool] = None,
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
@@ -443,6 +469,7 @@ class BartQAGConditionalVae(pl.LightningModule):
 
     def _generate_question(self, c_ids, c_mask, a_mask, zq):
         """ Greedy decoding """
+
         def postprocess(q_ids):
             eos_mask = (q_ids == self.eos_id).float()
             no_eos_idx_sum = (eos_mask.sum(dim=1) == 0).long() * \
