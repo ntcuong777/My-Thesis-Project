@@ -67,7 +67,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.q_c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(5 * config.d_model, config.d_model, bias=False),
                                                        nn.Mish(True))
 
-        self.embed_size_per_head = config.d_model // config.num_heads
+        self.embed_size_per_head = config.d_model // config.decoder_attention_heads
 
         self.za_attention = nn.Linear(nzqdim, config.d_model, bias=False)
 
