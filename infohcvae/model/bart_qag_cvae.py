@@ -192,7 +192,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         return za, za_logits
 
     def build_za_past(self, za):
-        projection = self.za_memory_projection(za, dim=-1)
+        projection = self.za_memory_projection(za)
         cross_attn = projection.reshape(
             self.config.num_decoder_layers,
             projection.shape[0],
