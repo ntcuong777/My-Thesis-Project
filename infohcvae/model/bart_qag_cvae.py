@@ -142,7 +142,7 @@ class BartQAGConditionalVae(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BartQAGConditionalVae")
         parser.add_argument("--base_model", default='facebook/bart-base', type=str)
-        parser.add_argument('--num_finetune_layers', type=int, default=3)
+        parser.add_argument('--num_finetune_layers', type=int, default=2)
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
