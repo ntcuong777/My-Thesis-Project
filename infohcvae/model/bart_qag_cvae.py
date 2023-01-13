@@ -604,12 +604,13 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.log("avg_bleu", avg_bleu)
 
     def configure_optimizers(self):
+        params = filter(lambda p: p.requires_grad, self.parameters())
         if self.optimizer_algorithm == "sgd":
-            optimizer = optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, nesterov=False)
+            optimizer = optim.SGD(params, lr=self.lr, momentum=0.9, nesterov=False)
         elif self.optimizer_algorithm == "adam":
-            optimizer = optim.Adam(self.parameters(), lr=self.lr)
+            optimizer = optim.Adam(params, lr=self.lr)
         elif self.optimizer_algorithm == "adamw":
-            optimizer = optim.AdamW(self.parameters(), lr=self.lr)
+            optimizer = optim.AdamW(params, lr=self.lr)
         else:
-            optimizer = additional_optim.SWATS(self.parameters(), lr=self.lr, nesterov=False)
+            optimizer = additional_optim.SWATS(params, lr=self.lr, nesterov=False)
         return optimizer
