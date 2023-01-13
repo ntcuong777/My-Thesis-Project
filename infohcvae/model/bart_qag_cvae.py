@@ -136,7 +136,7 @@ class BartQAGConditionalVae(pl.LightningModule):
                                                discriminator=qa_discriminator)
 
         """ Validation """
-        with open(args.dev_dir) as f:
+        with open(args.dev_dir, "r") as f:
             dataset_json = json.load(f)
             self.dev_dataset = dataset_json["data"]
 
