@@ -55,7 +55,7 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         """ Initialize model """
         base_model = args.base_model
-        config = BartConfig.from_pretrained(base_model)
+        self.config = config = BartConfig.from_pretrained(base_model)
         bart_model = BartModel.from_pretrained(base_model)
 
         self.tokenizer = BartTokenizer.from_pretrained(base_model)
@@ -177,9 +177,9 @@ class BartQAGConditionalVae(pl.LightningModule):
     def build_zq_past(self, zq):
         projection = self.zq_memory_projection(zq)
         cross_attn = projection.reshape(
-            self.config.num_decoder_layers,
+            self.config.decoder_layers,
             projection.shape[0],
-            self.config.num_heads,
+            self.config.decoder_attention_heads,
             1,
             self.embed_size_per_head,
         )
@@ -194,9 +194,9 @@ class BartQAGConditionalVae(pl.LightningModule):
     def build_za_past(self, za):
         projection = self.za_memory_projection(za.view(-1, self.nzadim * self.nza_values))
         cross_attn = projection.reshape(
-            self.config.num_decoder_layers,
+            self.config.decoder_layers,
             projection.shape[0],
-            self.config.num_heads,
+            self.config.decoder_attention_heads,
             1,
             self.embed_size_per_head,
         )
