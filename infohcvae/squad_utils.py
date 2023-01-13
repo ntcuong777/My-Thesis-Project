@@ -490,47 +490,45 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             start_offset += min(length, doc_stride)
 
         for (doc_span_index, doc_span) in enumerate(doc_spans):
-            tokens = []
+            input_tokens = []
             token_to_orig_map = {}
             token_is_max_context = {}
             segment_ids = []
-            tokens.append(cls_token)
+            input_tokens.append(cls_token)
             segment_ids.append(0)
             for token in query_tokens:
-                tokens.append(token)
+                input_tokens.append(token)
                 segment_ids.append(0)
-            tokens.append(sep_token)
+            input_tokens.append(sep_token)
             segment_ids.append(0)
-
-
 
             context_tokens = list()
             context_tokens.append(cls_token)
             for i in range(doc_span.length):
                 split_token_index = doc_span.start + i
-                token_to_orig_map[len(tokens)] = tok_to_orig_index[split_token_index]
+                token_to_orig_map[len(input_tokens)] = tok_to_orig_index[split_token_index]
 
                 is_max_context = _check_is_max_context(doc_spans, doc_span_index,
                                                        split_token_index)
-                token_is_max_context[len(tokens)] = is_max_context
-                tokens.append(all_doc_tokens[split_token_index])
+                token_is_max_context[len(input_tokens)] = is_max_context
+                input_tokens.append(all_doc_tokens[split_token_index])
                 segment_ids.append(1)
                 context_tokens.append(all_doc_tokens[split_token_index])
-            tokens.append(sep_token)
+            input_tokens.append(sep_token)
             segment_ids.append(1)
             context_tokens.append(sep_token)
 
-            input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
             # The mask has 1 for real tokens and 0 for padding tokens. Only real
             # tokens are attended to.
-            input_mask = [1] * len(input_ids)
+            input_mask = [1] * len(input_tokens)
 
             # Zero-pad up to the sequence length.
-            while len(input_ids) < max_total_tokens:
-                input_ids.append(pad_token)
+            while len(input_tokens) < max_total_tokens:
+                input_tokens.append(pad_token)
                 input_mask.append(pad_token)
                 segment_ids.append(pad_token)
+
+            input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
 
             assert len(input_ids) == max_total_tokens
             assert len(input_mask) == max_total_tokens
@@ -576,15 +574,16 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             if cls_token is not None:
                 q_tokens.insert(0, cls_token)
             q_tokens.append(sep_token)
-            q_ids = tokenizer.convert_tokens_to_ids(q_tokens)
-            c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
 
             # pad up to maximum length
-            while len(q_ids) < max_query_length:
-                q_ids.append(pad_token)
+            while len(q_tokens) < max_query_length:
+                q_tokens.append(pad_token)
 
-            while len(c_ids) < max_context_length:
-                c_ids.append(pad_token)
+            while len(context_tokens) < max_context_length:
+                context_tokens.append(pad_token)
+
+            q_ids = tokenizer.convert_tokens_to_ids(q_tokens)
+            c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
 
             context_segment_ids = [0] * len(c_ids)
             for answer_idx in range(noq_start_position, noq_end_position + 1):
@@ -621,7 +620,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                     unique_id=unique_id,
                     example_index=example_index,
                     doc_span_index=doc_span_index,
-                    tokens=tokens,
+                    tokens=input_tokens,
                     token_to_orig_map=token_to_orig_map,
                     token_is_max_context=token_is_max_context,
                     input_ids=input_ids,
