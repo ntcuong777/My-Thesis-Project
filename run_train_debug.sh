@@ -1,1 +1,2 @@
-python main.py --accelerator=gpu --devices=auto --save_frequency=5 --max_epochs=20 --batch_size=$1 --fast_dev_run=True --log_every_n_steps=30 --val_check_interval=1 --strategy=ddp --default_root_dir=./save/logs
+# remember to pass the batch size to this model as first arg, and whether to load saved dataloader in the second arg as `load_saved_dataloader`
+python main.py --accelerator=gpu --devices=auto --"$2" --save_frequency=5 --max_epochs=20 --batch_size="$1" --fast_dev_run=True --log_every_n_steps=30 --val_check_interval=1 --strategy=ddp --default_root_dir=./save/logs
