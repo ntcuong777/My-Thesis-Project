@@ -81,6 +81,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.fast_dev_run:
+        args.debug = True
+    else:
+        args.debug = False
+
     # set model dir
     model_dir = args.model_dir
     os.makedirs(model_dir, exist_ok=True)
