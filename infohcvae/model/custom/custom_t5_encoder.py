@@ -2,9 +2,9 @@ import torch.nn as nn
 from transformers import T5EncoderModel, T5Config
 
 
-class CustomT5Encoder(nn.Module):
+class CustomBartEncoder(nn.Module):
     def __init__(self, base_model="t5-base", num_enc_finetune_layers=2):
-        super(CustomT5Encoder, self).__init__()
+        super(CustomBartEncoder, self).__init__()
 
         config = T5Config.from_pretrained(base_model)
         self.t5_encoder = T5EncoderModel.from_pretrained(base_model)

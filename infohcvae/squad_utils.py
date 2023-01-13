@@ -70,6 +70,7 @@ class InputFeatures(object):
                  q_tokens,
                  answer_text,
                  tag_ids,
+                 input_tag_ids,
                  input_mask,
                  segment_ids,
                  context_segment_ids=None,
@@ -91,6 +92,7 @@ class InputFeatures(object):
         self.q_tokens = q_tokens
         self.answer_text = answer_text
         self.tag_ids = tag_ids
+        self.input_tag_ids = input_tag_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
         self.context_segment_ids = context_segment_ids
@@ -467,12 +469,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 all_doc_tokens, tok_start_position, tok_end_position, tokenizer,
                 example.orig_answer_text)
 
-        if cls_token is not None:
-            # The -3 accounts for [CLS], [SEP] and [SEP]
-            max_tokens_for_doc = max_context_length + max_query_length - 3
-        else:
-            # The -3 accounts for [SEP] and [SEP]
-            max_tokens_for_doc = max_context_length + max_query_length - 2
+        # The -3 accounts for [CLS], [SEP] and [SEP]
+        max_tokens_for_doc = max_context_length + max_query_length - 3
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -495,9 +493,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             token_to_orig_map = {}
             token_is_max_context = {}
             segment_ids = []
-            if cls_token is not None:
-                tokens.append(cls_token)
-                segment_ids.append(0)
+            tokens.append(cls_token)
+            segment_ids.append(0)
             for token in query_tokens:
                 tokens.append(token)
                 segment_ids.append(0)
@@ -505,8 +502,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
             segment_ids.append(0)
 
             context_tokens = list()
-            if cls_token is not None:
-                context_tokens.append(cls_token)
+            context_tokens.append(cls_token)
             for i in range(doc_span.length):
                 split_token_index = doc_span.start + i
                 token_to_orig_map[len(tokens)] = tok_to_orig_index[split_token_index]
@@ -604,6 +600,9 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                     context_tag_ids[idx] = 2
 
             input_tag_ids = [0] * len(input_ids)  # Outside
+            # mark question part
+            for q_idx in range(1, len(query_tokens) + 2): # +2 is for [CLS] and [SEP]
+                input_tag_ids[q_idx] = 1
             if start_position is not None and end_position is not None:
                 input_tag_ids[start_position] = 1  # Begin
                 # Inside tag
@@ -630,6 +629,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                     q_tokens=q_tokens,
                     answer_text=example.orig_answer_text,
                     tag_ids=context_tag_ids,
+                    input_tag_ids=input_tag_ids,
                     segment_ids=context_segment_ids,
                     noq_start_position=noq_start_position,
                     noq_end_position=noq_end_position,

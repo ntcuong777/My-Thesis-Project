@@ -40,7 +40,7 @@ def sample_gaussian(mu, logvar, num_samples=None):
 
 
 def return_attention_mask(ids: torch.Tensor, pad_token_id):
-    mask = (ids != pad_token_id).float()
+    mask = (ids != pad_token_id).float().to(ids.device)
     return mask
 
 

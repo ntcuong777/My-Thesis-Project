@@ -11,7 +11,7 @@ from transformers.modeling_outputs import (
     BaseModelOutput,
 )
 from infohcvae.model.model_utils import cal_attn
-from .custom_t5_encoder import CustomT5Encoder
+from .custom_t5_encoder import CustomBartEncoder
 
 # Warning message for FutureWarning: head_mask was separated into two input args - head_mask, decoder_head_mask
 __HEAD_MASK_WARNING_MSG = """
@@ -23,7 +23,7 @@ num_heads)`.
 
 
 class CustomT5ForQuestionGeneration(T5ForConditionalGeneration):
-    def __init__(self, config: T5Config, custom_encoder: CustomT5Encoder, nzqdim, n_finetune_layers, dropout=0.3):
+    def __init__(self, config: T5Config, custom_encoder: CustomBartEncoder, nzqdim, n_finetune_layers, dropout=0.3):
         super().__init__(config)
 
         self.config = config
