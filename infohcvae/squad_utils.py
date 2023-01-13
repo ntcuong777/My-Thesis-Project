@@ -712,7 +712,7 @@ def read_squad_examples(input_file, is_training, version_2_with_negative=False,
 
     examples = []
     if debug:
-        input_data = input_data[:5]
+        input_data = input_data[:10]
     if ratio < 1.0:
         reduced_input_data_size = int(len(input_data) * ratio)
         input_data = input_data[:reduced_input_data_size]
