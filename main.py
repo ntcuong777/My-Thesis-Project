@@ -69,6 +69,7 @@ if __name__ == "__main__":
                         action="store_true", default=False)
 
     parser.add_argument("--model_dir", default="./save/vae-checkpoint", type=str)
+    parser.add_argument("--bart_decoder_finetune_epochs", default=5, type=int)
     parser.add_argument("--dataloader_dir", default="./save/dataloader", type=str)
     parser.add_argument("--checkpoint_file", default=None, type=str,
                         help="Path to the .pt file, None if checkpoint should not be loaded")

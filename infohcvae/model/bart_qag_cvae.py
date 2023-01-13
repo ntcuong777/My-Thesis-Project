@@ -40,6 +40,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.optimizer_algorithm = args.optimizer
 
         self.num_finetune_layers = args.num_finetune_layers
+        self.bart_decoder_finetune_epochs = args.bart_decoder_finetune_epochs
 
         self.nzqdim = nzqdim = args.nzqdim
         self.nzadim = nzadim = args.nzadim
@@ -55,8 +56,12 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         """ Initialize model """
         base_model = args.base_model
-        self.config = config = BartConfig.from_pretrained(base_model)
+        config = BartConfig.from_pretrained(base_model)
         bart_model = BartModel.from_pretrained(base_model)
+
+        self.decoder_nlayers = decoder_nlayers = config.decoder_layers
+        self.decoder_nheads = decoder_nheads = config.decoder_attention_heads
+        self.d_model = d_model = config.d_model
 
         self.tokenizer = BartTokenizer.from_pretrained(base_model)
         self.pad_token_id = self.tokenizer.pad_token_id
@@ -65,7 +70,7 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         self.encoder = bart_model.get_encoder()
         self.answer_decoder = bart_model.get_decoder()
-        self.question_decoder = deepcopy(bart_model.get_decoder())
+        self.question_decoder = bart_model.get_decoder()
 
         # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
         # freeze encoder
@@ -73,48 +78,45 @@ class BartQAGConditionalVae(pl.LightningModule):
             for param in self.encoder.layers[i].parameters():
                 param.requires_grad = False
         # freeze decoders
-        for i in range(config.decoder_layers - self.num_finetune_layers):
-            # freeze answer decoder
+        for i in range(decoder_nlayers - self.num_finetune_layers):
+            # freeze question & answer decoder (the twos are one)
             for param in self.answer_decoder.layers[i].parameters():
-                param.requires_grad = False
-            # freeze question decoder
-            for param in self.question_decoder.layers[i].parameters():
                 param.requires_grad = False
 
         """ Encoder properties """
-        self.c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(5 * config.d_model, config.d_model, bias=False),
+        self.c_a_aggregate_nonlinear = nn.Sequential(nn.Bilinear(d_model, d_model, bias=False),
                                                      nn.Mish(True))
-        self.q_c_a_aggregate_nonlinear = nn.Sequential(nn.Linear(5 * config.d_model, config.d_model, bias=False),
+        self.q_c_a_aggregate_nonlinear = nn.Sequential(nn.Bilinear(d_model, d_model, bias=False),
                                                        nn.Mish(True))
 
-        self.embed_size_per_head = config.d_model // config.decoder_attention_heads
+        self.embed_size_per_head = d_model // decoder_nheads
 
-        self.za_attention = nn.Linear(nzqdim, config.d_model, bias=False)
+        self.za_attention = nn.Linear(nzqdim, d_model, bias=False)
 
-        self.zq_mu_linear = nn.Linear(config.d_model, nzqdim, bias=False)
-        self.zq_logvar_linear = nn.Linear(config.d_model, nzqdim, bias=False)
-        self.za_linear = nn.Linear(config.d_model, nzadim * nza_values, bias=False)
+        self.zq_mu_linear = nn.Linear(d_model, nzqdim, bias=False)
+        self.zq_logvar_linear = nn.Linear(d_model, nzqdim, bias=False)
+        self.za_linear = nn.Linear(d_model, nzadim * nza_values, bias=False)
 
         """ Answer decoder properties """
         self.za_memory_projection = nn.Linear(
             nzadim * nza_values,
-            config.decoder_layers * config.decoder_attention_heads * self.embed_size_per_head,
+            decoder_nlayers * decoder_nheads * self.embed_size_per_head,
             bias=False,
         )
-        self.start_linear = nn.Linear(config.d_model, 1)
-        self.end_linear = nn.Linear(config.d_model, 1)
+        self.start_linear = nn.Linear(d_model, 1)
+        self.end_linear = nn.Linear(d_model, 1)
 
         """ Question decoder properties """
         self.zq_memory_projection = nn.Linear(
             nzqdim,
-            config.decoder_layers * config.decoder_attention_heads * self.embed_size_per_head,
+            decoder_nlayers * decoder_nheads * self.embed_size_per_head,
             bias=False,
         )
 
-        self.question_linear = nn.Linear(config.d_model, config.d_model)
-        self.concat_linear = nn.Sequential(nn.Linear(2 * config.max_length, 2 * config.d_model),
+        self.question_linear = nn.Linear(d_model, d_model)
+        self.concat_linear = nn.Sequential(nn.Linear(2 * config.max_length, 2 * d_model),
                                            nn.Dropout(dropout),
-                                           nn.Linear(2 * config.d_model, 2 * config.d_model))
+                                           nn.Linear(2 * d_model, 2 * d_model))
 
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
@@ -129,7 +131,7 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         # Define QA infomax model
         preprocessor = nn.Sigmoid()
-        qa_discriminator = nn.Bilinear(config.d_model, config.d_model, 1)
+        qa_discriminator = nn.Bilinear(d_model, d_model, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
 
@@ -177,9 +179,9 @@ class BartQAGConditionalVae(pl.LightningModule):
     def build_zq_past(self, zq):
         projection = self.zq_memory_projection(zq)
         cross_attn = projection.reshape(
-            self.config.decoder_layers,
+            self.decoder_nlayers,
             projection.shape[0],
-            self.config.decoder_attention_heads,
+            self.decoder_nheads,
             1,
             self.embed_size_per_head,
         )
@@ -194,9 +196,9 @@ class BartQAGConditionalVae(pl.LightningModule):
     def build_za_past(self, za):
         projection = self.za_memory_projection(za.view(-1, self.nzadim * self.nza_values))
         cross_attn = projection.reshape(
-            self.config.decoder_layers,
+            self.decoder_nlayers,
             projection.shape[0],
-            self.config.decoder_attention_heads,
+            self.decoder_nheads,
             1,
             self.embed_size_per_head,
         )
@@ -216,11 +218,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         subspan_with_cls_mask[:, 0] = 1  # attentive to [CLS] token
         subspan_ids = input_ids * subspan_with_cls_mask
         subspan_hidden_states = self.encoder(input_ids=subspan_ids, attention_mask=subspan_with_cls_mask)[0]
-        answer_aggr_hidden_states = aggregator(torch.cat([hidden_states + subspan_hidden_states,
-                                                          torch.abs(hidden_states - subspan_hidden_states),
-                                                          hidden_states * subspan_hidden_states,
-                                                          hidden_states,
-                                                          subspan_hidden_states], dim=-1))
+        answer_aggr_hidden_states = aggregator(hidden_states, subspan_hidden_states)
         if return_input_hidden_states is not None and return_input_hidden_states:
             return hidden_states, answer_aggr_hidden_states
         else:
@@ -251,19 +249,12 @@ class BartQAGConditionalVae(pl.LightningModule):
         # Initialize `past_key_values` with `za` for question generation
         za_past_key_values = self.build_za_past(za)
 
+        # extend the input attention mask so that the init state from `za` is attended during self-attention
+        past_attended_c_mask = torch.cat([torch.ones(c_ids.size(0), 1), c_mask], dim=-1)
         answer_decoder_ouputs = self.answer_decoder(
             input_ids=c_ids,
-            attention_mask=c_mask,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            head_mask=None,
-            cross_attn_head_mask=None,
-            past_key_values=za_past_key_values,
-            inputs_embeds=None,
-            use_cache=False,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
+            attention_mask=past_attended_c_mask,
+            past_key_values=za_past_key_values
         )
         answer_out_hidden_states = answer_decoder_ouputs[0]
 
@@ -285,7 +276,7 @@ class BartQAGConditionalVae(pl.LightningModule):
             # copy logits
             # context-question attention
             mask = torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))
-            _, attn_logits = cal_attn(q_out_hidden_states, c_a_hidden_states, mask)
+            _, attn_logits = cal_attn(self.question_linear(q_out_hidden_states), c_a_hidden_states, mask)
 
             bq = N * max_q_len
             context_ids = c_ids.unsqueeze(1).repeat(
@@ -302,9 +293,12 @@ class BartQAGConditionalVae(pl.LightningModule):
         if past_key_values is None:
             past_key_values = self.build_zq_past(zq)
 
+        # extend the input attention mask so that the init state from `za` is attended during self-attention
+        past_key_values_length = past_key_values[0][0].shape[2]
+        past_attended_q_mask = torch.cat([torch.ones(q_ids.size(0), past_key_values_length), q_mask], dim=-1)
         question_decoder_outputs = self.question_decoder(
             input_ids=q_ids,
-            attention_mask=q_mask,
+            attention_mask=past_attended_q_mask,
             inputs_embeds=None,
             past_key_values=past_key_values,
             encoder_hidden_states=c_a_hidden_states,
@@ -421,6 +415,13 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.log_dict(current_losses, prog_bar=True)
 
         return total_loss
+
+    def training_epoch_end(self, training_step_outputs):
+        if self.current_epoch == self.bart_decoder_finetune_epochs:
+            # FREEZE BART DECODER after a pre-defined number of epochs
+            # freeze decoders (question & answer decoder - the twos are one)
+            for param in self.answer_decoder.parameters():
+                param.requires_grad = False
 
     def _generate_answer(self, c_ids, c_mask, za):
         def generate_answer_mask_from_context(start_logits, end_logits):
