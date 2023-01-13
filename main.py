@@ -51,7 +51,7 @@ def main(run_args):
                  val_bleu_checkpoint_callback, train_loss_checkpoint_callback]
     trainer = Trainer.from_argparse_args(run_args, callbacks=callbacks)
     ckpt_path = args.checkpoint_file
-    trainer.fit(model, train_dataloader=train_data, val_dataloader=eval_data, ckpt_path=ckpt_path)
+    trainer.fit(model, train_dataloaders=train_data, val_dataloaders=eval_data, ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":
