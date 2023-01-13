@@ -310,7 +310,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
         q_c_qa_mask: torch.Tensor = None, return_qa_mean_embeds: Optional[bool] = None,
     ) -> Dict:
-        assert self.is_training, "forward() only use for training mode"
+        assert self.training, "forward() only use for training mode"
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
