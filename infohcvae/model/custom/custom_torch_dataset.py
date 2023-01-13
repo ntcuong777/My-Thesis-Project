@@ -38,8 +38,8 @@ class CustomDataset(Dataset):
         c_ids = self.all_c_ids[index]
         a_mask = self.all_a_mask[index]
         q_c_qa_mask = self.all_q_c_qa_mask[index]
-        no_q_start_positions = self.all_no_q_start_positions
-        no_q_end_positions = self.all_no_q_end_positions
+        no_q_start_positions = self.all_no_q_start_positions[index]
+        no_q_end_positions = self.all_no_q_end_positions[index]
 
         if self.all_text_examples is not None and self.all_preprocessed_examples is not None:
             text_example = self.all_text_examples[index]
