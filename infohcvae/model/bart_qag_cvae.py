@@ -84,9 +84,9 @@ class BartQAGConditionalVae(pl.LightningModule):
                 param.requires_grad = False
 
         """ Encoder properties """
-        self.c_a_aggregate_nonlinear = nn.Sequential(nn.Bilinear(d_model, d_model, bias=False),
+        self.c_a_aggregate_nonlinear = nn.Sequential(nn.Bilinear(d_model, d_model, d_model, bias=False),
                                                      nn.Mish(True))
-        self.q_c_a_aggregate_nonlinear = nn.Sequential(nn.Bilinear(d_model, d_model, bias=False),
+        self.q_c_a_aggregate_nonlinear = nn.Sequential(nn.Bilinear(d_model, d_model, d_model, bias=False),
                                                        nn.Mish(True))
 
         self.embed_size_per_head = d_model // decoder_nheads
