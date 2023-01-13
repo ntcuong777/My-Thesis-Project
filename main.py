@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data.dataloader import DataLoader
-from transformers import MobileBertTokenizer
+from transformers import RobertaTokenizer
 
 from infohcvae.model.roberta_qag_cvae import RobertaQAGConditionalVae
 from infohcvae.utils import (
@@ -17,7 +17,7 @@ from infohcvae.utils import (
 
 
 def main(run_args):
-    tokenizer = MobileBertTokenizer.from_pretrained(run_args.base_model)
+    tokenizer = RobertaTokenizer.from_pretrained(run_args.base_model)
 
     run_args.device = torch.cuda.current_device()
 
