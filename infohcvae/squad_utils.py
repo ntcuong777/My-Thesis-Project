@@ -442,7 +442,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
         query_tokens = tokenizer.tokenize(example.question_text)
 
         if len(query_tokens) > max_query_length:
-            query_tokens = query_tokens[0:max_query_length]
+            query_tokens = query_tokens[:max_query_length]
 
         tok_to_orig_index = []
         orig_to_tok_index = []
@@ -470,7 +470,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 example.orig_answer_text)
 
         # The -3 accounts for [CLS], [SEP] and [SEP]
-        max_tokens_for_doc = max_context_length + max_query_length - 3
+        max_tokens_for_doc = max_context_length - 3 #max_context_length - max_query_length - 3
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
@@ -500,6 +500,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 segment_ids.append(0)
             tokens.append(sep_token)
             segment_ids.append(0)
+
+
 
             context_tokens = list()
             context_tokens.append(cls_token)
