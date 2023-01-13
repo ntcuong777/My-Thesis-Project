@@ -11,8 +11,7 @@ import torch.optim as optim
 import numpy as np
 import pytorch_lightning as pl
 from torch_scatter import scatter_max
-from transformers import RobertaConfig, RobertaTokenizer, RobertaModel
-from transformers.models.roberta.modeling_roberta import RobertaLMHead
+from transformers import MobileBertConfig, MobileBertTokenizer, EncoderDecoderModel, EncoderDecoderConfig
 from infohcvae.model.model_utils import (
     return_attention_mask, cal_attn,
     gumbel_softmax, sample_gaussian,
@@ -27,7 +26,7 @@ from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
 
 
-class RobertaQAGConditionalVae(pl.LightningModule):
+class MobileBertQAGConditionalVae(pl.LightningModule):
     def __init__(self, args, dropout=0.3):
         super().__init__()
         self.save_hyperparameters()
@@ -56,32 +55,29 @@ class RobertaQAGConditionalVae(pl.LightningModule):
 
         """ Initialize model """
         base_model = args.base_model
-        config = RobertaConfig.from_pretrained(base_model)
-        config.is_decoder = True
-        config.add_cross_attention = True
-        roberta_model = RobertaModel.from_pretrained(base_model, config=config)
+        mobilebert_config = MobileBertConfig.from_pretrained(base_model)
+        mobilebert_encdec_model = EncoderDecoderModel.from_encoder_decoder_pretrained(base_model, base_model)
 
-        self.hidden_size = hidden_size = config.hidden_size
-        self.num_hidden_layers = num_hidden_layers = config.num_hidden_layers
-        self.num_attention_heads = num_attention_heads = config.num_attention_heads
+        self.hidden_size = hidden_size = mobilebert_config.hidden_size
+        self.num_hidden_layers = num_hidden_layers = mobilebert_config.num_hidden_layers
+        self.num_attention_heads = num_attention_heads = mobilebert_config.num_attention_heads
 
-        self.tokenizer = RobertaTokenizer.from_pretrained(base_model)
+        self.tokenizer = MobileBertTokenizer.from_pretrained(base_model)
         self.pad_token_id = self.tokenizer.pad_token_id
         self.sos_id = self.tokenizer.cls_token_id
         self.eos_id = self.tokenizer.sep_token_id
 
-        # encoder & decoder weights are shared
-        self.encoder = roberta_model
-        self.answer_decoder = roberta_model
-        self.question_decoder = roberta_model
+        self.encoder = mobilebert_encdec_model.get_encoder()
+        self.answer_decoder = mobilebert_encdec_model.get_decoder()
+        self.question_decoder = deepcopy(self.answer_decoder)
 
         # # FREEZE BERT - Freeze transformer layers (except some top layers) of encoder & decoder
         # # freeze encoder
-        # for i in range(num_hidden_layers - self.num_finetune_layers):
+        # for i in range(config.num_hidden_layers - self.num_finetune_layers):
         #     for param in self.encoder.layer[i].parameters():
         #         param.requires_grad = False
         # # freeze decoders
-        # for i in range(num_hidden_layers - self.num_finetune_layers):
+        # for i in range(config.num_hidden_layers - self.num_finetune_layers):
         #     # freeze answer decoder
         #     for param in self.answer_decoder.layer[i].parameters():
         #         param.requires_grad = False
@@ -128,7 +124,7 @@ class RobertaQAGConditionalVae(pl.LightningModule):
                                            nn.Dropout(dropout),
                                            nn.Linear(2 * hidden_size, 2 * hidden_size))
 
-        self.lm_head = RobertaLMHead(config)
+        self.lm_head = nn.Linear(hidden_size, mobilebert_config.vocab_size, bias=False)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -152,8 +148,8 @@ class RobertaQAGConditionalVae(pl.LightningModule):
 
     @staticmethod
     def add_model_specific_args(parent_parser):
-        parser = parent_parser.add_argument_group("RobertaQAGConditionalVae")
-        parser.add_argument("--base_model", default='roberta-base', type=str)
+        parser = parent_parser.add_argument_group("MobileBertQAGConditionalVae")
+        parser.add_argument("--base_model", default='google/mobilebert-uncased', type=str)
         # parser.add_argument('--num_finetune_layers', type=int, default=2)
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)

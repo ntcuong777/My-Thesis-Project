@@ -3,11 +3,11 @@ import math
 import h5py
 
 import torch
-from transformers import RobertaTokenizer
+from transformers import MobileBertTokenizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
-from infohcvae.model.roberta_qag_cvae import RobertaQAGConditionalVae
+from infohcvae.model.mobilebert_qag_cvae import MobileBertQAGConditionalVae
 from infohcvae.model.model_utils import return_attention_mask
 from infohcvae.squad_utils import (convert_examples_to_harv_features,
                                    read_examples, read_squad_examples)
@@ -61,12 +61,12 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
 
 
 def main(gen_args):
-    tokenizer = RobertaTokenizer.from_pretrained(gen_args.base_model)
+    tokenizer = MobileBertTokenizer.from_pretrained(gen_args.base_model)
     gen_args.tokenizer = tokenizer
     pad_token_id = tokenizer.pad_token
 
     device = torch.cuda.current_device()
-    vae = RobertaQAGConditionalVae.load_from_checkpoint(gen_args.checkpoint)
+    vae = MobileBertQAGConditionalVae.load_from_checkpoint(gen_args.checkpoint)
     vae.eval()
     vae = vae.to(device)
 
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     parser.add_argument("--output_text", dest="output_text", action="store_true", default=False)
 
     parser.add_argument("--seed", default=3163, type=int)
-    parser.add_argument("--base_model", default='roberta-base', type=str)
+    parser.add_argument("--base_model", default='google/mobilebert-uncased', type=str)
     parser.add_argument("--resume_steps", default=1, type=int, help="step to resume")
     parser.add_argument("--percent_of_runs", default=1.0, type=float,
                         help="how many percent of steps to run at one execution")
