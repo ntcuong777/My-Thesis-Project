@@ -37,7 +37,7 @@ class CustomDataset(Dataset):
         q_ids = self.all_q_ids[index]
         c_ids = self.all_c_ids[index]
         a_mask = self.all_a_mask[index]
-        q_c_qa_mask = self.all_q_c_qa_mask
+        q_c_qa_mask = self.all_q_c_qa_mask[index]
         no_q_start_positions = self.all_no_q_start_positions
         no_q_end_positions = self.all_no_q_end_positions
 
