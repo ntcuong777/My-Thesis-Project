@@ -31,6 +31,10 @@ class BartQAGConditionalVae(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        self.debug = False
+        if args.debug:
+            self.debug = True
+
         """ Model parameters """
         self.lr = args.lr
         self.optimizer_algorithm = args.optimizer
@@ -193,6 +197,9 @@ class BartQAGConditionalVae(pl.LightningModule):
         # input and answer enc
         subspan_with_cls_mask = subspan_mask.detach()
         subspan_with_cls_mask[:, 0] = 1  # attentive to [CLS] token
+        if self.debug:
+            print(input_ids.size())
+            print(subspan_with_cls_mask.size())
         subspan_ids = input_ids * subspan_with_cls_mask
         subspan_hidden_states = self.encoder(input_ids=subspan_ids, attention_mask=subspan_with_cls_mask)[0]
         answer_aggr_hidden_states = aggregator(torch.cat([hidden_states + subspan_hidden_states,
