@@ -2,9 +2,8 @@ transformers
 json_lines
 numpy
 tqdm
-torch
-torchvision
+torch>=1.12.0
 h5py
 torch_optimizer
-torch_scatter
+torch_scatter>=2.1.0
 pytorch_lightning
