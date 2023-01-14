@@ -609,10 +609,8 @@ class BartQAGConditionalVae(pl.LightningModule):
         all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
 
         posterior_qa_results = list(itertools.chain.from_iterable([out["posterior_qa"] for out in outputs]))
-        if self.debug:
-            print(posterior_qa_results)
-        real_question_dict = {k: v for out in outputs for d in out["real_questions"] for k, v in d.items()}
-        qg_results = {k: v for out in outputs for d in out["qg_results"] for k, v in d.items()}
+        real_question_dict = {k: v for out in outputs for k, v in out["real_questions"].items()}
+        qg_results = {k: v for out in outputs for k, v in out["qg_results"].items()}
 
         posterior_predictions = extract_predictions_to_dict(all_text_examples, all_preprocessed_examples,
                                                             posterior_qa_results,
