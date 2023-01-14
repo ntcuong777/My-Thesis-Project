@@ -155,6 +155,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         with open(args.dev_dir, "r") as f:
             dataset_json = json.load(f)
             self.dev_dataset = dataset_json["data"]
+        self.example_idx = -1 # to keep track of the current index of example
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -586,13 +587,11 @@ class BartQAGConditionalVae(pl.LightningModule):
             batch_posterior_q_ids.cpu().tolist(), batch_posterior_start.cpu().tolist(), \
             batch_posterior_end.cpu().tolist()
 
-        if self.debug:
-            print(batch_idx)
-
         for i in range(batch_size):
+            self.example_idx += 1
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
-            eval_feature = all_preprocessed_examples[i + batch_idx * batch_size]
+            eval_feature = all_preprocessed_examples[self.example_idx]
             unique_id = int(eval_feature.unique_id)
 
             real_question = to_string(batch_q_ids[i], tokenizer)
@@ -625,6 +624,8 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         metrics = {"f1": posterior_ret["f1"], "exact_match": posterior_ret["exact_match"], "bleu": bleu}
         self.log_dict(metrics, prog_bar=True, on_epoch=True)
+
+        self.example_idx = -1 # reset example index for next validation loop
 
     def configure_optimizers(self):
         params = filter(lambda p: p.requires_grad, self.parameters())
