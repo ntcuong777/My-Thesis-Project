@@ -76,6 +76,18 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.encoder = bart_model.get_encoder()
         self.decoder = bart_model.get_decoder()
 
+        __logger__.info("Freezing top {:d} transformer layers of encoder & decoder".format(self.num_finetune_layers))
+        # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
+        # freeze encoder
+        for i in range(self.encoder_nlayers - self.num_finetune_layers):
+            for param in self.encoder.layers[i].parameters():
+                param.requires_grad = False
+        # freeze decoders
+        for i in range(self.decoder_nlayers - self.num_finetune_layers):
+            # freeze question & answer decoder (the twos are one)
+            for param in self.decoder.layers[i].parameters():
+                param.requires_grad = False
+
         """ Encoder properties """
         self.c_a_linear_combin = nn.Bilinear(d_model, d_model, d_model)
         self.qc_a_linear_combin = nn.Bilinear(d_model, d_model, d_model)
@@ -377,7 +389,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         loss_a_rec = loss_start_a_rec + loss_end_a_rec
 
         # kl loss
-        loss_kl, loss_zq_kl, loss_za_kl = 0, 0, 0
+        loss_kl, loss_zq_kl, loss_za_kl = 0.0, 0.0, 0.0
         if self.alpha_kl_a < 1. or self.alpha_kl_q < 1.:
             loss_zq_kl = (1. - self.alpha_kl_q) * self.gaussian_kl_criterion(zq_mu, zq_logvar)
             loss_za_kl = (1. - self.alpha_kl_a) * self.categorical_kl_criterion(za_logits)
@@ -407,20 +419,6 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.log_dict(current_losses, prog_bar=True)
 
         return total_loss
-
-    def training_epoch_end(self, training_step_outputs):
-        if self.current_epoch == self.bart_decoder_finetune_epochs:
-            __logger__.info("Freezing top {:d} transformer layers of encoder & decoder".format(self.num_finetune_layers))
-            # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
-            # freeze encoder
-            for i in range(self.encoder_nlayers - self.num_finetune_layers):
-                for param in self.encoder.layers[i].parameters():
-                    param.requires_grad = False
-            # freeze decoders
-            for i in range(self.decoder_nlayers - self.num_finetune_layers):
-                # freeze question & answer decoder (the twos are one)
-                for param in self.decoder.layers[i].parameters():
-                    param.requires_grad = False
 
     def _generate_answer(self, c_ids, c_mask, za):
         def generate_answer_mask_from_context(start_logits, end_logits):
