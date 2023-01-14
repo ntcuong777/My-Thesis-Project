@@ -170,8 +170,8 @@ class BartQAGConditionalVae(pl.LightningModule):
         parser.add_argument('--pooling_strategy', type=str, default="max", choices=["max", "mean"])
         parser.add_argument('--alpha_kl_q', type=float, default=1)
         parser.add_argument('--alpha_kl_a', type=float, default=1)
-        parser.add_argument('--lambda_mmd_q', type=float, default=5)
-        parser.add_argument('--lambda_mmd_a', type=float, default=5)
+        parser.add_argument('--lambda_mmd_q', type=float, default=2300)
+        parser.add_argument('--lambda_mmd_a', type=float, default=137)
         parser.add_argument('--lambda_qa_info', type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
