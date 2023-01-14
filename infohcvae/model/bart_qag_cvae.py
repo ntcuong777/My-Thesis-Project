@@ -232,7 +232,8 @@ class BartQAGConditionalVae(pl.LightningModule):
         subspan_with_cls_mask[:, 0] = 1  # attentive to [CLS] token
         subspan_ids = input_ids * subspan_with_cls_mask
         subspan_hidden_states = self.encoder(input_ids=subspan_ids, attention_mask=subspan_with_cls_mask)[0]
-        answer_aggr_hidden_states = aggregator(torch.cat([hidden_states, subspan_hidden_states], dim=-1)) # activate with Mish
+        answer_aggr_hidden_states = aggregator(
+            torch.cat([hidden_states, subspan_hidden_states], dim=-1))  # activate with Mish
         if return_input_hidden_states is not None and return_input_hidden_states:
             return hidden_states, answer_aggr_hidden_states
         else:
@@ -577,17 +578,17 @@ class BartQAGConditionalVae(pl.LightningModule):
         batch_q_ids = q_ids.cpu().tolist()
 
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, batch_start_logits, batch_end_logits, \
-            = generate_qa_from_posterior(c_ids, q_ids, q_c_qa_mask, a_mask)
+            = generate_qa_from_posterior(qc_ids, c_ids, q_c_qa_mask, a_mask)
 
         # Convert posterior tensors to Python list
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end = \
             batch_posterior_q_ids.cpu().tolist(), batch_posterior_start.cpu().tolist(), \
-                batch_posterior_end.cpu().tolist()
+            batch_posterior_end.cpu().tolist()
 
         for i in range(batch_size):
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
-            eval_feature = all_preprocessed_examples[i + batch_idx*batch_size]
+            eval_feature = all_preprocessed_examples[i + batch_idx * batch_size]
             unique_id = int(eval_feature.unique_id)
 
             real_question = to_string(batch_q_ids[i], tokenizer)
@@ -599,7 +600,8 @@ class BartQAGConditionalVae(pl.LightningModule):
                                                   start_logits=posterior_start_logits,
                                                   end_logits=posterior_end_logits))
 
-        posterior_predictions = extract_predictions_to_dict(all_text_examples, all_preprocessed_examples, posterior_qa_results,
+        posterior_predictions = extract_predictions_to_dict(all_text_examples, all_preprocessed_examples,
+                                                            posterior_qa_results,
                                                             n_best_size=20, max_answer_length=30, do_lower_case=True,
                                                             verbose_logging=False, version_2_with_negative=False,
                                                             null_score_diff_threshold=0, noq_position=True)
