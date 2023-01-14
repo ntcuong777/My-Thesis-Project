@@ -40,6 +40,8 @@ class BartQAGConditionalVae(pl.LightningModule):
             self.debug = True
 
         """ Model parameters """
+        self.max_c_len = args.max_c_len
+        self.max_q_len = args.max_q_len
         self.lr = args.lr
         self.optimizer_algorithm = args.optimizer
 
@@ -136,7 +138,7 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
-        self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=args.max_c_len)
+        self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
         self.gaussian_kl_criterion = VaeGaussianKLLoss()
         self.categorical_kl_criterion = VaeGumbelKLLoss(categorical_dim=nza_values)
 
