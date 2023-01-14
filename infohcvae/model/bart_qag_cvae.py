@@ -44,6 +44,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.max_q_len = args.max_q_len
         self.lr = args.lr
         self.optimizer_algorithm = args.optimizer
+        self.loss_log_file = args.loss_log_file
 
         self.num_finetune_layers = args.num_finetune_layers
         self.bart_decoder_finetune_epochs = args.bart_decoder_finetune_epochs
@@ -428,6 +429,11 @@ class BartQAGConditionalVae(pl.LightningModule):
             "loss_kl": loss_kl,
             "loss_qa_info": loss_qa_info,
         }
+        log_str = ""
+        for k, v in current_losses.items():
+            log_str += "%s=%.4f".format(k, v)
+        with open(self.loss_log_file, "a") as f:
+            f.write(log_str + "\n\n")
         self.log_dict(current_losses, prog_bar=False)
 
         return total_loss
