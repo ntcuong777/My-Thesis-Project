@@ -2,24 +2,24 @@ import torch
 
 
 def compute_kernel(x1, x2, z_dim, kernel_type="rbf"):
-    # Convert the tensors into row and column vectors
-    D = x1.size(1)
-    N = x1.size(0)
-
-    x1 = x1.unsqueeze(-2)  # Make it into a column tensor
-    x2 = x2.unsqueeze(-3)  # Make it into a row tensor
-
-    """
-    Usually the below lines are not required, especially in our case,
-    but this is useful when x1 and x2 have different sizes
-    along the 0th dimension.
-    """
-    x1 = x1.expand(N, N, D)
-    x2 = x2.expand(N, N, D)
-
     if kernel_type == "rbf":
         result = compute_rbf(x1, x2)
     elif kernel_type == "imq":
+        # Convert the tensors into row and column vectors
+        D = x1.size(1)
+        N = x1.size(0)
+
+        x1 = x1.unsqueeze(-2)  # Make it into a column tensor
+        x2 = x2.unsqueeze(-3)  # Make it into a row tensor
+
+        """
+        Usually the below lines are not required, especially in our case,
+        but this is useful when x1 and x2 have different sizes
+        along the 0th dimension.
+        """
+        x1 = x1.expand(N, N, D)
+        x2 = x2.expand(N, N, D)
+
         result = compute_inv_mult_quad(x1, x2, z_dim=z_dim)
     else:
         raise ValueError('Undefined kernel type.')
