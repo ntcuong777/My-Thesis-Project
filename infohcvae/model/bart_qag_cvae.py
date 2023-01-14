@@ -209,6 +209,8 @@ class BartQAGConditionalVae(pl.LightningModule):
         subspan_ids = input_ids * subspan_with_cls_mask
         subspan_hidden_states = self.encoder(input_ids=subspan_ids, attention_mask=subspan_with_cls_mask)[0]
         answer_aggr_hidden_states = F.mish(aggregator(hidden_states, subspan_hidden_states)) # activate with Mish
+        if self.debug:
+            print(answer_aggr_hidden_states.size())
         if return_input_hidden_states is not None and return_input_hidden_states:
             return hidden_states, answer_aggr_hidden_states
         else:
@@ -290,16 +292,10 @@ class BartQAGConditionalVae(pl.LightningModule):
         question_decoder_outputs = self.decoder(
             input_ids=q_ids,
             attention_mask=past_attended_q_mask,
-            inputs_embeds=None,
             past_key_values=past_key_values,
             encoder_hidden_states=c_a_hidden_states,
             encoder_attention_mask=c_mask,
-            head_mask=None,
-            cross_attn_head_mask=None,
-            use_cache=use_cache,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
+            use_cache=use_cache
         )
         question_out_hidden_states = question_decoder_outputs[0]
 
