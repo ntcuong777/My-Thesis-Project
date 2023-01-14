@@ -8,16 +8,16 @@ import pytorch_lightning as pl
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils.data.dataloader import DataLoader
-from transformers import BartTokenizer
+from transformers import AutoTokenizer
 
-from infohcvae.model.bart_qag_cvae import BartQAGConditionalVae
+from infohcvae.model.bert_qag_cvae import BertQAGConditionalVae
 from infohcvae.utils import (
     get_squad_data_loader,
 )
 
 
 def main(run_args):
-    tokenizer = BartTokenizer.from_pretrained(run_args.base_model)
+    tokenizer = AutoTokenizer.from_pretrained(run_args.base_model)
 
     run_args.device = torch.cuda.current_device()
 
@@ -49,7 +49,7 @@ def main(run_args):
                                                      every_n_epochs=run_args.save_frequency, save_weights_only=True,
                                                      save_on_train_epoch_end=True)
 
-    model = BartQAGConditionalVae(run_args)
+    model = BertQAGConditionalVae(run_args)
     callbacks = [val_em_checkpoint_callback, val_f1_checkpoint_callback, val_bleu_checkpoint_callback,
                  val_bleu_checkpoint_callback, train_loss_checkpoint_callback]
     full_trainer = Trainer.from_argparse_args(run_args, callbacks=callbacks)
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_frequency", default=5, type=int, help="save frequency by epoch")
 
     # Add model-specific args
-    parser = BartQAGConditionalVae.add_model_specific_args(parser)
+    parser = BertQAGConditionalVae.add_model_specific_args(parser)
 
     # add all the available pytorch lightning trainer options to argparse
     # ie: now --accelerator --devices --num_nodes ... --fast_dev_run all work in the cli
