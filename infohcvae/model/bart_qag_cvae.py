@@ -586,6 +586,9 @@ class BartQAGConditionalVae(pl.LightningModule):
             batch_posterior_q_ids.cpu().tolist(), batch_posterior_start.cpu().tolist(), \
             batch_posterior_end.cpu().tolist()
 
+        if self.debug:
+            print(batch_idx)
+
         for i in range(batch_size):
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
