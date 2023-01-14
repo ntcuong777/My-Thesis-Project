@@ -68,6 +68,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.d_model = d_model = config.d_model
 
         self.tokenizer = BartTokenizer.from_pretrained(base_model)
+        self.vocab_size = self.tokenizer.vocab_size
         self.pad_token_id = self.tokenizer.pad_token_id
         self.sos_id = self.tokenizer.cls_token_id
         self.eos_id = self.tokenizer.sep_token_id
@@ -108,7 +109,7 @@ class BartQAGConditionalVae(pl.LightningModule):
                                            nn.Dropout(dropout),
                                            nn.Linear(2 * d_model, 2 * d_model))
 
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(d_model, self.vocab_size, bias=False)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -272,7 +273,7 @@ class BartQAGConditionalVae(pl.LightningModule):
             context_ids = c_ids.unsqueeze(1).repeat(
                 1, max_q_len, 1).view(bq, -1).contiguous()
             attn_logits = attn_logits.view(bq, -1).contiguous()
-            copy_logits = torch.zeros(bq, self.ntokens).to(context_ids.device) - 10000.0
+            copy_logits = torch.zeros(bq, self.vocab_size).to(context_ids.device) - 10000.0
             copy_logits, _ = scatter_max(attn_logits, context_ids, out=copy_logits)
             copy_logits = copy_logits.masked_fill(copy_logits == -10000.0, 0)
             copy_logits = copy_logits.view(N, max_q_len, -1).contiguous()
