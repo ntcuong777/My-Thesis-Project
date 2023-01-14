@@ -283,6 +283,10 @@ class BartQAGConditionalVae(pl.LightningModule):
         if past_key_values is None:
             past_key_values = self.build_zq_past(zq)
             for (k, v) in past_key_values:
+                k = k.expand(-1, -1, c_ids.size(1), -1)
+                v = v.expand(-1, -1, c_ids.size(1), -1)
+
+            for (k, v) in past_key_values:
                 if self.debug:
                     print(k.size())
                     print(v.size())
