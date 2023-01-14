@@ -420,15 +420,12 @@ class BartQAGConditionalVae(pl.LightningModule):
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_mmd
 
         current_losses = {
-            "total_loss": total_loss,
             "loss_q_rec": loss_q_rec,
             "loss_a_rec": loss_a_rec,
-            "loss_kl": loss_kl,
-            "loss_zq_kl": loss_zq_kl,
-            "loss_za_kl": loss_za_kl,
             "loss_mmd": loss_mmd,
             "loss_zq_mmd": loss_zq_mmd,
             "loss_za_mmd": loss_za_mmd,
+            "loss_kl": loss_kl,
             "loss_qa_info": loss_qa_info,
         }
         self.log_dict(current_losses, prog_bar=True)
