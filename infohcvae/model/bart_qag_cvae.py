@@ -22,6 +22,7 @@ from infohcvae.model.losses import (
     VaeGaussianKLLoss, VaeGumbelKLLoss,
     ContinuousKernelMMDLoss, GumbelMMDLoss,
 )
+from infohcvae.model.custom.custom_torch_dataset import CustomDataset
 from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
 from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
@@ -564,8 +565,14 @@ class BartQAGConditionalVae(pl.LightningModule):
         qg_results = {}
         res_dict = {}
 
-        qc_ids, q_ids, c_ids, a_mask, q_c_qa_mask, no_q_start_positions, no_q_end_positions, \
-            text_example, preprocessed_example = batch
+        assert isinstance(self.trainer.val_dataloaders[0].dataset, CustomDataset), \
+            "ERROR: validation set is not constructed from `CustomDataset` class"
+
+        # only one validation set
+        all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
+        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
+
+        qc_ids, q_ids, c_ids, a_mask, q_c_qa_mask, no_q_start_positions, no_q_end_positions = batch
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
 
@@ -580,7 +587,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         for i in range(batch_size):
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
-            eval_feature = preprocessed_example[batch_idx]
+            eval_feature = all_preprocessed_examples[i + batch_idx*batch_size]
             unique_id = int(eval_feature.unique_id)
 
             real_question = to_string(batch_q_ids[i], tokenizer)
@@ -592,7 +599,7 @@ class BartQAGConditionalVae(pl.LightningModule):
                                                   start_logits=posterior_start_logits,
                                                   end_logits=posterior_end_logits))
 
-        posterior_predictions = extract_predictions_to_dict(text_example, preprocessed_example, posterior_qa_results,
+        posterior_predictions = extract_predictions_to_dict(all_text_examples, all_preprocessed_examples, posterior_qa_results,
                                                             n_best_size=20, max_answer_length=30, do_lower_case=True,
                                                             verbose_logging=False, version_2_with_negative=False,
                                                             null_score_diff_threshold=0, noq_position=True)

@@ -41,13 +41,6 @@ class CustomDataset(Dataset):
         no_q_start_positions = self.all_no_q_start_positions[index]
         no_q_end_positions = self.all_no_q_end_positions[index]
 
-        if self.all_text_examples is not None and self.all_preprocessed_examples is not None:
-            text_example = self.all_text_examples[index]
-            preprocessed_example = self.all_preprocessed_examples[index]
-            return qc_ids.to(self.to_device), q_ids.to(self.to_device), c_ids.to(self.to_device),\
-                a_mask.to(self.to_device), q_c_qa_mask.to(self.to_device), no_q_start_positions.to(self.to_device),\
-                no_q_end_positions.to(self.to_device), [text_example], [preprocessed_example] # must wrap in a list
-
         return qc_ids.to(self.to_device), q_ids.to(self.to_device), c_ids.to(self.to_device),\
             a_mask.to(self.to_device), q_c_qa_mask.to(self.to_device), no_q_start_positions.to(self.to_device),\
             no_q_end_positions.to(self.to_device)
