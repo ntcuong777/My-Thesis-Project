@@ -76,6 +76,11 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.encoder = bart_model.get_encoder()
         self.decoder = bart_model.get_decoder()
 
+        # Freeze embedding layer
+        # embedding_layer = bart_model.get_input_embeddings()
+        # for params in embedding_layer.parameters():
+        #     params.requires_grad = False
+
         __logger__.info("Freezing top {:d} transformer layers of encoder & decoder".format(self.num_finetune_layers))
         # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
         # freeze encoder
@@ -122,6 +127,11 @@ class BartQAGConditionalVae(pl.LightningModule):
                                            nn.Linear(2 * d_model, 2 * d_model))
 
         self.lm_head = nn.Linear(d_model, self.vocab_size, bias=False)
+
+        # fix output word matrix
+        # self.lm_head.weight = embedding_layer.weight
+        # for param in self.lm_head.parameters():
+        #     param.requires_grad = False
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)

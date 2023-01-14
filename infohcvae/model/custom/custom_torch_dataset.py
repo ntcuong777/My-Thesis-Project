@@ -46,7 +46,8 @@ class CustomDataset(Dataset):
             preprocessed_example = self.all_preprocessed_examples[index]
             return qc_ids.to(self.to_device), q_ids.to(self.to_device), c_ids.to(self.to_device),\
                 a_mask.to(self.to_device), q_c_qa_mask.to(self.to_device), no_q_start_positions.to(self.to_device),\
-                no_q_end_positions.to(self.to_device), text_example, preprocessed_example
+                no_q_end_positions.to(self.to_device), [text_example], [preprocessed_example] # must wrap in a list
+
         return qc_ids.to(self.to_device), q_ids.to(self.to_device), c_ids.to(self.to_device),\
             a_mask.to(self.to_device), q_c_qa_mask.to(self.to_device), no_q_start_positions.to(self.to_device),\
             no_q_end_positions.to(self.to_device)
