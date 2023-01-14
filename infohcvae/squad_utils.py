@@ -891,6 +891,8 @@ def extract_predictions_to_dict(all_examples, all_features, all_results, n_best_
         null_start_logit = 0  # the start logit at the slice with min null score
         null_end_logit = 0  # the end logit at the slice with min null score
         for (feature_index, feature) in enumerate(features):
+            if feature.unique_id not in unique_id_to_result:
+                continue # skip
             result = unique_id_to_result[feature.unique_id]
             start_indexes = _get_best_indexes(result.start_logits, n_best_size)
             end_indexes = _get_best_indexes(result.end_logits, n_best_size)
