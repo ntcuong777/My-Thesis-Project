@@ -428,7 +428,7 @@ class BartQAGConditionalVae(pl.LightningModule):
             "loss_kl": loss_kl,
             "loss_qa_info": loss_qa_info,
         }
-        self.log_dict(current_losses, prog_bar=True)
+        self.log_dict(current_losses, prog_bar=False)
 
         return total_loss
 
@@ -620,7 +620,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         bleu = eval_qg(real_question_dict, qg_results)
 
         metrics = {"f1": posterior_ret["f1"], "exact_match": posterior_ret["exact_match"], "bleu": bleu}
-        self.log_dict(metrics, prog_bar=True, on_epoch=True)
+        self.log_dict(metrics, prog_bar=False)
 
         self.example_idx = -1 # reset example index for next validation loop
 
