@@ -282,14 +282,12 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         if past_key_values is None:
             past_key_values = self.build_zq_past(zq)
+            past_key_values_tmp = []
             for (k, v) in past_key_values:
                 k = k.expand(-1, -1, c_ids.size(1), -1)
                 v = v.expand(-1, -1, c_ids.size(1), -1)
-
-            for (k, v) in past_key_values:
-                if self.debug:
-                    print(k.size())
-                    print(v.size())
+                past_key_values_tmp.append((k, v))
+            past_key_values = past_key_values_tmp
 
         # extend the input attention mask so that the init state from `za` is attended during self-attention
         past_key_values_length = past_key_values[0][0].shape[2]
