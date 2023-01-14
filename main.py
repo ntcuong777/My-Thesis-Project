@@ -75,6 +75,7 @@ if __name__ == "__main__":
                         help="Path to the .pt file, None if checkpoint should not be loaded")
     parser.add_argument("--batch_size", default=64, type=int, help="batch_size")
     parser.add_argument("--loss_log_file", default="./train_loss_info.log", type=str)
+    parser.add_argument("--eval_metrics_log_file", default="./metrics_log.log", type=str)
     parser.add_argument("--save_frequency", default=5, type=int, help="save frequency by epoch")
 
     # Add model-specific args
@@ -108,6 +109,9 @@ if __name__ == "__main__":
         dataloader_dir = args.dataloader_dir
         os.makedirs(dataloader_dir, exist_ok=True)
         args.dataloader_dir = os.path.abspath(dataloader_dir)
+
+    open(args.loss_log_file, "w")  # empty loss log file if existed
+    open(args.eval_metrics_log_file, "w")  # empty loss log file if existed
 
     random.seed(args.seed)
     np.random.seed(args.seed)

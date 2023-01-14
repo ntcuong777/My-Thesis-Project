@@ -45,6 +45,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.lr = args.lr
         self.optimizer_algorithm = args.optimizer
         self.loss_log_file = args.loss_log_file
+        self.eval_metrics_log_file = args.eval_metrics_log_file
 
         self.num_finetune_layers = args.num_finetune_layers
         self.bart_decoder_finetune_epochs = args.bart_decoder_finetune_epochs
@@ -632,7 +633,7 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         # Log to file
         log_str = "f1: {:.4f} - em: {:.4f} - bleu: {:.4f}".format(posterior_ret["f1"], posterior_ret["exact_match"], bleu)
-        with open("./metrics_log.log", "a") as f:
+        with open(self.eval_metrics_log_file, "a") as f:
             f.write(log_str + "\n\n")
 
         self.example_idx = -1 # reset example index for next validation loop
