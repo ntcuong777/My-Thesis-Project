@@ -601,7 +601,7 @@ class BartQAGConditionalVae(pl.LightningModule):
                                                   start_logits=posterior_start_logits,
                                                   end_logits=posterior_end_logits))
 
-        return {"posterior_qa": posterior_qa_results, "real_questions": real_question_dict, "qg_result": qg_results}
+        return {"posterior_qa": posterior_qa_results, "real_questions": real_question_dict, "qg_results": qg_results}
 
     def validation_epoch_end(self, outputs: Dict):
         # only one validation set
