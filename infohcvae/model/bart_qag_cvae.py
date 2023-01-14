@@ -89,8 +89,8 @@ class BartQAGConditionalVae(pl.LightningModule):
                 param.requires_grad = False
 
         """ Encoder properties """
-        self.c_a_linear_combin = nn.Bilinear(d_model, d_model, d_model)
-        self.qc_a_linear_combin = nn.Bilinear(d_model, d_model, d_model)
+        self.c_a_nonlinear_combin = nn.Sequential(nn.Linear(2 * d_model, d_model), nn.Mish(True))
+        self.qc_a_nonlinear_combin = nn.Sequential(nn.Linear(2 * d_model, d_model), nn.Mish(True))
 
         self.embed_size_per_head = d_model // decoder_nheads
 
@@ -221,7 +221,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         subspan_with_cls_mask[:, 0] = 1  # attentive to [CLS] token
         subspan_ids = input_ids * subspan_with_cls_mask
         subspan_hidden_states = self.encoder(input_ids=subspan_ids, attention_mask=subspan_with_cls_mask)[0]
-        answer_aggr_hidden_states = F.mish(aggregator(hidden_states, subspan_hidden_states)) # activate with Mish
+        answer_aggr_hidden_states = aggregator(torch.cat([hidden_states, subspan_hidden_states], dim=-1)) # activate with Mish
         if return_input_hidden_states is not None and return_input_hidden_states:
             return hidden_states, answer_aggr_hidden_states
         else:
@@ -231,7 +231,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         """ START: Answer encoding to get latent `za` """
         # context enc
         c_a_hidden_states = self._encode_input_tokens_aggregated_with_span_of_subtokens(
-            input_ids=c_ids, input_mask=c_mask, aggregator=self.c_a_linear_combin, subspan_mask=c_a_mask)
+            input_ids=c_ids, input_mask=c_mask, aggregator=self.c_a_nonlinear_combin, subspan_mask=c_a_mask)
 
         # sample `za`
         za, za_logits = self.calculate_za_latent(self.pool(c_a_hidden_states), hard=True)
@@ -240,7 +240,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         """ START: Question encoding to get latent `zq` """
         # question-context & answer enc
         qc_a_hidden_states = self._encode_input_tokens_aggregated_with_span_of_subtokens(
-            input_ids=q_c_ids, input_mask=q_c_mask, aggregator=self.qc_a_linear_combin,
+            input_ids=q_c_ids, input_mask=q_c_mask, aggregator=self.qc_a_nonlinear_combin,
             subspan_mask=q_c_qa_mask)
 
         # sample `zq`
@@ -480,7 +480,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         past_key_values = None
 
         c_a_hidden_states = self._encode_input_tokens_aggregated_with_span_of_subtokens(
-            input_ids=c_ids, input_mask=c_mask, aggregator=self.c_a_linear_combin,
+            input_ids=c_ids, input_mask=c_mask, aggregator=self.c_a_nonlinear_combin,
             subspan_mask=a_mask)
 
         # unroll
