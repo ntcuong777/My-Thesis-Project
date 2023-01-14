@@ -52,9 +52,9 @@ def main(run_args):
     model = BartQAGConditionalVae(run_args)
     callbacks = [val_em_checkpoint_callback, val_f1_checkpoint_callback, val_bleu_checkpoint_callback,
                  val_bleu_checkpoint_callback, train_loss_checkpoint_callback]
-    trainer = Trainer.from_argparse_args(run_args, callbacks=callbacks)
+    full_trainer = Trainer.from_argparse_args(run_args, callbacks=callbacks)
     ckpt_path = args.checkpoint_file
-    trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader, ckpt_path=ckpt_path)
+    full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader, ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":
@@ -69,7 +69,7 @@ if __name__ == "__main__":
                         action="store_true", default=False)
 
     parser.add_argument("--model_dir", default="./save/vae-checkpoint", type=str)
-    parser.add_argument("--bart_decoder_finetune_epochs", default=5, type=int)
+    parser.add_argument("--bart_decoder_finetune_epochs", default=3, type=int)
     parser.add_argument("--dataloader_dir", default="./save/dataloader", type=str)
     parser.add_argument("--checkpoint_file", default=None, type=str,
                         help="Path to the .pt file, None if checkpoint should not be loaded")

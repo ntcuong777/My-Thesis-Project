@@ -1,5 +1,6 @@
 import collections
 import json
+import logging
 from copy import deepcopy
 from typing import Optional, Dict
 
@@ -24,6 +25,8 @@ from infohcvae.model.losses import (
 from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
 from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
+
+__logger__ = logging.Logger(__name__)
 
 
 class BartQAGConditionalVae(pl.LightningModule):
@@ -59,6 +62,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         config = BartConfig.from_pretrained(base_model)
         bart_model = BartModel.from_pretrained(base_model)
 
+        self.encoder_nlayers = config.encoder_layers
         self.decoder_nlayers = decoder_nlayers = config.decoder_layers
         self.decoder_nheads = decoder_nheads = config.decoder_attention_heads
         self.d_model = d_model = config.d_model
@@ -71,17 +75,6 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.encoder = bart_model.get_encoder()
         self.answer_decoder = bart_model.get_decoder()
         self.question_decoder = bart_model.get_decoder()
-
-        # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
-        # freeze encoder
-        for i in range(config.encoder_layers - self.num_finetune_layers):
-            for param in self.encoder.layers[i].parameters():
-                param.requires_grad = False
-        # freeze decoders
-        for i in range(decoder_nlayers - self.num_finetune_layers):
-            # freeze question & answer decoder (the twos are one)
-            for param in self.answer_decoder.layers[i].parameters():
-                param.requires_grad = False
 
         """ Encoder properties """
         self.c_a_aggregate_nonlinear = nn.Sequential(nn.Bilinear(d_model, d_model, d_model, bias=False),
@@ -144,7 +137,7 @@ class BartQAGConditionalVae(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BartQAGConditionalVae")
         parser.add_argument("--base_model", default='facebook/bart-base', type=str)
-        parser.add_argument('--num_finetune_layers', type=int, default=6)
+        parser.add_argument('--num_finetune_layers', type=int, default=3)
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
@@ -418,10 +411,17 @@ class BartQAGConditionalVae(pl.LightningModule):
 
     def training_epoch_end(self, training_step_outputs):
         if self.current_epoch == self.bart_decoder_finetune_epochs:
-            # FREEZE BART DECODER after a pre-defined number of epochs
-            # freeze decoders (question & answer decoder - the twos are one)
-            for param in self.answer_decoder.parameters():
-                param.requires_grad = False
+            __logger__.info("Freezing top {:d} transformer layers of encoder & decoder".format(self.num_finetune_layers))
+            # FREEZE BART - Freeze transformer layers (except some top layers) of encoder & decoder
+            # freeze encoder
+            for i in range(self.encoder_nlayers - self.num_finetune_layers):
+                for param in self.encoder.layers[i].parameters():
+                    param.requires_grad = False
+            # freeze decoders
+            for i in range(self.decoder_nlayers - self.num_finetune_layers):
+                # freeze question & answer decoder (the twos are one)
+                for param in self.answer_decoder.layers[i].parameters():
+                    param.requires_grad = False
 
     def _generate_answer(self, c_ids, c_mask, za):
         def generate_answer_mask_from_context(start_logits, end_logits):
