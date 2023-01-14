@@ -282,13 +282,15 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         if past_key_values is None:
             past_key_values = self.build_zq_past(zq)
+            for (k, v) in past_key_values:
+                if self.debug:
+                    print(k.size())
+                    print(v.size())
 
         # extend the input attention mask so that the init state from `za` is attended during self-attention
         past_key_values_length = past_key_values[0][0].shape[2]
         past_attended_q_mask = \
             torch.cat([torch.ones(q_ids.size(0), past_key_values_length).to(q_ids.device), q_mask], dim=-1)
-        if self.debug:
-            print(c_a_hidden_states.size())
         question_decoder_outputs = self.decoder(
             input_ids=q_ids,
             attention_mask=past_attended_q_mask,
