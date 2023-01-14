@@ -601,16 +601,16 @@ class BartQAGConditionalVae(pl.LightningModule):
                                                   start_logits=posterior_start_logits,
                                                   end_logits=posterior_end_logits))
 
-        return { "posterior_qa": posterior_qa_results, "question_generation": (real_question_dict, qg_results) }
+        return {"posterior_qa": posterior_qa_results, "question_generation": (real_question_dict, qg_results)}
 
     def validation_epoch_end(self, outputs: Dict):
         # only one validation set
         all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
         all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
 
-        posterior_qa_results = list(itertools.chain.from_iterable(outputs["posterior_qa"]))
-        real_question_dict = {k: v for d in outputs["question_generation"][0] for k, v in d.items()}
-        qg_results = {k: v for d in outputs["question_generation"][1] for k, v in d.items()}
+        posterior_qa_results = list(itertools.chain.from_iterable([out["posterior_qa"] for out in outputs]))
+        real_question_dict = {k: v for out in outputs for d in out["question_generation"][0] for k, v in d.items()}
+        qg_results = {k: v for out in outputs for d in out["question_generation"][1] for k, v in d.items()}
 
         posterior_predictions = extract_predictions_to_dict(all_text_examples, all_preprocessed_examples,
                                                             posterior_qa_results,
