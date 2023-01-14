@@ -1,7 +1,7 @@
 import torch
 
 
-def compute_kernel(x1, x2, z_dim, kernel_type="imq"):
+def compute_kernel(x1, x2, z_dim, kernel_type="rbf"):
     # Convert the tensors into row and column vectors
     D = x1.size(1)
     N = x1.size(0)
@@ -18,7 +18,7 @@ def compute_kernel(x1, x2, z_dim, kernel_type="imq"):
     x2 = x2.expand(N, N, D)
 
     if kernel_type == "rbf":
-        result = compute_rbf(x1, x2, z_dim=z_dim)
+        result = compute_rbf(x1, x2)
     elif kernel_type == "imq":
         result = compute_inv_mult_quad(x1, x2, z_dim=z_dim)
     else:
@@ -27,7 +27,7 @@ def compute_kernel(x1, x2, z_dim, kernel_type="imq"):
     return result
 
 
-def compute_rbf(x1, x2, z_dim, z_var=2.):
+def compute_rbf(x1, x2):
     """
     Computes the RBF Kernel between x1 and x2.
     :param x1: (Tensor)
@@ -35,11 +35,14 @@ def compute_rbf(x1, x2, z_dim, z_var=2.):
     :param eps: (Float)
     :return:
     """
-    z_dim = x2.size(-1)
-    sigma = 2. * z_dim * z_var
-
-    result = torch.exp(-((x1 - x2).pow(2).mean(-1) / sigma))
-    return result
+    dim1_1, dim1_2 = x1.size(0), x2.size(0)
+    depth = x1.size(1)
+    x1 = x1.view(dim1_1, 1, depth)
+    x2 = x2.view(1, dim1_2, depth)
+    x1_core = x1.expand(dim1_1, dim1_2, depth)
+    x2_core = x2.expand(dim1_1, dim1_2, depth)
+    numerator = (x1_core - x2_core).pow(2).mean(2) / depth
+    return torch.exp(-numerator)
 
 
 def compute_inv_mult_quad(x1, x2, z_dim, z_var=2., eps=1e-7):
