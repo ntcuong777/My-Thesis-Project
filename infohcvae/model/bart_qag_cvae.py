@@ -240,7 +240,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         za_past_key_values = self.build_za_past(za)
 
         # extend the input attention mask so that the init state from `za` is attended during self-attention
-        past_attended_c_mask = torch.cat([torch.ones(c_ids.size(0), 1), c_mask], dim=-1)
+        past_attended_c_mask = torch.cat([torch.ones(c_ids.size(0), 1).to(c_ids.device), c_mask], dim=-1)
         answer_decoder_ouputs = self.decoder(
             input_ids=c_ids,
             attention_mask=past_attended_c_mask,
@@ -285,7 +285,8 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         # extend the input attention mask so that the init state from `za` is attended during self-attention
         past_key_values_length = past_key_values[0][0].shape[2]
-        past_attended_q_mask = torch.cat([torch.ones(q_ids.size(0), past_key_values_length), q_mask], dim=-1)
+        past_attended_q_mask = \
+            torch.cat([torch.ones(q_ids.size(0), past_key_values_length).to(q_ids.device), q_mask], dim=-1)
         question_decoder_outputs = self.decoder(
             input_ids=q_ids,
             attention_mask=past_attended_q_mask,
