@@ -383,10 +383,8 @@ class BartQAGConditionalVae(pl.LightningModule):
             loss_za_kl = (1. - self.alpha_kl_a) * self.categorical_kl_criterion(za_logits)
             loss_kl = loss_zq_kl + loss_za_kl
 
-        if self.debug:
-            print(zq.size())
         loss_zq_mmd = (self.alpha_kl_q + self.lambda_mmd_q - 1.) * self.cont_mmd_criterion(zq)
-        loss_za_mmd = (self.alpha_kl_a + self.lambda_mmd_a - 1.) * self.cont_mmd_criterion(za)
+        loss_za_mmd = (self.alpha_kl_a + self.lambda_mmd_a - 1.) * self.gumbel_mmd_criterion(za)
         loss_mmd = loss_zq_mmd + loss_za_mmd
 
         # QA info loss
