@@ -433,7 +433,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         # Log to file
         log_str = ""
         for k, v in current_losses.items():
-            log_str += "%s=%.4f".format(k, v)
+            log_str += "{:s}={:.4f}; ".format(k, v)
         with open(self.loss_log_file, "a") as f:
             f.write(log_str + "\n\n")
         # self.log_dict(current_losses, prog_bar=False)
@@ -631,7 +631,7 @@ class BartQAGConditionalVae(pl.LightningModule):
         self.log_dict(metrics, prog_bar=True)
 
         # Log to file
-        log_str = "f1: %.4f - em: %.4f - bleu: %.4f".format(posterior_ret["f1"], posterior_ret["exact_match"], bleu)
+        log_str = "f1: {:.4f} - em: {:.4f} - bleu: {:.4f}".format(posterior_ret["f1"], posterior_ret["exact_match"], bleu)
         with open("./metrics_log.log", "a") as f:
             f.write(log_str + "\n\n")
 
