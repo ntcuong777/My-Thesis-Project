@@ -1,7 +1,7 @@
 import collections
 import json
 import logging
-from copy import deepcopy
+import itertools
 from typing import Optional, Dict
 
 import torch
@@ -566,13 +566,12 @@ class BartQAGConditionalVae(pl.LightningModule):
 
         posterior_qa_results = []
         qg_results = {}
-        res_dict = {}
+        real_question_dict = {}
 
         assert isinstance(self.trainer.val_dataloaders[0].dataset, CustomDataset), \
             "ERROR: validation set is not constructed from `CustomDataset` class"
 
         # only one validation set
-        all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
         all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
 
         qc_ids, q_ids, c_ids, a_mask, q_c_qa_mask, no_q_start_positions, no_q_end_positions = batch
@@ -597,10 +596,21 @@ class BartQAGConditionalVae(pl.LightningModule):
             posterior_question = to_string(batch_posterior_q_ids[i], tokenizer)
 
             qg_results[unique_id] = posterior_question
-            res_dict[unique_id] = real_question
+            real_question_dict[unique_id] = real_question
             posterior_qa_results.append(RawResult(unique_id=unique_id,
                                                   start_logits=posterior_start_logits,
                                                   end_logits=posterior_end_logits))
+
+        return { "posterior_qa": posterior_qa_results, "question_generation": (real_question_dict, qg_results) }
+
+    def validation_epoch_end(self, outputs: Dict):
+        # only one validation set
+        all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
+        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
+
+        posterior_qa_results = list(itertools.chain.from_iterable(outputs["posterior_qa"]))
+        real_question_dict = {k: v for d in outputs["question_generation"][0] for k, v in d.items()}
+        qg_results = {k: v for d in outputs["question_generation"][1] for k, v in d.items()}
 
         posterior_predictions = extract_predictions_to_dict(all_text_examples, all_preprocessed_examples,
                                                             posterior_qa_results,
@@ -608,19 +618,10 @@ class BartQAGConditionalVae(pl.LightningModule):
                                                             verbose_logging=False, version_2_with_negative=False,
                                                             null_score_diff_threshold=0, noq_position=True)
         posterior_ret = evaluate(self.dev_dataset, posterior_predictions)
-        bleu = eval_qg(res_dict, qg_results)
+        bleu = eval_qg(real_question_dict, qg_results)
 
         metrics = {"f1": posterior_ret["f1"], "exact_match": posterior_ret["exact_match"], "bleu": bleu}
         self.log_dict(metrics, prog_bar=True, on_epoch=True)
-        return metrics
-
-    def validation_epoch_end(self, outputs):
-        avg_em = torch.stack([x["exact_match"] for x in outputs]).mean()
-        avg_f1 = torch.stack([x["f1"] for x in outputs]).mean()
-        avg_bleu = torch.stack([x["bleu"] for x in outputs]).mean()
-        self.log("avg_em", avg_em)
-        self.log("avg_f1", avg_f1)
-        self.log("avg_bleu", avg_bleu)
 
     def configure_optimizers(self):
         params = filter(lambda p: p.requires_grad, self.parameters())
