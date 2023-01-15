@@ -74,7 +74,7 @@ class GumbelMMDLoss(nn.Module):
         # do softargmax to make measuring the mean in MMD possible
         prior_z = softargmax(prior_z)
         posterior_z = softargmax(posterior_z)
-        return compute_mmd(posterior_z, prior_z, latent_dim)
+        return compute_mmd(posterior_z, prior_z)
 
 
 class ContinuousKernelMMDLoss(nn.Module):
@@ -86,7 +86,7 @@ class ContinuousKernelMMDLoss(nn.Module):
         batch_size, latent_dim = posterior_z.size()
         # sample more prior variables
         prior_z = torch.randn(batch_size*4, latent_dim).to(posterior_z.device)
-        return compute_mmd(posterior_z, prior_z, latent_dim)
+        return compute_mmd(posterior_z, prior_z)
 
 
 class GaussianJensenShannonDivLoss(nn.Module):

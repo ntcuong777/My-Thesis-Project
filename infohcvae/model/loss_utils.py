@@ -1,26 +1,12 @@
 import torch
 
 
-def compute_kernel(x1, x2, z_dim, kernel_type="rbf"):
+def compute_kernel(x1, x2, kernel_type="imq", exclude_diag: bool = None):
     if kernel_type == "rbf":
         result = compute_rbf(x1, x2)
     elif kernel_type == "imq":
-        # Convert the tensors into row and column vectors
-        D = x1.size(1)
-        N = x1.size(0)
-
-        x1 = x1.unsqueeze(-2)  # Make it into a column tensor
-        x2 = x2.unsqueeze(-3)  # Make it into a row tensor
-
-        """
-        Usually the below lines are not required, especially in our case,
-        but this is useful when x1 and x2 have different sizes
-        along the 0th dimension.
-        """
-        x1 = x1.expand(N, N, D)
-        x2 = x2.expand(N, N, D)
-
-        result = compute_inv_mult_quad(x1, x2, z_dim=z_dim)
+        assert exclude_diag is not None, "IMQ kernel requires `exclude_diag` argument"
+        result = compute_inv_mult_quad(x1, x2, exclude_diag=exclude_diag)
     else:
         raise ValueError('Undefined kernel type.')
 
@@ -45,32 +31,41 @@ def compute_rbf(x1, x2):
     return torch.exp(-numerator)
 
 
-def compute_inv_mult_quad(x1, x2, z_dim, z_var=2., eps=1e-7):
+def compute_inv_mult_quad(z1, z2, z_var=2., exclude_diag=True):
+    r"""Calculate sum of sample-wise measures of inverse multiquadratics kernel described in the WAE paper.
+    Args:
+        z1 (Tensor): batch of samples from a multivariate gaussian distribution \
+            with scalar variance of z_var.
+        z2 (Tensor): batch of samples from another multivariate gaussian distribution \
+            with scalar variance of z_var.
+        exclude_diag (bool): whether to exclude diagonal kernel measures before sum it all.
     """
-    Computes the Inverse Multi-Quadratics Kernel between x1 and x2,
-    given by
-            k(x_1, x_2) = \sum \frac{C}{C + \|x_1 - x_2 \|^2}
-    :param x1: (Tensor)
-    :param x2: (Tensor)
-    :param eps: (Float)
-    :return:
-    """
-    z_dim = x2.size(-1)
-    C = 2 * z_dim * z_var
-    kernel = C / (eps + C + (x1 - x2).pow(2).sum(dim=-1))
+    assert z1.size() == z2.size()
+    assert z1.ndimension() == 2
 
-    # Exclude diagonal elements
-    result = kernel.sum() - kernel.diag().sum()
+    z_dim = z1.size(1)
+    C = 2*z_dim*z_var
 
-    return result
+    z11 = z1.unsqueeze(1).repeat(1, z2.size(0), 1)
+    z22 = z2.unsqueeze(0).repeat(z1.size(0), 1, 1)
+
+    kernel_matrix = C/(1e-9+C+(z11-z22).pow(2).sum(2))
+    kernel_sum = kernel_matrix.sum()
+    # numerically identical to the formulation. but..
+    if exclude_diag:
+        kernel_sum -= kernel_matrix.diag().sum()
+
+    return kernel_sum
 
 
-def compute_mmd(posterior_z, prior_z, latent_dim):
-    prior_z_kernel = compute_kernel(prior_z, prior_z, z_dim=latent_dim)
-    posterior_z_kernel = compute_kernel(
-        posterior_z, posterior_z, z_dim=latent_dim)
-    combined_kernel = compute_kernel(prior_z, posterior_z, z_dim=latent_dim)
+def compute_mmd(posterior_z, prior_z):
+    pos_z_batch = posterior_z.size(0)
+    prior_z_batch = prior_z.size(0)
 
-    mmd = prior_z_kernel.mean() + posterior_z_kernel.mean() - \
+    prior_z_kernel = compute_kernel(prior_z, prior_z, exclude_diag=True)
+    posterior_z_kernel = compute_kernel(posterior_z, posterior_z, exclude_diag=True)
+    combined_kernel = compute_kernel(prior_z, posterior_z, exclude_diag=False)
+
+    mmd = prior_z_kernel.div(prior_z_batch*(prior_z_batch-1)) + posterior_z_kernel.div(pos_z_batch*(pos_z_batch-1)) - \
         2 * combined_kernel.mean()
     return mmd
