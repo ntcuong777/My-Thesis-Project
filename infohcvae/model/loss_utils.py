@@ -40,9 +40,6 @@ def compute_inv_mult_quad(z1, z2, z_var=2., exclude_diag=True):
             with scalar variance of z_var.
         exclude_diag (bool): whether to exclude diagonal kernel measures before sum it all.
     """
-    assert z1.size() == z2.size()
-    assert z1.ndimension() == 2
-
     z_dim = z1.size(1)
     C = 2*z_dim*z_var
 
