@@ -193,8 +193,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
         parser.add_argument('--pooling_strategy', type=str, default="first", choices=["max", "mean", "first"])
-        parser.add_argument('--alpha_kl_q', type=float, default=1)
-        parser.add_argument('--alpha_kl_a', type=float, default=1)
+        parser.add_argument('--alpha_kl_q', type=float, default=0)
+        parser.add_argument('--alpha_kl_a', type=float, default=0)
         parser.add_argument('--lambda_mmd_q', type=float, default=10)
         parser.add_argument('--lambda_mmd_a', type=float, default=10)
         parser.add_argument('--lambda_qa_info', type=float, default=1)
@@ -445,12 +445,14 @@ class BertQAGConditionalVae(pl.LightningModule):
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = 0.0, 0.0, 0.0
         if self.alpha_kl_a < 1. or self.alpha_kl_q < 1.:
-            loss_zq_kl = (1. - self.alpha_kl_q) * self.gaussian_kl_criterion(zq_mu, zq_logvar)
-            loss_za_kl = (1. - self.alpha_kl_a) * self.categorical_kl_criterion(za_logits)
+            loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(zq_mu, zq_logvar)
+            loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(za_logits)
             loss_kl = loss_zq_kl + loss_za_kl
 
-        loss_zq_mmd = (self.alpha_kl_q + self.lambda_mmd_q - 1.) * self.cont_mmd_criterion(zq)
-        loss_za_mmd = (self.alpha_kl_a + self.lambda_mmd_a - 1.) * self.gumbel_mmd_criterion(za)
+        loss_zq_mmd = self.cont_mmd_criterion(zq)
+        loss_za_mmd = self.gumbel_mmd_criterion(za)
+        loss_zq_mmd[loss_zq_mmd >= 0] = loss_zq_mmd[loss_zq_mmd >= 0] * self.lambda_mmd_q # combat unknown negativity
+        loss_za_mmd[loss_za_mmd >= 0] = loss_za_mmd[loss_za_mmd >= 0] * self.lambda_mmd_a # combat unknown negativity
         loss_mmd = loss_zq_mmd + loss_za_mmd
 
         # QA info loss
