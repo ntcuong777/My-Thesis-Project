@@ -435,10 +435,13 @@ class BertQAGConditionalVae(pl.LightningModule):
         loss_qa_info = 0.0
         for i in range(batch_size // self.minibatch_size):
             start_idx, end_idx = i*self.minibatch_size, (i+1)*self.minibatch_size
+            current_c_ids = c_ids[start_idx:end_idx, ...]
+            current_q_ids = q_ids[start_idx:end_idx, ...]
+            current_a_mask = a_mask[start_idx:end_idx, ...]
             out = self.forward(
-                c_ids=c_ids[start_idx:end_idx, ...],
-                q_ids=q_ids[start_idx:end_idx, ...],
-                c_a_mask=a_mask[start_idx:end_idx, ...],
+                c_ids=current_c_ids,
+                q_ids=current_q_ids,
+                c_a_mask=current_a_mask,
                 return_qa_mean_embeds=True
             )
 
@@ -460,10 +463,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             # Compute losses
             # q rec loss
             loss_q_rec = loss_q_rec + self.q_rec_criterion(
-                q_logits[:, :-1, :].transpose(1, 2).contiguous(), q_ids[:, 1:])
+                q_logits[:, :-1, :].transpose(1, 2).contiguous(), current_q_ids[:, 1:])
 
             # a rec loss
-            max_c_len = c_ids.size(1)
+            max_c_len = current_c_ids.size(1)
             no_q_start_positions.clamp_(0, max_c_len)
             no_q_end_positions.clamp_(0, max_c_len)
             loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
