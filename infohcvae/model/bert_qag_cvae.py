@@ -96,8 +96,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             for param in self.posterior_encoder.encoder.layer[i].parameters():
                 param.requires_grad = False
 
-        # Initialize prior encoder
-        # self.prior_encoder = deepcopy(self.posterior_encoder)
+        # self.use_neural_prior = True if args.use_neural_prior == 1 else False
+        # if self.use_neural_prior:
+        #     # Initialize prior encoder
+        #     self.prior_encoder = deepcopy(self.posterior_encoder)
 
         # Initialize answer & question decoder
         decoder = BertModel.from_pretrained(base_model, is_decoder=True, add_cross_attention=True,
@@ -176,7 +178,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--base_model", default='bert-base-uncased', type=str)
         parser.add_argument('--num_finetune_enc_layers', type=int, default=1)
         parser.add_argument('--num_dec_layers', type=int, default=3)
-        parser.add_argument('--use_neural_prior', type=int, default=0, choices=[0, 1])
+        # parser.add_argument('--use_neural_prior', type=int, default=0, choices=[0, 1])
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
@@ -239,8 +241,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         past_key_values = tuple((ca, ca) for ca in cross_attn)
         return past_key_values
 
-    def _encode_input_tokens_aggregated_with_span_of_subtokens(self, input_ids, input_mask, subspan_mask=None):
-        encoder_outputs = self.posterior_encoder(
+    def _encode_input_tokens(self, encoder, input_ids, input_mask, subspan_mask=None):
+        encoder_outputs = encoder(
             input_ids=input_ids,
             attention_mask=input_mask,
             token_type_ids=subspan_mask
@@ -250,8 +252,8 @@ class BertQAGConditionalVae(pl.LightningModule):
     def _encode_latent_posteriors(self, q_ids, q_mask, c_ids, c_mask, c_a_mask):
         """ START: Answer encoding to get latent `za` """
         # context enc
-        c_a_hidden_states = self._encode_input_tokens_aggregated_with_span_of_subtokens(
-            input_ids=c_ids, input_mask=c_mask, subspan_mask=c_a_mask)
+        c_a_hidden_states = self._encode_input_tokens(
+            encoder=self.posterior_encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=c_a_mask)
 
         # sample `za`
         za, za_logits = self.calculate_za_latent(self.pool(c_a_hidden_states), hard=True)
@@ -259,8 +261,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         """ START: Question encoding to get latent `zq` """
         # question-context & answer enc
-        q_hidden_states = self._encode_input_tokens_aggregated_with_span_of_subtokens(
-            input_ids=q_ids, input_mask=q_mask)
+        q_hidden_states = self._encode_input_tokens(
+            encoder=self.posterior_encoder, input_ids=q_ids, input_mask=q_mask)
         q_pooled = self.pool(q_hidden_states)
 
         # attetion q, c
@@ -515,8 +517,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         past_key_values = None
 
-        c_a_hidden_states = self._encode_input_tokens_aggregated_with_span_of_subtokens(
-            input_ids=c_ids, input_mask=c_mask, subspan_mask=a_mask)
+        c_a_hidden_states = self._encode_input_tokens(
+            encoder=self.posterior_encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=a_mask)
 
         # unroll
         all_q_ids = list()
