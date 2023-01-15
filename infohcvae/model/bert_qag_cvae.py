@@ -423,43 +423,12 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         _, q_ids, c_ids, a_mask, _, no_q_start_positions, no_q_end_positions = batch
+        out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, return_qa_mean_embeds=True)
 
-        batch_size, _ = c_ids.size()
-        za, za_logits = None, None
-        zq, zq_mu, zq_logvar = None, None, None
-        start_logits, end_logits = None, None
-        q_logits, q_mean_emb, a_mean_emb = None, None, None
-        first_run = True
-        assert batch_size % self.minibatch_size == 0, "Mini-batch size must be divisible by batch size"
-        for i in range(batch_size // self.minibatch_size):
-            start_idx, end_idx = i * self.minibatch_size, (i+1) * self.minibatch_size
-            out = self.forward(
-                c_ids=c_ids[start_idx:end_idx, ...],
-                q_ids=q_ids[start_idx:end_idx, ...],
-                c_a_mask=a_mask[start_idx:end_idx, ...],
-                return_qa_mean_embeds=True
-            )
-
-            if first_run:
-                za, za_logits = out["za_out"]
-                zq, zq_mu, zq_logvar = out["zq_out"]
-                start_logits, end_logits = out["answer_out"]
-                q_logits, q_mean_emb, a_mean_emb = out["question_out"]
-                first_run = False
-            else:
-                za = torch.cat([za, out["za_out"][0]], dim=0) # concat by batch dimension
-                za_logits = torch.cat([za_logits, out["za_out"][1]], dim=0)
-
-                zq = torch.cat([zq, out["zq_out"][0]], dim=0)
-                zq_mu = torch.cat([zq_mu, out["zq_out"][1]], dim=0)
-                zq_logvar = torch.cat([zq_logvar, out["zq_out"][2]], dim=0)
-
-                start_logits = torch.cat([start_logits, out["answer_out"][0]], dim=0)  # concat by batch dimension
-                end_logits = torch.cat([end_logits, out["answer_out"][1]], dim=0)
-
-                q_logits = torch.cat([q_logits, out["question_out"][0]], dim=0)
-                q_mean_emb = torch.cat([q_mean_emb, out["question_out"][1]], dim=0)
-                a_mean_emb = torch.cat([a_mean_emb, out["question_out"][2]], dim=0)
+        za, za_logits = out["za_out"]
+        zq, zq_mu, zq_logvar = out["zq_out"]
+        start_logits, end_logits = out["answer_out"]
+        q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         # Compute losses
         # q rec loss
