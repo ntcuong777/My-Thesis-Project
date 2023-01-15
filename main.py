@@ -73,7 +73,7 @@ if __name__ == "__main__":
     parser.add_argument("--dataloader_dir", default="./save/dataloader", type=str)
     parser.add_argument("--checkpoint_file", default=None, type=str,
                         help="Path to the .pt file, None if checkpoint should not be loaded")
-    parser.add_argument("--batch_size", default=128, type=int, help="batch size")
+    parser.add_argument("--batch_size", default=64, type=int, help="batch size")
     parser.add_argument("--minibatch_size", default=16, type=int, help="mini-batch size")
     parser.add_argument("--loss_log_file", default="./train_loss_info.log", type=str)
     parser.add_argument("--eval_metrics_log_file", default="./metrics_log.log", type=str)
