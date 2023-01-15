@@ -14,7 +14,7 @@ import torch
 
 
 def _compute_mmd_with_rbf(x1, x2):
-    batch_size, h_dim = x1.size
+    batch_size, h_dim = x1.size()
 
     norms_x = x1.pow(2).sum(1, keepdim=True)  # batch_size x 1
     prods_x = torch.mm(x1, x1.t())  # batch_size x batch_size
@@ -47,7 +47,7 @@ def _compute_mmd_with_rbf(x1, x2):
 
 
 def _compute_mmd_with_inv_mult_quad(z1, z2):
-    batch_size, h_dim = z1.size
+    batch_size, h_dim = z1.size()
 
     norms_x = z1.pow(2).sum(1, keepdim=True)  # batch_size x 1
     prods_x = torch.mm(z1, z1.t())  # batch_size x batch_size
