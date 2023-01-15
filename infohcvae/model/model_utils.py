@@ -55,6 +55,7 @@ def cal_attn(query, memories, mask):
 
 
 def sample_gumbel(shape, device, eps=1e-10):
+    """ Sample from Gumbel(0, 1) """
     U = torch.rand(shape).to(device)
     return -torch.log(-torch.log(U + eps) + eps)
 

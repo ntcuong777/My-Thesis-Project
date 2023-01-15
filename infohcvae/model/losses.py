@@ -72,8 +72,8 @@ class GumbelMMDLoss(nn.Module):
         prior_z = gumbel_latent_var_sampling(batch_size, latent_dim, nlatent, device=posterior_z.device)
 
         # do softargmax to make measuring the mean in MMD possible
-        prior_z = softargmax(prior_z) / nlatent # normalize to [0, 1]
-        posterior_z = softargmax(posterior_z) / nlatent # normalize to [0, 1]
+        prior_z = softargmax(prior_z)
+        posterior_z = softargmax(posterior_z)
         return compute_mmd(posterior_z, prior_z) # use RBF kernel for categorical distribution
 
 
