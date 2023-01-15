@@ -132,7 +132,13 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.zq_logvar_linear = nn.Linear(4*d_model, nzqdim, bias=False)
 
         """ Answer decoder properties """
-        self.za_projection = nn.Linear(nzadim * nza_values, d_model, bias=False)
+        self.zq_attention = nn.Linear(nzqdim, d_model)
+        self.za_zq_projection = nn.Sequential(
+            nn.Linear(nzadim * nza_values + nzqdim, 4*(nzadim * nza_values + nzqdim)),
+            nn.Mish(True),
+            nn.Linear(4*(nzadim * nza_values + nzqdim), d_model),
+            nn.Mish(True)
+        )
         self.answer_dec_projection = nn.Linear(4*d_model, d_model, bias=False)
         self.start_linear = nn.Linear(d_model, 1)
         self.end_linear = nn.Linear(d_model, 1)
@@ -236,21 +242,17 @@ class BertQAGConditionalVae(pl.LightningModule):
         za = gumbel_softmax(za_logits, hard=hard)
         return za, za_logits
 
-    def build_za_init_state(self, za):
-        za_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)
-        za_projected = za_projected.unsqueeze(1).expand(-1, self.max_c_len, -1)  # shape = (N, c_len, d_model)
-        return za_projected
+    def build_za_init_state_with_zq(self, za, zq):
+        z_input = torch.cat([za.view(-1, self.nzadim * self.nza_values), zq], dim=-1)
+        z_projected = self.za_zq_projection(z_input)  # shape = (N, d_model)
+        z_projected = z_projected.unsqueeze(1).expand(-1, self.max_c_len, -1)  # shape = (N, c_len, d_model)
+        return z_projected
 
     """ Encoding-related methods """
     def _encode_latent_posteriors(self, q_ids, q_mask, c_ids, c_mask, c_a_mask):
-        """ START: Answer encoding to get latent `za` """
-        # context-answer enc
-        c_a_hidden_states = _encode_input_tokens(
-            encoder=self.encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=c_a_mask)
-
-        # sample `za`
-        za, za_logits = self.calculate_za_latent(self.pool(c_a_hidden_states), hard=True)
-        """ END: Answer encoding to get latent `za` """
+        # context enc
+        c_hidden_states = _encode_input_tokens(
+            encoder=self.encoder, input_ids=c_ids, input_mask=c_mask)
 
         """ START: Question encoding to get latent `zq` """
         # question-context & answer enc
@@ -258,41 +260,53 @@ class BertQAGConditionalVae(pl.LightningModule):
             encoder=self.encoder, input_ids=q_ids, input_mask=q_mask)
         q_pooled = self.pool(q_hidden_states)
 
-        # attetion q, c_a
+        # attetion q, c
         mask = c_mask.unsqueeze(1)
         c_attned_by_q, _ = cal_attn(self.question_attention(q_pooled).unsqueeze(1),
-                                    c_a_hidden_states, mask)
+                                    c_hidden_states, mask)
         c_attned_by_q = c_attned_by_q.squeeze(1)
 
-        # attetion c_a, q
-        c_a_pooled = self.pool(c_a_hidden_states)
+        # attetion c, q
+        c_pooled = self.pool(c_hidden_states)
         mask = q_mask.unsqueeze(1)
-        q_attned_by_c, _ = cal_attn(self.context_attention(c_a_pooled).unsqueeze(1),
+        q_attned_by_c, _ = cal_attn(self.context_attention(c_pooled).unsqueeze(1),
                                     q_hidden_states, mask)
         q_attned_by_c = q_attned_by_c.squeeze(1)
 
-        h = torch.cat([q_pooled, q_attned_by_c, c_a_pooled, c_attned_by_q], dim=-1)
+        h = torch.cat([q_pooled, q_attned_by_c, c_pooled, c_attned_by_q], dim=-1)
         # sample `zq`
         zq, zq_mu, zq_logvar = self.calculate_zq_latent(h)
         """ END: Question encoding to get latent `zq` """
+
+        """ START: Answer encoding to get latent `za` """
+        # context-answer enc
+        c_a_hidden_states = _encode_input_tokens(
+            encoder=self.encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=c_a_mask)
+
+        # attention zq, c_a
+        mask = c_mask.unsqueeze(1)
+        c_a_attned_by_zq, _ = cal_attn(self.zq_attention(zq).unsqueeze(1), c_a_hidden_states, mask)
+        c_a_attned_by_zq = c_a_attned_by_zq.squeeze(1)
+
+        # sample `za`
+        h = torch.cat([zq, c_a_attned_by_zq, self.pool(c_a_hidden_states)], dim=-1)
+        za, za_logits = self.calculate_za_latent(h, hard=True)
+        """ END: Answer encoding to get latent `za` """
         return zq, zq_mu, zq_logvar, za, za_logits, c_a_hidden_states
 
     """ Decoding-related methods """
-    def _decode_answer(self, c_ids, c_mask, za):
+    def _decode_answer(self, c_ids, c_mask, za, zq):
         # context enc
         c_hidden_states = _encode_input_tokens(
             encoder=self.encoder, input_ids=c_ids, input_mask=c_mask)
 
-        # Initialize `past_key_values` with `za` for answer generation
-        # za_past_key_values = self.build_za_past(za)
-
-        za_projected = self.build_za_init_state(za)
+        za_zq_projected = self.build_za_init_state_with_zq(za, zq)
         dec_input_emb = self.answer_dec_projection(
             torch.cat(
                 [c_hidden_states,
-                 za_projected,
-                 c_hidden_states * za_projected,
-                 torch.abs(c_hidden_states - za_projected)],
+                 za_zq_projected,
+                 c_hidden_states * za_zq_projected,
+                 torch.abs(c_hidden_states - za_zq_projected)],
                 dim=-1)
         )
 
@@ -381,7 +395,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             q_ids, q_mask, c_ids, c_mask, c_a_mask)
 
         """ ANSWER DECODING PART """
-        start_logits, end_logits = self._decode_answer(c_ids, c_mask, za)
+        start_logits, end_logits = self._decode_answer(c_ids, c_mask, za, zq)
 
         """ QUESTION DECODING PART """
         lm_logits, question_out_hidden_states, _ = self._decode_question(
@@ -470,7 +484,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return total_loss
 
     """ Generation-related methods """
-    def _generate_answer(self, c_ids, c_mask, za):
+    def _generate_answer(self, c_ids, c_mask, za, zq):
         def generate_answer_mask_from_context(start_logits, end_logits):
             batch_size, max_c_len = c_ids.size()
 
@@ -496,7 +510,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             return a_mask, start_positions.squeeze(1), end_positions.squeeze(1)
 
-        return_start_logits, return_end_logits = self._decode_answer(c_ids, c_mask, za)
+        return_start_logits, return_end_logits = self._decode_answer(c_ids, c_mask, za, zq)
 
         # Get generated answer mask from context ids `c_ids`
         gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = generate_answer_mask_from_context(
@@ -557,7 +571,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             za = gumbel_latent_var_sampling(c_ids.size(0), self.nzadim, self.nza_values, c_ids.device)
 
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
-                self._generate_answer(c_ids, c_mask, za)
+                self._generate_answer(c_ids, c_mask, za, zq)
             q_ids = self._generate_question(c_ids, c_mask, gen_c_a_mask, zq)
 
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
@@ -574,7 +588,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
                 """ Generation """
                 gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
-                    self._generate_answer(context_ids, c_mask, za)
+                    self._generate_answer(context_ids, c_mask, za, zq)
                 question_ids = self._generate_question(context_ids, c_mask, gen_c_a_mask, zq)
 
                 return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
