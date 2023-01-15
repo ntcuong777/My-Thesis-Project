@@ -81,25 +81,22 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.sos_id = self.tokenizer.cls_token_id
         self.eos_id = self.tokenizer.sep_token_id
 
-        # Initialize posterior encoder
-        self.posterior_encoder = bert_model
+        # Initialize encoder
+        self.encoder = bert_model.get_encoder()
 
         # Pooling layer for computing the latent variables
         self.first_token_pooler = BertPooler(config) if self.pooling_strategy == "first" else None
 
         # Freeze embedding layer
-        enc_embedding_layer = self.posterior_encoder.get_input_embeddings()
-        for params in self.posterior_encoder.get_input_embeddings().parameters():
+        enc_embedding_layer = self.encoder.get_input_embeddings()
+        for params in self.encoder.get_input_embeddings().parameters():
             params.requires_grad = False
         # freeze encoder layers, except `num_finetune_enc_layers` top layers
         for i in range(self.encoder_nlayers - self.num_finetune_enc_layers):
-            for param in self.posterior_encoder.layers[i].parameters():
+            for param in self.encoder.layers[i].parameters():
                 param.requires_grad = False
 
-        # Initialize prior encoder
-        # self.prior_encoder = deepcopy(self.posterior_encoder)
-
-        # Initialize answer & question decoder
+        # Initialze answer & question decoder
         decoder = BertModel.from_pretrained(base_model, is_decoder=True, add_cross_attention=True,
                                             add_pooling_layer=False)
         # freeze decoder embedding layers
@@ -239,7 +236,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return past_key_values
 
     def _encode_input_tokens_aggregated_with_span_of_subtokens(self, input_ids, input_mask, subspan_mask=None):
-        encoder_outputs = self.posterior_encoder(
+        encoder_outputs = self.encoder(
             input_ids=input_ids,
             attention_mask=input_mask,
             token_type_ids=subspan_mask
