@@ -1,68 +1,95 @@
 import torch
 
 
-def compute_kernel(x1, x2, kernel_type="imq", exclude_diag: bool = None):
+# def compute_kernel(x1, x2, kernel_type="imq", exclude_diag: bool = None):
+#     if kernel_type == "rbf":
+#         result = compute_mmd_with_rbf(x1, x2)
+#     elif kernel_type == "imq":
+#         assert exclude_diag is not None, "IMQ kernel requires `exclude_diag` argument"
+#         result = compute_mmd_with_inv_mult_quad(x1, x2, exclude_diag=exclude_diag)
+#     else:
+#         raise ValueError('Undefined kernel type.')
+#
+#     return result
+
+
+def _compute_mmd_with_rbf(x1, x2):
+    batch_size, h_dim = x1.size
+
+    norms_x = x1.pow(2).sum(1, keepdim=True)  # batch_size x 1
+    prods_x = torch.mm(x1, x1.t())  # batch_size x batch_size
+    dists_x = norms_x + norms_x.t() - 2 * prods_x
+
+    norms_y = x2.pow(2).sum(1, keepdim=True)  # batch_size x 1
+    prods_y = torch.mm(x2, x2.t())  # batch_size x batch_size
+    dists_y = norms_y + norms_y.t() - 2 * prods_y
+
+    dot_prd = torch.mm(x1, x2.t())
+    dists_c = norms_x + norms_y.t() - 2 * dot_prd
+
+    stats = 0
+    for scale in [.1, .2, .5, 1., 2., 5., 10.]:
+        C = 2 * h_dim * 1.0 / scale
+        res1 = torch.exp(-C * dists_x)
+        res1 += torch.exp(-C * dists_y)
+
+        if torch.cuda.is_available():
+            res1 = (1 - torch.eye(batch_size).cuda()) * res1
+        else:
+            res1 = (1 - torch.eye(batch_size)) * res1
+
+        res1 = res1.sum() / (batch_size - 1)
+        res2 = torch.exp(-C * dists_c)
+        res2 = res2.sum() * 2. / batch_size
+        stats += res1 - res2
+
+    return stats
+
+
+def _compute_mmd_with_inv_mult_quad(z1, z2):
+    batch_size, h_dim = z1.size
+
+    norms_x = z1.pow(2).sum(1, keepdim=True)  # batch_size x 1
+    prods_x = torch.mm(z1, z1.t())  # batch_size x batch_size
+    dists_x = norms_x + norms_x.t() - 2 * prods_x
+
+    norms_y = z2.pow(2).sum(1, keepdim=True)  # batch_size x 1
+    prods_y = torch.mm(z2, z2.t())  # batch_size x batch_size
+    dists_y = norms_y + norms_y.t() - 2 * prods_y
+
+    dot_prd = torch.mm(z1, z2.t())
+    dists_c = norms_x + norms_y.t() - 2 * dot_prd
+
+    stats = 0
+    for scale in [.1, .2, .5, 1., 2., 5., 10.]:
+        C = 2 * h_dim * 1.0 * scale
+        res1 = C / (C + dists_x)
+        res1 += C / (C + dists_y)
+
+        if torch.cuda.is_available():
+            res1 = (1 - torch.eye(batch_size).cuda()) * res1
+        else:
+            res1 = (1 - torch.eye(batch_size)) * res1
+
+        res1 = res1.sum() / (batch_size - 1)
+        res2 = C / (C + dists_c)
+        res2 = res2.sum() * 2. / batch_size
+        stats += res1 - res2
+
+    return stats
+
+
+def compute_mmd(posterior_z, prior_z, kernel_type="imq"):
+    # bs = posterior_z.size(0)
+    #
+    # prior_z_kernel = compute_kernel(prior_z, prior_z, exclude_diag=True)
+    # posterior_z_kernel = compute_kernel(posterior_z, posterior_z, exclude_diag=True)
+    # combined_kernel = compute_kernel(prior_z, posterior_z, exclude_diag=False)
+    #
+    # mmd = prior_z_kernel.mean() + posterior_z_kernel.mean() - \
+    #     2 * combined_kernel.mean()
+    # return mmd
     if kernel_type == "rbf":
-        result = compute_rbf(x1, x2)
-    elif kernel_type == "imq":
-        assert exclude_diag is not None, "IMQ kernel requires `exclude_diag` argument"
-        result = compute_inv_mult_quad(x1, x2, exclude_diag=exclude_diag)
+        return _compute_mmd_with_rbf(posterior_z, prior_z)
     else:
-        raise ValueError('Undefined kernel type.')
-
-    return result
-
-
-def compute_rbf(x1, x2):
-    """
-    Computes the RBF Kernel between x1 and x2.
-    :param x1: (Tensor)
-    :param x2: (Tensor)
-    :param eps: (Float)
-    :return:
-    """
-    dim1_1, dim1_2 = x1.size(0), x2.size(0)
-    depth = x1.size(1)
-    x1 = x1.view(dim1_1, 1, depth)
-    x2 = x2.view(1, dim1_2, depth)
-    x1_core = x1.expand(dim1_1, dim1_2, depth)
-    x2_core = x2.expand(dim1_1, dim1_2, depth)
-    numerator = (x1_core - x2_core).pow(2).mean(2) / depth
-    return torch.exp(-numerator)
-
-
-def compute_inv_mult_quad(z1, z2, z_var=2., exclude_diag=True):
-    r"""Calculate sum of sample-wise measures of inverse multiquadratics kernel described in the WAE paper.
-    Args:
-        z1 (Tensor): batch of samples from a multivariate gaussian distribution \
-            with scalar variance of z_var.
-        z2 (Tensor): batch of samples from another multivariate gaussian distribution \
-            with scalar variance of z_var.
-        exclude_diag (bool): whether to exclude diagonal kernel measures before sum it all.
-    """
-    z_dim = z1.size(1)
-    C = 2*z_dim*z_var
-
-    z11 = z1.unsqueeze(1).repeat(1, z2.size(0), 1)
-    z22 = z2.unsqueeze(0).repeat(z1.size(0), 1, 1)
-
-    kernel_matrix = C/(1e-9+C+(z11-z22).pow(2).sum(2))
-    kernel_sum = kernel_matrix.sum()
-    # numerically identical to the formulation. but..
-    if exclude_diag:
-        kernel_sum -= kernel_matrix.diag().sum()
-
-    return kernel_sum
-
-
-def compute_mmd(posterior_z, prior_z):
-    pos_z_batch = posterior_z.size(0)
-    prior_z_batch = prior_z.size(0)
-
-    prior_z_kernel = compute_kernel(prior_z, prior_z, exclude_diag=True)
-    posterior_z_kernel = compute_kernel(posterior_z, posterior_z, exclude_diag=True)
-    combined_kernel = compute_kernel(prior_z, posterior_z, exclude_diag=False)
-
-    mmd = prior_z_kernel.div(prior_z_batch*(prior_z_batch-1)) + posterior_z_kernel.div(pos_z_batch*(pos_z_batch-1)) - \
-        2 * combined_kernel.mean()
-    return mmd
+        return _compute_mmd_with_inv_mult_quad(posterior_z, prior_z)
