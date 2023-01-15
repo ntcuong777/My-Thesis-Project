@@ -1,2 +1,2 @@
 # remember to pass the batch size to this model as first arg
-python main.py --accelerator=gpu --devices=auto --load_saved_dataloader --accumulate_grad_batches=4 --save_frequency=5 --max_epochs=20 --log_every_n_steps=30 --check_val_every_n_epoch=5 --strategy=ddp --default_root_dir=./save/logs
+python main.py --accelerator=gpu --devices=auto --load_saved_dataloader --accumulate_grad_batches=8 --save_frequency=5 --max_epochs=20 --log_every_n_steps=30 --check_val_every_n_epoch=5 --strategy=ddp --default_root_dir=./save/logs
