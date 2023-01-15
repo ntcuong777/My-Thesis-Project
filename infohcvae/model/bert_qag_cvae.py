@@ -90,7 +90,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.eos_id = self.tokenizer.sep_token_id
 
         # ENCODER - Initialize posterior encoder
-        self.encoder = bert2bert_model.get_encoder()
+        self.encoder = bert2bert_model.get_encoder() # this is an instance of BertModel
 
         # Pooling layer for computing the latent variables
         self.first_token_pooler = \
@@ -111,7 +111,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.answer_decoder.layer = self.answer_decoder.encoder.layer[encoder_nlayers - self.num_finetune_enc_layers:]
 
         # Question decoder
-        self.question_decoder = bert2bert_model.get_decoder()
+        self.question_decoder = bert2bert_model.get_decoder().bert # this is an instance of BertLMHeadModel -> BertModel
         # freeze question decoder embedding layers
         dec_embedding_layer = self.question_decoder.get_input_embeddings()
         for params in dec_embedding_layer.parameters():
