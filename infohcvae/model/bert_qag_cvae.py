@@ -110,7 +110,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         # DECODER - Initialize answer & question decoder
         # Answer decoder is the encoder with only `num_finetune_enc_layers` on top
         self.answer_decoder = deepcopy(self.encoder)
-        self.answer_decoder.layer = self.answer_decoder.encoder.layer[encoder_nlayers - self.num_finetune_enc_layers:]
+        self.answer_decoder.layer = self.answer_decoder.encoder.layer[encoder_nlayers - self.num_finetune_dec_layers:]
 
         # Question decoder
         self.question_decoder = bert2bert_model.get_decoder().bert # this is an instance of BertLMHeadModel -> BertModel
@@ -135,13 +135,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         """ Answer decoder properties """
         self.za_enc_zq_attention = nn.Linear(nzqdim, d_model)
-        self.za_zq_projection = nn.Sequential(
-            nn.Linear(nzadim * nza_values + nzqdim, 4*(nzadim * nza_values + nzqdim)),
-            nn.Mish(True),
-            nn.Linear(4*(nzadim * nza_values + nzqdim), d_model),
-            nn.Mish(True)
-        )
-        self.answer_dec_projection = nn.Linear(4*d_model, d_model, bias=False)
+        self.za_zq_projection = nn.Linear(nzadim * nza_values + nzqdim, d_model, bias=False)
+        self.answer_dec_projection = nn.Linear(5*d_model, d_model, bias=False)
         self.start_linear = nn.Linear(d_model, 1)
         self.end_linear = nn.Linear(d_model, 1)
 
@@ -311,6 +306,7 @@ class BertQAGConditionalVae(pl.LightningModule):
                 [c_hidden_states,
                  za_zq_projected,
                  c_hidden_states * za_zq_projected,
+                 c_hidden_states + za_zq_projected,
                  torch.abs(c_hidden_states - za_zq_projected)],
                 dim=-1)
         )
