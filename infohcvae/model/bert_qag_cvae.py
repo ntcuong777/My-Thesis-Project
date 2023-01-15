@@ -51,7 +51,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             self.debug = True
 
         """ Model parameters """
-        self.minibatch_size = args.minibatch_size
         self.max_c_len = args.max_c_len
         self.max_q_len = args.max_q_len
         self.lr = args.lr
