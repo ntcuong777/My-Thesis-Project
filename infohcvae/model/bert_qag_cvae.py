@@ -431,8 +431,14 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_logits, q_mean_emb, a_mean_emb = None, None, None
         first_run = True
         assert batch_size % self.minibatch_size == 0, "Mini-batch size must be divisible by batch size"
-        for _ in range(batch_size // self.minibatch_size):
-            out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, return_qa_mean_embeds=True)
+        for i in range(batch_size // self.minibatch_size):
+            start_idx, end_idx = i * self.minibatch_size, (i+1) * self.minibatch_size
+            out = self.forward(
+                c_ids=c_ids[start_idx:end_idx, ...],
+                q_ids=q_ids[start_idx:end_idx, ...],
+                c_a_mask=a_mask[start_idx:end_idx, ...],
+                return_qa_mean_embeds=True
+            )
 
             if first_run:
                 za, za_logits = out["za_out"]
