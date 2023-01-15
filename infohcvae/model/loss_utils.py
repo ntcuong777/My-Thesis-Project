@@ -76,7 +76,7 @@ def _compute_mmd_with_inv_mult_quad(z1, z2):
         res2 = res2.sum() * 2. / batch_size
         stats += res1 - res2
 
-    return stats
+    return stats / batch_size
 
 
 def compute_mmd(posterior_z, prior_z, kernel_type="imq"):
