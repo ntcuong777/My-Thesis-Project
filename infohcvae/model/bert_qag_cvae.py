@@ -176,7 +176,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--base_model", default='bert-base-uncased', type=str)
         parser.add_argument('--num_finetune_enc_layers', type=int, default=1)
         parser.add_argument('--num_dec_layers', type=int, default=3)
-        parser.add_argument('--use_neural_prior', type=int, default=0, choices=[0, 1])
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
@@ -288,7 +287,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # extend the input attention mask so that the init state from `za` is attended during self-attention
         past_attended_c_mask = torch.cat([torch.ones(c_ids.size(0), 1).to(c_ids.device), c_mask], dim=-1)
-        answer_decoder_ouputs = self.answer_decoder(
+        answer_decoder_ouputs = self.decoder(
             input_ids=c_ids,
             attention_mask=past_attended_c_mask,
             past_key_values=za_past_key_values
@@ -340,7 +339,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         past_key_values_length = past_key_values[0][0].shape[2]
         past_attended_q_mask = \
             torch.cat([torch.ones(q_ids.size(0), past_key_values_length).to(q_ids.device), q_mask], dim=-1)
-        question_decoder_outputs = self.question_decoder(
+        question_decoder_outputs = self.decoder(
             input_ids=q_ids,
             attention_mask=past_attended_q_mask,
             past_key_values=past_key_values,
