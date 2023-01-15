@@ -13,7 +13,7 @@ import torch.optim as optim
 import numpy as np
 import pytorch_lightning as pl
 from torch_scatter import scatter_max
-from transformers import BertModel, BertConfig, BertTokenizer, EncoderDecoderModel
+from transformers import BertConfig, BertTokenizer, EncoderDecoderModel, EncoderDecoderConfig
 from transformers.models.bert.modeling_bert import BertPooler
 from infohcvae.model.model_utils import (
     return_attention_mask, cal_attn,
@@ -75,13 +75,13 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         """ Initialize model """
         base_model = args.base_model
-        config = BertConfig.from_pretrained(base_model)
+        config = EncoderDecoderConfig.from_pretrained(base_model)
         bert2bert_model = EncoderDecoderModel.from_pretrained(base_model)
 
-        self.encoder_nlayers = encoder_nlayers = config.num_hidden_layers
-        self.decoder_nlayers = decoder_nlayers = config.num_hidden_layers
-        self.decoder_nheads = decoder_nheads = config.num_attention_heads
-        self.d_model = d_model = config.hidden_size
+        self.encoder_nlayers = encoder_nlayers = config.encoder.num_hidden_layers
+        self.decoder_nlayers = decoder_nlayers = config.decoder.num_hidden_layers
+        self.decoder_nheads = decoder_nheads = config.decoder.num_attention_heads
+        self.d_model = d_model = config.encoder.hidden_size
 
         self.tokenizer = BertTokenizer.from_pretrained(base_model, add_pooling_layer=False)
         self.vocab_size = self.tokenizer.vocab_size
@@ -97,26 +97,27 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # Freeze embedding layer
         enc_embedding_layer = self.encoder.get_input_embeddings()
-        for params in self.encoder.get_input_embeddings().parameters():
+        for params in enc_embedding_layer.parameters():
             params.requires_grad = False
         # freeze encoder layers, except `num_finetune_enc_layers` top layers
         for i in range(encoder_nlayers - self.num_finetune_enc_layers):
-            for param in self.encoder.layer[i].parameters():
+            for param in self.encoder.encoder.layer[i].parameters():
                 param.requires_grad = False
 
         # DECODER - Initialize answer & question decoder
         # Answer decoder is the encoder with only `num_finetune_enc_layers` on top
         self.answer_decoder = deepcopy(self.encoder)
-        self.answer_decoder.layer = self.answer_decoder.layer[encoder_nlayers - self.num_finetune_enc_layers:]
+        self.answer_decoder.layer = self.answer_decoder.encoder.layer[encoder_nlayers - self.num_finetune_enc_layers:]
 
         # Question decoder
         self.question_decoder = bert2bert_model.get_decoder()
         # freeze question decoder embedding layers
-        for params in self.question_decoder.get_input_embeddings().parameters():
+        dec_embedding_layer = self.question_decoder.get_input_embeddings()
+        for params in dec_embedding_layer.parameters():
             params.requires_grad = False
         # freeze decoder layers, except `num_finetune_dec_layers` top layers
         for i in range(decoder_nlayers - self.num_finetune_dec_layers):
-            for param in self.question_decoder.layer[i].parameters():
+            for param in self.question_decoder.encoder.layer[i].parameters():
                 param.requires_grad = False
 
         """ Encoder properties """
