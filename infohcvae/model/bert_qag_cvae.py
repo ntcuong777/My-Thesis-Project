@@ -93,7 +93,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             params.requires_grad = False
         # freeze encoder layers, except `num_finetune_enc_layers` top layers
         for i in range(self.encoder_nlayers - self.num_finetune_enc_layers):
-            for param in self.posterior_encoder.encoder.layer[i].parameters():
+            for param in self.posterior_encoder.layers[i].parameters():
                 param.requires_grad = False
 
         # Initialize prior encoder
