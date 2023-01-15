@@ -423,89 +423,56 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         _, q_ids, c_ids, a_mask, _, no_q_start_positions, no_q_end_positions = batch
+        out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, return_qa_mean_embeds=True)
 
-        batch_size = q_ids.size(0)
-        assert batch_size % self.minibatch_size == 0, \
-            "ERROR: batch_size mod mini-batch size != 0 ({:d} mod {:d})".format(batch_size, self.minibatch_size)
-        acummulated_za = None
-        acummulated_zq = None
-        loss_q_rec, loss_a_rec = 0.0, 0.0
+        za, za_logits = out["za_out"]
+        zq, zq_mu, zq_logvar = out["zq_out"]
+        start_logits, end_logits = out["answer_out"]
+        q_logits, q_mean_emb, a_mean_emb = out["question_out"]
+
+        # Compute losses
+        # q rec loss
+        loss_q_rec = self.q_rec_criterion(q_logits[:, :-1, :].transpose(1, 2).contiguous(),
+                                          q_ids[:, 1:])
+
+        # a rec loss
+        max_c_len = c_ids.size(1)
+        no_q_start_positions.clamp_(0, max_c_len)
+        no_q_end_positions.clamp_(0, max_c_len)
+        loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
+        loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
+        loss_a_rec = 0.5 * (loss_start_a_rec + loss_end_a_rec)
+
+        # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = 0.0, 0.0, 0.0
-        loss_mmd, loss_zq_mmd, loss_za_mmd = 0.0, 0.0, 0.0
-        loss_qa_info = 0.0
-        for i in range(batch_size // self.minibatch_size):
-            start_idx, end_idx = i*self.minibatch_size, (i+1)*self.minibatch_size
-            current_c_ids = c_ids[start_idx:end_idx, ...]
-            current_q_ids = q_ids[start_idx:end_idx, ...]
-            current_a_mask = a_mask[start_idx:end_idx, ...]
-            current_start_positions = no_q_start_positions[start_idx:end_idx, ...]
-            current_end_positions = no_q_end_positions[start_idx:end_idx, ...]
-            out = self.forward(
-                c_ids=current_c_ids,
-                q_ids=current_q_ids,
-                c_a_mask=current_a_mask,
-                return_qa_mean_embeds=True
-            )
+        if self.alpha_kl_a < 1. or self.alpha_kl_q < 1.:
+            loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(zq_mu, zq_logvar)
+            loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(za_logits)
+            loss_kl = loss_zq_kl + loss_za_kl
 
-            za, za_logits = out["za_out"]
-            zq, zq_mu, zq_logvar = out["zq_out"]
-            start_logits, end_logits = out["answer_out"]
-            q_logits, q_mean_emb, a_mean_emb = out["question_out"]
-
-            if acummulated_za is None:
-                acummulated_za = za
-            else:
-                acummulated_za = torch.cat([acummulated_za, za], dim=0)
-
-            if acummulated_zq is None:
-                acummulated_zq = zq
-            else:
-                acummulated_zq = torch.cat([acummulated_zq, zq], dim=0)
-
-            # Compute losses
-            # q rec loss
-            loss_q_rec = loss_q_rec + self.q_rec_criterion(
-                q_logits[:, :-1, :].transpose(1, 2).contiguous(), current_q_ids[:, 1:])
-
-            # a rec loss
-            max_c_len = current_c_ids.size(1)
-            current_start_positions.clamp_(0, max_c_len)
-            current_end_positions.clamp_(0, max_c_len)
-            loss_start_a_rec = self.a_rec_criterion(start_logits, current_start_positions)
-            loss_end_a_rec = self.a_rec_criterion(end_logits, current_end_positions)
-            loss_a_rec = loss_a_rec + 0.5 * (loss_start_a_rec + loss_end_a_rec)
-
-            # kl loss
-            if self.alpha_kl_a < 1. or self.alpha_kl_q < 1.:
-                loss_zq_kl = loss_zq_kl + self.alpha_kl_q * self.gaussian_kl_criterion(zq_mu, zq_logvar)
-                loss_za_kl = loss_za_kl + self.alpha_kl_a * self.categorical_kl_criterion(za_logits)
-                loss_kl = loss_zq_kl + loss_za_kl
-
-            # QA info loss
-            loss_qa_info = loss_qa_info + self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-
-            # loss reconstruction
-            # loss_rec = loss_q_rec + loss_a_rec
-
-        # MMD loss is at the end of mini-batch runs
-        loss_zq_mmd = loss_zq_mmd + self.cont_mmd_criterion(acummulated_zq)
-        loss_za_mmd = loss_za_mmd + self.gumbel_mmd_criterion(acummulated_za)
-        loss_zq_mmd[loss_zq_mmd >= 0] = loss_zq_mmd[loss_zq_mmd >= 0] * self.lambda_mmd_q  # combat unknown negativity
-        loss_za_mmd[loss_za_mmd >= 0] = loss_za_mmd[loss_za_mmd >= 0] * self.lambda_mmd_a  # combat unknown negativity
+        loss_zq_mmd = self.cont_mmd_criterion(zq)
+        loss_za_mmd = self.gumbel_mmd_criterion(za)
+        loss_zq_mmd[loss_zq_mmd >= 0] = loss_zq_mmd[loss_zq_mmd >= 0] * self.lambda_mmd_q # combat unknown negativity
+        loss_za_mmd[loss_za_mmd >= 0] = loss_za_mmd[loss_za_mmd >= 0] * self.lambda_mmd_a # combat unknown negativity
         loss_mmd = loss_zq_mmd + loss_za_mmd
 
-        num_steps = batch_size // self.minibatch_size
-        total_loss = (loss_q_rec + loss_a_rec + loss_kl + loss_qa_info) / num_steps + loss_mmd
+        # QA info loss
+        loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
+
+        # loss reconstruction
+        # loss_rec = loss_q_rec + loss_a_rec
+
+        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_mmd
 
         current_losses = {
             "total_loss": total_loss,
-            "loss_q_rec": loss_q_rec / num_steps,
-            "loss_a_rec": loss_a_rec / num_steps,
+            "loss_q_rec": loss_q_rec,
+            "loss_a_rec": loss_a_rec,
             "loss_mmd": loss_mmd,
             "loss_zq_mmd": loss_zq_mmd,
             "loss_za_mmd": loss_za_mmd,
-            "loss_kl": loss_kl / num_steps,
-            "loss_qa_info": loss_qa_info / num_steps,
+            "loss_kl": loss_kl,
+            "loss_qa_info": loss_qa_info,
         }
 
         if batch_idx % 50 == 0:
