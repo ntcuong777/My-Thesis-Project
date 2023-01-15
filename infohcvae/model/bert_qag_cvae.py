@@ -430,6 +430,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         start_logits, end_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
+        for _ in range(8): # sample 8 more times to get more latent variables for mmd
+            zq = torch.cat([zq, sample_gaussian(zq_mu, zq_logvar)], dim=0) # concat in batch dimension
+            za = torch.cat([za, gumbel_softmax(za_logits)], dim=0) # concat in batch dimension
+
         # Compute losses
         # q rec loss
         loss_q_rec = self.q_rec_criterion(q_logits[:, :-1, :].transpose(1, 2).contiguous(),
