@@ -93,7 +93,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.encoder = bert2bert_model.get_encoder()
 
         # Pooling layer for computing the latent variables
-        self.first_token_pooler = BertPooler(config) if self.pooling_strategy == "first" else None
+        self.first_token_pooler = \
+            BertPooler(bert2bert_model.get_encoder().config) if self.pooling_strategy == "first" else None
 
         # Freeze embedding layer
         enc_embedding_layer = self.encoder.get_input_embeddings()
