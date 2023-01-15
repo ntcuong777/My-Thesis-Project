@@ -472,7 +472,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         no_q_end_positions.clamp_(0, max_c_len)
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        loss_a_rec = loss_start_a_rec + loss_end_a_rec
+        loss_a_rec = 0.5 * (loss_start_a_rec + loss_end_a_rec)
 
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = 0.0, 0.0, 0.0
