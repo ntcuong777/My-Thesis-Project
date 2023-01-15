@@ -127,12 +127,12 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.question_attention = nn.Linear(d_model, d_model)
         self.context_attention = nn.Linear(d_model, d_model)
 
-        self.za_linear = nn.Linear(d_model, nzadim * nza_values, bias=False)
+        self.za_linear = nn.Linear(2*d_model + nzqdim, nzadim * nza_values, bias=False)
         self.zq_mu_linear = nn.Linear(4*d_model, nzqdim, bias=False)
         self.zq_logvar_linear = nn.Linear(4*d_model, nzqdim, bias=False)
 
         """ Answer decoder properties """
-        self.zq_attention = nn.Linear(nzqdim, d_model)
+        self.za_enc_zq_attention = nn.Linear(nzqdim, d_model)
         self.za_zq_projection = nn.Sequential(
             nn.Linear(nzadim * nza_values + nzqdim, 4*(nzadim * nza_values + nzqdim)),
             nn.Mish(True),
@@ -285,7 +285,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
-        c_a_attned_by_zq, _ = cal_attn(self.zq_attention(zq).unsqueeze(1), c_a_hidden_states, mask)
+        c_a_attned_by_zq, _ = cal_attn(self.za_enc_zq_attention(zq).unsqueeze(1), c_a_hidden_states, mask)
         c_a_attned_by_zq = c_a_attned_by_zq.squeeze(1)
 
         # sample `za`
