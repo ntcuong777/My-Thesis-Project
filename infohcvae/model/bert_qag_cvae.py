@@ -236,17 +236,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         za = gumbel_softmax(za_logits, hard=hard)
         return za, za_logits
 
-    # def build_za_past(self, za):
-    #     projection = self.za_memory_projection(za.view(-1, self.nzadim * self.nza_values))
-    #     cross_attn = projection.reshape(
-    #         self.decoder_nlayers,
-    #         projection.shape[0],
-    #         self.decoder_nheads,
-    #         1,
-    #         self.embed_size_per_head,
-    #     )
-    #     past_key_values = tuple((ca, ca) for ca in cross_attn)
-    #     return past_key_values
+    def build_za_init_state(self, za):
+        za_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)
+        za_projected = za_projected.unsqueeze(1).expand(-1, self.max_c_len, -1)  # shape = (N, c_len, d_model)
+        return za_projected
 
     """ Encoding-related methods """
     def _encode_latent_posteriors(self, q_ids, q_mask, c_ids, c_mask, c_a_mask):
@@ -286,8 +279,6 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     """ Decoding-related methods """
     def _decode_answer(self, c_ids, c_mask, za):
-        _, max_c_len = c_ids.size()
-
         # context enc
         c_hidden_states = _encode_input_tokens(
             encoder=self.encoder, input_ids=c_ids, input_mask=c_mask)
@@ -295,8 +286,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         # Initialize `past_key_values` with `za` for answer generation
         # za_past_key_values = self.build_za_past(za)
 
-        za_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values)) # shape = (N, d_model)
-        za_projected = za_projected.unsqueeze(1).expand(-1, max_c_len, -1) # shape = (N, c_len, d_model)
+        za_projected = self.build_za_init_state(za)
         dec_input_emb = self.answer_dec_projection(
             torch.cat(
                 [c_hidden_states,
