@@ -438,6 +438,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             current_c_ids = c_ids[start_idx:end_idx, ...]
             current_q_ids = q_ids[start_idx:end_idx, ...]
             current_a_mask = a_mask[start_idx:end_idx, ...]
+            current_start_positions = no_q_start_positions[start_idx:end_idx, ...]
+            current_end_positions = no_q_end_positions[start_idx:end_idx, ...]
             out = self.forward(
                 c_ids=current_c_ids,
                 q_ids=current_q_ids,
@@ -467,10 +469,10 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             # a rec loss
             max_c_len = current_c_ids.size(1)
-            no_q_start_positions.clamp_(0, max_c_len)
-            no_q_end_positions.clamp_(0, max_c_len)
-            loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
-            loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
+            current_start_positions.clamp_(0, max_c_len)
+            current_end_positions.clamp_(0, max_c_len)
+            loss_start_a_rec = self.a_rec_criterion(start_logits, current_start_positions)
+            loss_end_a_rec = self.a_rec_criterion(end_logits, current_end_positions)
             loss_a_rec = loss_a_rec + 0.5 * (loss_start_a_rec + loss_end_a_rec)
 
             # kl loss
