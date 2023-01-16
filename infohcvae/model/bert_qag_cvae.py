@@ -139,8 +139,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.end_linear = nn.Linear(2*d_model, 1)
 
         """ Question decoder properties """
-        self.q_h_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
-        self.q_c_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
+        self.q_init_hidden_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
+        self.q_init_cell_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
         self.question_decoder_attention = LuongAttention(d_model, d_model)
         self.concat_linear = nn.Sequential(nn.Linear(2 * d_model, 2 * d_model),
                                            nn.Dropout(decoder_q_dropout),
@@ -222,8 +222,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         return zq, zq_mu, zq_logvar
 
     def build_zq_init_state(self, zq):
-        q_init_h = self.q_h_linear(zq)
-        q_init_c = self.q_c_linear(zq)
+        q_init_h = self.q_init_hidden_linear(zq)
+        q_init_c = self.q_init_cell_linear(zq)
         q_init_h = q_init_h.view(-1, self.decoder_q_nlayers, self.d_model).transpose(0, 1).contiguous()
         q_init_c = q_init_c.view(-1, self.decoder_q_nlayers, self.d_model).transpose(0, 1).contiguous()
         q_init_state = (q_init_h, q_init_c)
@@ -302,7 +302,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         c_lengths = torch.sum(c_mask, dim=1)
         answer_hs, _ = self.answer_decoder(dec_input_emb, c_lengths.to("cpu"))
 
-        mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
+        # this implementation requires `mask` to be the indices required to be not attended to
+        mask = (1.0 - torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0 # convert to bool tensor
         self_attned_ans_hs, _ = self.answer_dec_cross_attention(answer_hs, answer_hs, answer_hs, mask)
         cross_attned_ans_hs, _ = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
 
@@ -310,8 +311,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         end_logits = self.end_linear(cross_attned_ans_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
-        start_logits = start_logits.masked_fill(start_end_mask, -10000.0)
-        end_logits = end_logits.masked_fill(start_end_mask, -10000.0)
+        start_logits = start_logits.masked_fill(start_end_mask, -1000000.0)
+        end_logits = end_logits.masked_fill(start_end_mask, -1000000.0)
         return start_logits, end_logits
 
     def _decode_question(self, q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq, init_state=None, use_cache=None):
@@ -350,7 +351,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_lengths = q_mask.sum(dim=1)
         q_outputs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
 
-        mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
+        # this implementation requires `mask` to be the indices required to be not attended to
+        mask = (1.0 - torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1))) > 0.0 # convert to bool tensor
         self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, mask)
         cross_attned_q_hs, _ = self.question_dec_cross_attention(self_attned_q_hs, q_embeddings, q_embeddings, mask)
 

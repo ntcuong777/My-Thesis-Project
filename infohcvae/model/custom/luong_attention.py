@@ -14,7 +14,7 @@ class LuongAttention(nn.Module):
         query = self.linear_proj(query)
 
         # Luong attention computation
-        mask = (1.0 - mask.float()) * -10000.0
+        mask = (1.0 - mask.float()) * -1000000.0
         # query (N, len, hidden_size), memories (N, len, hidden_size)
         attn_logits = torch.matmul(query, memories.transpose(-1, -2).contiguous())
         attn_logits = attn_logits + mask
