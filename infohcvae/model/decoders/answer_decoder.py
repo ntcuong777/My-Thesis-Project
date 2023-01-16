@@ -32,7 +32,7 @@ class AnswerDecoder(nn.Module):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
-        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)
+        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)[0]
         init_state = self._build_za_init_state(za, max_c_len)
         dec_inputs = torch.cat([c_embeddings, init_state,
                                 c_embeddings * init_state,

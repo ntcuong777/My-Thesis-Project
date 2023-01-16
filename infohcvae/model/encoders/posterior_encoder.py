@@ -47,19 +47,19 @@ class PosteriorEncoder(nn.Module):
         q_lengths = return_inputs_length(q_ids)
 
         # question enc
-        q_embeddings = self.embedding(input_ids=q_ids, attention_mask=q_mask)
+        q_embeddings = self.embedding(input_ids=q_ids, attention_mask=q_mask)[0]
         q_hidden_states, q_state = self.question_encoder(q_embeddings, q_lengths)
         q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
         # context enc
-        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)
+        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)[0]
         c_hidden_states, c_state = self.context_encoder(c_embeddings, c_lengths)
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
         # context and answer enc
-        c_a_embeddings = self.embedding(input_ids=c_ids, token_type_ids=c_a_mask, attention_mask=c_mask)
+        c_a_embeddings = self.embedding(input_ids=c_ids, token_type_ids=c_a_mask, attention_mask=c_mask)[0]
         c_a_hidden_states, c_a_state = self.answer_encoder(c_a_embeddings, c_lengths)
         c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)

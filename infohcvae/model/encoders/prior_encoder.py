@@ -37,7 +37,7 @@ class PriorEncoder(nn.Module):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
-        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)
+        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)[0]
         c_hidden_states, c_state = self.context_encoder(c_embeddings, c_lengths)
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)

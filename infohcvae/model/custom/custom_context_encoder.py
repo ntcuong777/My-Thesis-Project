@@ -24,7 +24,7 @@ class CustomContextEncoderForQG(nn.Module):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
-        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask, token_type_ids=a_ids)
+        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask, token_type_ids=a_ids)[0]
         c_outputs, _ = self.context_lstm(c_embeddings, c_lengths)
 
         # gated attention mechanism
