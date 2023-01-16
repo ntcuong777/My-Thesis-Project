@@ -134,8 +134,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.za_enc_zq_attention = LuongAttention(nzqdim, d_model)
         self.za_zq_projection = nn.Linear(nzadim * nza_values + nzqdim, d_model, bias=False)
         self.answer_dec_projection = nn.Linear(5 * d_model, d_model, bias=False)
-        self.start_linear = nn.Linear(d_model, 1)
-        self.end_linear = nn.Linear(d_model, 1)
+        self.start_linear = nn.Linear(2*d_model, 1)
+        self.end_linear = nn.Linear(2*d_model, 1)
 
         """ Question decoder properties """
         self.q_init_hidden_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
@@ -300,7 +300,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
         # attention answer_hs with answer_hs
-        answer_hs = self.answer_dec_luong_attention(answer_hs, answer_hs, mask)
+        answer_hs = torch.cat([answer_hs,
+                               self.answer_dec_luong_attention(answer_hs, answer_hs, mask)],
+                              dim=-1)
 
         start_logits = self.start_linear(answer_hs).squeeze(-1)
         end_logits = self.end_linear(answer_hs).squeeze(-1)
