@@ -114,15 +114,15 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.answer_decoder = CustomLSTM(input_size=2 * d_model, hidden_size=d_model,
                                          num_layers=decoder_a_nlayers, dropout=decoder_a_dropout,
                                          bidirectional=True)
-        self.answer_dec_self_attention = MultiHeadAttention(d_model=2 * d_model, num_heads=12)
-        self.answer_dec_cross_attention = MultiHeadAttention(d_model=2 * d_model, num_heads=12)
+        # self.answer_dec_self_attention = MultiHeadAttention(d_model=2 * d_model, num_heads=12)
+        # self.answer_dec_cross_attention = MultiHeadAttention(d_model=2 * d_model, num_heads=12)
 
         # Question decoder
         self.question_decoder = CustomLSTM(input_size=d_model, hidden_size=d_model,
                                            num_layers=decoder_q_nlayers, dropout=decoder_q_dropout,
                                            bidirectional=False)
-        self.question_dec_self_attention = MultiHeadAttention(d_model=d_model, num_heads=12)
-        self.question_dec_cross_attention = MultiHeadAttention(d_model=d_model, num_heads=12)
+        # self.question_dec_self_attention = MultiHeadAttention(d_model=d_model, num_heads=12)
+        # self.question_dec_cross_attention = MultiHeadAttention(d_model=d_model, num_heads=12)
 
         """ Encoder properties """
         self.question_attention = LuongAttention(d_model, d_model)
@@ -301,12 +301,12 @@ class BertQAGConditionalVae(pl.LightningModule):
         answer_hs, _ = self.answer_decoder(dec_input_emb, c_lengths.to("cpu"))
 
         # this implementation requires `mask` to be the indices required to be not attended to
-        mask = (1.0 - torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # convert to bool tensor
-        self_attned_ans_hs, _ = self.answer_dec_cross_attention(answer_hs, answer_hs, answer_hs, mask)
-        cross_attned_ans_hs, _ = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
+        # mask = (1.0 - torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # convert to bool tensor
+        # self_attned_ans_hs, _ = self.answer_dec_cross_attention(answer_hs, answer_hs, answer_hs, mask)
+        # cross_attned_ans_hs, _ = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
 
-        start_logits = self.start_linear(cross_attned_ans_hs).squeeze(-1)
-        end_logits = self.end_linear(cross_attned_ans_hs).squeeze(-1)
+        start_logits = self.start_linear(answer_hs).squeeze(-1)
+        end_logits = self.end_linear(answer_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
         start_logits = start_logits.masked_fill(start_end_mask, -1000000.0)
@@ -351,28 +351,28 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_outputs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
 
         # this implementation requires `mask` to be the indices required to be not attended to
-        self_attned_q_hs = None
-        present_lstm_outputs = None
-        if past_lstm_outputs is None:
-            attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
-            causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
-            self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, causal_masking)
-        else:
-            present_lstm_outputs = torch.cat([past_lstm_outputs, q_outputs], dim=1)  # concat along seq_len dimension
-            q_mask = torch.ones_like(present_lstm_outputs).to(present_lstm_outputs.device)
-            attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
-            causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
-            self_attned_q_hs, _ = self.question_dec_self_attention(
-                present_lstm_outputs, present_lstm_outputs, present_lstm_outputs, causal_masking)
-
-        mask = (1.0 - torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # to bool tensor
-        cross_attned_q_hs, _ = self.question_dec_cross_attention(
-            self_attned_q_hs, c_a_hidden_states, c_a_hidden_states, mask)
+        # self_attned_q_hs = None
+        # present_lstm_outputs = None
+        # if past_lstm_outputs is None:
+        #     attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
+        #     causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
+        #     self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, causal_masking)
+        # else:
+        #     present_lstm_outputs = torch.cat([past_lstm_outputs, q_outputs], dim=1)  # concat along seq_len dimension
+        #     q_mask = torch.ones_like(present_lstm_outputs).to(present_lstm_outputs.device)
+        #     attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
+        #     causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
+        #     self_attned_q_hs, _ = self.question_dec_self_attention(
+        #         present_lstm_outputs, present_lstm_outputs, present_lstm_outputs, causal_masking)
+        #
+        # mask = (1.0 - torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # to bool tensor
+        # cross_attned_q_hs, _ = self.question_dec_cross_attention(
+        #     self_attned_q_hs, c_a_hidden_states, c_a_hidden_states, mask)
 
         # Generate question id
-        lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(cross_attned_q_hs)
+        lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(q_outputs)
         if use_cache is not None and use_cache:
-            return lm_logits, q_last_outputs, next_state, present_lstm_outputs
+            return lm_logits, q_last_outputs, next_state, None #present_lstm_outputs
         else:
             return lm_logits, q_last_outputs
 
