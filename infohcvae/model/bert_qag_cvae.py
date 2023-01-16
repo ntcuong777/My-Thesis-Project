@@ -305,8 +305,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         answer_hs, _ = self.answer_decoder(dec_input_emb, c_lengths.to("cpu"))
 
         mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
-        self_attned_ans_hs = self.answer_dec_cross_attention(answer_hs, answer_hs, answer_hs, mask)
-        cross_attned_ans_hs = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
+        self_attned_ans_hs, _ = self.answer_dec_cross_attention(answer_hs, answer_hs, answer_hs, mask)
+        cross_attned_ans_hs, _ = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
 
         start_logits = self.start_linear(cross_attned_ans_hs).squeeze(-1)
         end_logits = self.end_linear(cross_attned_ans_hs).squeeze(-1)
@@ -353,8 +353,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_outputs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
 
         mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
-        self_attned_q_hs = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, mask)
-        cross_attned_q_hs = self.question_dec_cross_attention(self_attned_q_hs, q_embeddings, q_embeddings, mask)
+        self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, mask)
+        cross_attned_q_hs, _ = self.question_dec_cross_attention(self_attned_q_hs, q_embeddings, q_embeddings, mask)
 
         # Generate question id
         lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(cross_attned_q_hs)
