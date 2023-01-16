@@ -97,7 +97,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.encoder = bert_model
 
         # Pooling layer for computing the latent variables
-        self.first_token_pooler = bert_model.pooler
+        self.first_token_pooler = deepcopy(bert_model.pooler)
         bert_model.pooler = None # remove pooler from pretrained ckpt
 
         # Freeze embedding layer
