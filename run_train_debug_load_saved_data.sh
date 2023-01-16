@@ -1,2 +1,2 @@
-# remember to pass the batch size to this model as first arg
-python main.py --accelerator=gpu --devices=auto --load_saved_dataloader --save_frequency=5 --max_epochs=20 --batch_size="$1" --fast_dev_run=True --log_every_n_steps=30 --val_check_interval=1 --strategy=ddp --default_root_dir=./save/logs
+# remember to pass the batch size to this model as first arg, num_workers as 2nd flag
+python main.py --num_workers="$2" --accelerator=gpu --devices=auto --load_saved_dataloader --save_frequency=5 --max_epochs=20 --batch_size="$1" --fast_dev_run=True --log_every_n_steps=30 --val_check_interval=1 --strategy=ddp --default_root_dir=./save/logs
