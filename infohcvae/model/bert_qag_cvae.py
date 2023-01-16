@@ -87,7 +87,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_dropout
         self.d_model = d_model = config.hidden_size
 
-        self.tokenizer = BertTokenizer.from_pretrained(base_model, add_pooling_layer=False)
+        self.tokenizer = BertTokenizer.from_pretrained(base_model)
         self.vocab_size = self.tokenizer.vocab_size
         self.pad_token_id = self.tokenizer.pad_token_id
         self.sos_id = self.tokenizer.cls_token_id
@@ -97,7 +97,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.encoder = bert_model
 
         # Pooling layer for computing the latent variables
-        self.first_token_pooler = BertPooler(config) if self.pooling_strategy == "first" else None
+        self.first_token_pooler = bert_model.pooler
+        bert_model.pooler = None # remove pooler from pretrained ckpt
 
         # Freeze embedding layer
         enc_embedding_layer = self.encoder.get_input_embeddings()
