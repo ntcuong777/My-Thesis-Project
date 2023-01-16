@@ -302,7 +302,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # this implementation requires `mask` to be the indices required to be not attended to
         mask = (1.0 - torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # convert to bool tensor
-        self_attned_ans_hs, _ = self.answer_dec_cross_attention(answer_hs, answer_hs, answer_hs, mask)
+        self_attned_ans_hs, _ = self.answer_dec_self_attention(answer_hs, answer_hs, answer_hs, mask)
         # cross_attned_ans_hs, _ = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
 
         start_logits = self.start_linear(self_attned_ans_hs).squeeze(-1)
