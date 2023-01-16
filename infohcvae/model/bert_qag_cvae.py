@@ -13,10 +13,10 @@ import torch.optim as optim
 import numpy as np
 import pytorch_lightning as pl
 from torch_scatter import scatter_max
-from transformers import BertConfig, BertTokenizer, EncoderDecoderModel, EncoderDecoderConfig
+from transformers import BertConfig, BertTokenizer, BertModel
 from transformers.models.bert.modeling_bert import BertPooler
 from infohcvae.model.model_utils import (
-    return_attention_mask, cal_attn,
+    return_attention_mask,
     gumbel_softmax, sample_gaussian,
     gumbel_latent_var_sampling,
 )
@@ -25,6 +25,9 @@ from infohcvae.model.losses import (
     ContinuousKernelMMDLoss, GumbelMMDLoss,
 )
 from infohcvae.model.custom.custom_torch_dataset import CustomDataset
+from infohcvae.model.custom.custom_lstm import CustomLSTM
+from infohcvae.model.custom.luong_attention import LuongAttention
+from infohcvae.model.custom.multihead_self_attention import MultiHeadAttention
 from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
 from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
@@ -42,7 +45,7 @@ def _encode_input_tokens(encoder, input_ids, input_mask, subspan_mask=None):
 
 
 class BertQAGConditionalVae(pl.LightningModule):
-    def __init__(self, args, dropout=0.3):
+    def __init__(self, args):
         super().__init__()
         self.save_hyperparameters()
 
@@ -60,9 +63,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.loss_log_file = args.loss_log_file
         self.eval_metrics_log_file = args.eval_metrics_log_file
 
-        self.num_finetune_enc_layers = args.num_finetune_enc_layers
-        self.num_finetune_dec_layers = args.num_finetune_dec_layers
-
         self.nzqdim = nzqdim = args.nzqdim
         self.nzadim = nzadim = args.nzadim
         self.nza_values = nza_values = args.nza_values
@@ -77,12 +77,14 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         """ Initialize model """
         base_model = args.base_model
-        config = EncoderDecoderConfig.from_pretrained(base_model)
-        bert2bert_model = EncoderDecoderModel.from_pretrained(base_model)
+        config = BertConfig.from_pretrained(base_model)
+        bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
 
-        self.encoder_nlayers = encoder_nlayers = config.encoder.num_hidden_layers
-        self.decoder_nlayers = decoder_nlayers = config.decoder.num_hidden_layers
-        self.decoder_nheads = decoder_nheads = config.decoder.num_attention_heads
+        self.encoder_finetune_nlayers = encoder_finetune_nlayers = args.encoder_finetune_nlayers
+        self.decoder_a_nlayers = decoder_a_nlayers = args.decoder_a_nlayers
+        self.decoder_a_dropout = decoder_a_dropout = args.decoder_a_dropout
+        self.decoder_q_nlayers = decoder_q_nlayers = args.decoder_q_nlayers
+        self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_nhidden
         self.d_model = d_model = config.encoder.hidden_size
 
         self.tokenizer = BertTokenizer.from_pretrained(base_model, add_pooling_layer=False)
@@ -92,65 +94,56 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.eos_id = self.tokenizer.sep_token_id
 
         # ENCODER - Initialize posterior encoder
-        self.encoder = bert2bert_model.get_encoder() # this is an instance of BertModel
+        self.encoder = bert_model
 
         # Pooling layer for computing the latent variables
         self.first_token_pooler = \
-            BertPooler(bert2bert_model.get_encoder().config) if self.pooling_strategy == "first" else None
+            BertPooler(bert_model.get_encoder().config) if self.pooling_strategy == "first" else None
 
         # Freeze embedding layer
         enc_embedding_layer = self.encoder.get_input_embeddings()
         for params in enc_embedding_layer.parameters():
             params.requires_grad = False
         # freeze encoder layers, except `num_finetune_enc_layers` top layers
-        for i in range(encoder_nlayers - self.num_finetune_enc_layers):
+        for i in range(config.num_hidden_layers - encoder_finetune_nlayers):
             for param in self.encoder.encoder.layer[i].parameters():
                 param.requires_grad = False
 
         # DECODER - Initialize answer & question decoder
         # Answer decoder is the encoder with only `num_finetune_enc_layers` on top
-        self.answer_decoder = deepcopy(self.encoder)
-        self.answer_decoder.layer = self.answer_decoder.encoder.layer[encoder_nlayers - self.num_finetune_dec_layers:]
+        self.answer_decoder = CustomLSTM(input_size=2*d_model, hidden_size=d_model,
+                                         num_layers=decoder_a_nlayers, dropout=decoder_a_dropout,
+                                         bidirectional=True)
+        self.answer_dec_attention = MultiHeadAttention(d_model=2*d_model, num_heads=12)
 
         # Question decoder
-        self.question_decoder = bert2bert_model.get_decoder().bert # this is an instance of BertLMHeadModel -> BertModel
-        # freeze question decoder embedding layers
-        dec_embedding_layer = self.question_decoder.get_input_embeddings()
-        for params in dec_embedding_layer.parameters():
-            params.requires_grad = False
-        # freeze decoder layers, except `num_finetune_dec_layers` top layers
-        for i in range(decoder_nlayers - self.num_finetune_dec_layers):
-            for param in self.question_decoder.encoder.layer[i].parameters():
-                param.requires_grad = False
+        self.question_decoder = CustomLSTM(input_size=d_model, hidden_size=d_model,
+                                           num_layers=decoder_q_nlayers, dropout=decoder_q_dropout,
+                                           bidirectional=False)
+        self.question_dec_attention = MultiHeadAttention(d_model=d_model, num_heads=12)
 
         """ Encoder properties """
-        self.embed_size_per_head = d_model // decoder_nheads
-
-        self.question_attention = nn.Linear(d_model, d_model)
-        self.context_attention = nn.Linear(d_model, d_model)
+        self.question_attention = LuongAttention(d_model, d_model)
+        self.context_attention = LuongAttention(d_model, d_model)
 
         self.za_linear = nn.Linear(2*d_model + nzqdim, nzadim * nza_values, bias=False)
         self.zq_mu_linear = nn.Linear(4*d_model, nzqdim, bias=False)
         self.zq_logvar_linear = nn.Linear(4*d_model, nzqdim, bias=False)
 
         """ Answer decoder properties """
-        self.za_enc_zq_attention = nn.Linear(nzqdim, d_model)
+        self.za_enc_zq_attention = LuongAttention(nzqdim, d_model)
         self.za_zq_projection = nn.Linear(nzadim * nza_values + nzqdim, d_model, bias=False)
-        self.answer_dec_projection = nn.Linear(5*d_model, d_model, bias=False)
-        self.start_linear = nn.Linear(d_model, 1)
-        self.end_linear = nn.Linear(d_model, 1)
+        self.answer_dec_projection = nn.Linear(5*d_model, 2*d_model, bias=False)
+        self.start_linear = nn.Linear(2*d_model, 1)
+        self.end_linear = nn.Linear(2*d_model, 1)
 
         """ Question decoder properties """
-        self.zq_memory_projection = nn.Linear(
-            nzqdim,
-            decoder_nlayers * decoder_nheads * self.embed_size_per_head,
-            bias=False,
-        )
-
-        self.question_linear = nn.Linear(d_model, d_model)
-        # self.concat_linear = nn.Sequential(nn.Linear(2 * d_model, 2 * d_model),
-        #                                    nn.Dropout(dropout),
-        #                                    nn.Linear(2 * d_model, 2 * d_model))
+        self.q_h_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
+        self.q_c_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
+        self.question_decoder_attention = LuongAttention(d_model, d_model)
+        self.concat_linear = nn.Sequential(nn.Linear(2 * d_model, 2 * d_model),
+                                           nn.Dropout(decoder_q_dropout),
+                                           nn.Linear(2 * d_model, 2 * d_model))
 
         self.lm_head = nn.Linear(d_model, self.vocab_size, bias=False)
 
@@ -186,9 +179,12 @@ class BertQAGConditionalVae(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
-        parser.add_argument("--base_model", default='patrickvonplaten/bert2bert_cnn_daily_mail', type=str)
-        parser.add_argument('--num_finetune_enc_layers', type=int, default=3)
-        parser.add_argument('--num_finetune_dec_layers', type=int, default=3)
+        parser.add_argument("--base_model", default='bert-base-uncased', type=str)
+        parser.add_argument('--encoder_finetune_nlayers', type=int, default=2)
+        parser.add_argument('--decoder_a_nlayers', type=int, default=1)
+        parser.add_argument('--decoder_a_dropout', type=float, default=0.2)
+        parser.add_argument('--decoder_q_nlayers', type=int, default=2)
+        parser.add_argument('--dec_q_dropout', type=float, default=0.3)
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
@@ -224,17 +220,15 @@ class BertQAGConditionalVae(pl.LightningModule):
         zq = sample_gaussian(zq_mu, zq_logvar)
         return zq, zq_mu, zq_logvar
 
-    def build_zq_past(self, zq):
-        projection = self.zq_memory_projection(zq)
-        cross_attn = projection.reshape(
-            self.decoder_nlayers,
-            projection.shape[0],
-            self.decoder_nheads,
-            1,
-            self.embed_size_per_head,
-        )
-        past_key_values = tuple((ca, ca) for ca in cross_attn)
-        return past_key_values
+    def build_zq_init_state(self, zq):
+        q_init_h = self.q_h_linear(zq)
+        q_init_c = self.q_c_linear(zq)
+        q_init_h = q_init_h.view(-1, self.decoder_q_nlayers,
+                                 self.decoder_q_nhidden).transpose(0, 1).contiguous()
+        q_init_c = q_init_c.view(-1, self.decoder_q_nlayers,
+                                 self.decoder_q_nhidden).transpose(0, 1).contiguous()
+        q_init_state = (q_init_h, q_init_c)
+        return q_init_state
 
     """ `za`-related methods """
     def calculate_za_latent(self, pooled, hard=True):
@@ -260,18 +254,14 @@ class BertQAGConditionalVae(pl.LightningModule):
             encoder=self.encoder, input_ids=q_ids, input_mask=q_mask)
         q_pooled = self.pool(q_hidden_states)
 
-        # attetion q, c
+        # attention q, c
         mask = c_mask.unsqueeze(1)
-        c_attned_by_q, _ = cal_attn(self.question_attention(q_pooled).unsqueeze(1),
-                                    c_hidden_states, mask)
-        c_attned_by_q = c_attned_by_q.squeeze(1)
+        c_attned_by_q = self.question_attention(q_pooled.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
-        # attetion c, q
+        # attention c, q
         c_pooled = self.pool(c_hidden_states)
         mask = q_mask.unsqueeze(1)
-        q_attned_by_c, _ = cal_attn(self.context_attention(c_pooled).unsqueeze(1),
-                                    q_hidden_states, mask)
-        q_attned_by_c = q_attned_by_c.squeeze(1)
+        q_attned_by_c = self.context_attention(c_pooled.unsqueeze(1), q_hidden_states, mask).squeeze(1)
 
         h = torch.cat([q_pooled, q_attned_by_c, c_pooled, c_attned_by_q], dim=-1)
         # sample `zq`
@@ -285,8 +275,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
-        c_a_attned_by_zq, _ = cal_attn(self.za_enc_zq_attention(zq).unsqueeze(1), c_a_hidden_states, mask)
-        c_a_attned_by_zq = c_a_attned_by_zq.squeeze(1)
+        c_a_attned_by_zq = self.za_enc_zq_attention(zq.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
 
         # sample `za`
         h = torch.cat([zq, c_a_attned_by_zq, self.pool(c_a_hidden_states)], dim=-1)
@@ -311,32 +300,36 @@ class BertQAGConditionalVae(pl.LightningModule):
                 dim=-1)
         )
 
-        answer_decoder_ouputs = self.answer_decoder(
-            inputs_embeds=dec_input_emb,
-            attention_mask=c_mask
-        )
-        answer_out_hidden_states = answer_decoder_ouputs[0]
+        c_lengths = torch.sum(c_mask, dim=1)
+        answer_hs, _ = self.answer_decoder(dec_input_emb, c_lengths.to("cpu"))
 
-        start_logits = self.start_linear(answer_out_hidden_states).squeeze(-1)
-        end_logits = self.end_linear(answer_out_hidden_states).squeeze(-1)
+        mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
+        attned_ans_hs = self.answer_dec_attention(answer_hs, dec_input_emb, dec_input_emb, mask)
+
+        start_logits = self.start_linear(attned_ans_hs).squeeze(-1)
+        end_logits = self.end_linear(attned_ans_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
         start_logits = start_logits.masked_fill(start_end_mask, -10000.0)
         end_logits = end_logits.masked_fill(start_end_mask, -10000.0)
         return start_logits, end_logits
 
-    def _decode_question(self, q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
-                         past_key_values=None, use_cache=None):
+    def _decode_question(self, q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq, init_state=None, use_cache=None):
         def get_question_logits_from_out_hidden_states(q_out_hidden_states):
             N, max_q_len = q_ids.size()
-            # gen logits
-            gen_logits = self.lm_head(q_out_hidden_states)
 
-            # copy logits
             # context-question attention
             mask = torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))
-            _, attn_logits = cal_attn(self.question_linear(q_out_hidden_states), c_a_hidden_states, mask)
+            c_attned_by_q, attn_logits = self.question_decoder_attention(
+                q_out_hidden_states, c_a_hidden_states, mask, return_attention_logits=True)
 
+            # gen logits
+            q_concated = torch.cat([q_out_hidden_states, c_attned_by_q], dim=2)
+            q_concated = self.concat_linear(q_concated)
+            q_maxouted, _ = q_concated.view(N, max_q_len, self.d_model, 2).max(dim=-1)
+            gen_logits = self.lm_head(q_maxouted)
+
+            # copy logits
             bq = N * max_q_len
             context_ids = c_ids.unsqueeze(1).repeat(
                 1, max_q_len, 1).view(bq, -1).contiguous()
@@ -347,38 +340,25 @@ class BertQAGConditionalVae(pl.LightningModule):
             copy_logits = copy_logits.view(N, max_q_len, -1).contiguous()
 
             total_logits = gen_logits + copy_logits
-            return total_logits
+            return total_logits, q_maxouted
 
-        if past_key_values is None:
-            past_key_values = self.build_zq_past(zq)
-            past_key_values_tmp = []
-            for (k, v) in past_key_values:
-                k = k.expand(-1, -1, c_ids.size(1), -1)
-                v = v.expand(-1, -1, c_ids.size(1), -1)
-                past_key_values_tmp.append((k, v))
-            past_key_values = past_key_values_tmp
+        if init_state is None:
+            init_state = self.build_zq_init_state(zq)
 
-        # extend the input attention mask so that the init state from `za` is attended during self-attention
-        past_key_values_length = past_key_values[0][0].shape[2]
-        past_attended_q_mask = \
-            torch.cat([torch.ones(q_ids.size(0), past_key_values_length).to(q_ids.device), q_mask], dim=-1)
-        question_decoder_outputs = self.question_decoder(
-            input_ids=q_ids,
-            attention_mask=past_attended_q_mask,
-            past_key_values=past_key_values,
-            encoder_hidden_states=c_a_hidden_states,
-            encoder_attention_mask=c_mask,
-            use_cache=use_cache
-        )
-        question_out_hidden_states = question_decoder_outputs[0]
+        # question dec
+        q_embeddings = _encode_input_tokens(encoder=self.encoder, input_ids=q_ids, input_mask=q_mask)
+        q_lengths = q_mask.sum(dim=1)
+        q_outputs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
 
-        present_key_values = None
-        if use_cache is not None and use_cache:
-            present_key_values = question_decoder_outputs[1]
+        mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
+        attned_q_hs = self.question_dec_attention(q_outputs, q_embeddings, q_embeddings, mask)
 
         # Generate question id
-        lm_logits = get_question_logits_from_out_hidden_states(question_out_hidden_states)
-        return lm_logits, question_out_hidden_states, present_key_values
+        lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(attned_q_hs)
+        if use_cache is not None and use_cache:
+            return lm_logits, q_last_outputs, next_state
+        else:
+            return lm_logits, q_last_outputs
 
     """ Training-related methods """
     def forward(
@@ -548,7 +528,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1).to(c_ids.device)
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
-        past_key_values = None
+        current_state = None
 
         c_a_hidden_states = _encode_input_tokens(
             encoder=self.encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=a_mask)
@@ -557,9 +537,9 @@ class BertQAGConditionalVae(pl.LightningModule):
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
-            lm_logits, _, past_key_values = self._decode_question(
+            lm_logits, _, current_state = self._decode_question(
                 q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
-                past_key_values=past_key_values, use_cache=True)
+                init_state=current_state, use_cache=True)
 
             q_ids = torch.argmax(lm_logits, dim=2)
             all_q_ids.append(q_ids)
