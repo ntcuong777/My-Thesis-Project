@@ -2,20 +2,17 @@ import collections
 import json
 import logging
 import itertools
+from copy import deepcopy
 from typing import Dict
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch_optimizer as additional_optim
 import torch.optim as optim
-import numpy as np
 import pytorch_lightning as pl
 from transformers import BertConfig, BertTokenizer, BertModel
 from infohcvae.model.model_utils import (
-    return_attention_mask,
     gumbel_softmax, sample_gaussian,
-    gumbel_latent_var_sampling,
     freeze_neural_model,
 )
 from infohcvae.model.losses import (
@@ -73,15 +70,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.pooling_strategy = args.pooling_strategy
 
         """ Initialize model """
-        embedding_model = args.embedding_model
-        embedding_model = BertModel.from_pretrained(embedding_model, add_pooling_layer=False)
-        freeze_neural_model(embedding_model)
+        base_model = args.base_model
+        config = BertConfig.from_pretrained(base_model)
 
-        context_encoder = args.context_encoder
-        config = BertConfig.from_pretrained(context_encoder)
-        context_encoder = BertModel.from_pretrained(context_encoder, add_pooling_layer=False)
-        freeze_neural_model(context_encoder)
-
+        self.encoder_bert_nlayers = encoder_bert_nlayers = args.encoder_bert_nlayers
         self.encoder_nlayers = encoder_nlayers = args.encoder_nlayers
         self.encoder_nhidden = encoder_nhidden = args.encoder_nhidden
         self.encoder_dropout = encoder_dropout = args.encoder_dropout
@@ -92,6 +84,12 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.decoder_q_nhidden = decoder_q_nhidden = args.decoder_q_nhidden
         self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_dropout
         self.d_model = d_model = config.hidden_size
+
+        bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
+        freeze_neural_model(bert_model)
+        # use a few first layer for encoder
+        embedding_model = deepcopy(bert_model).encoder.layer[:encoder_bert_nlayers]
+        context_encoder = bert_model
 
         self.tokenizer = BertTokenizer.from_pretrained(context_encoder)
         self.vocab_size = vocab_size = self.tokenizer.vocab_size
@@ -143,10 +141,10 @@ class BertQAGConditionalVae(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
-        parser.add_argument("--embedding_model", default="Intel/bert-base-uncased-mrpc-int8-qat", type=str)
-        parser.add_argument("--context_encoder", default="bert-base-uncased", type=str)
-        parser.add_argument("--encoder_nhidden", type=int, default=384)
+        parser.add_argument("--base_model", default="bert-base-uncased", type=str)
         parser.add_argument("--encoder_nlayers", type=int, default=1)
+        parser.add_argument("--encoder_bert_nlayers", type=int, default=4)
+        parser.add_argument("--encoder_nhidden", type=int, default=384)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)
         parser.add_argument("--decoder_a_nlayers", type=int, default=1)
         parser.add_argument("--decoder_a_nhidden", type=int, default=384)

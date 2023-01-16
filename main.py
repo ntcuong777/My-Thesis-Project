@@ -17,7 +17,7 @@ from infohcvae.utils import (
 
 
 def main(run_args):
-    tokenizer = AutoTokenizer.from_pretrained(run_args.context_encoder)
+    tokenizer = AutoTokenizer.from_pretrained(run_args.base_model)
 
     run_args.device = torch.cuda.current_device()
 
