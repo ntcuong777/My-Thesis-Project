@@ -2,8 +2,7 @@ import collections
 import json
 import logging
 import itertools
-from copy import deepcopy
-from typing import Optional, Dict
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -12,22 +11,20 @@ import torch_optimizer as additional_optim
 import torch.optim as optim
 import numpy as np
 import pytorch_lightning as pl
-from torch_scatter import scatter_max
 from transformers import BertConfig, BertTokenizer, BertModel
-from transformers.models.bert.modeling_bert import BertAttention
 from infohcvae.model.model_utils import (
     return_attention_mask,
     gumbel_softmax, sample_gaussian,
     gumbel_latent_var_sampling,
+    freeze_neural_model,
 )
 from infohcvae.model.losses import (
-    VaeGaussianKLLoss, VaeGumbelKLLoss,
+    GaussianKLLoss, CategoricalKLLoss,
     ContinuousKernelMMDLoss, GumbelMMDLoss,
 )
 from infohcvae.model.custom.custom_torch_dataset import CustomDataset
-from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.custom.luong_attention import LuongAttention
-from infohcvae.model.custom.multihead_self_attention import MultiHeadAttention
+from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder
+from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
 from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
 from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
@@ -76,88 +73,57 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.pooling_strategy = args.pooling_strategy
 
         """ Initialize model """
-        base_model = args.base_model
-        config = BertConfig.from_pretrained(base_model)
-        bert_model = BertModel.from_pretrained(base_model)
+        embedding_model = args.embedding_model
+        embedding_model = BertModel.from_pretrained(embedding_model, add_pooling_layer=False)
+        freeze_neural_model(embedding_model)
 
-        self.encoder_finetune_nlayers = encoder_finetune_nlayers = args.encoder_finetune_nlayers
+        context_encoder = args.context_encoder
+        config = BertConfig.from_pretrained(context_encoder)
+        context_encoder = BertModel.from_pretrained(context_encoder, add_pooling_layer=False)
+        freeze_neural_model(context_encoder)
+
+        self.encoder_nlayers = encoder_nlayers = args.encoder_nlayers
+        self.encoder_nhidden = encoder_nhidden = args.encoder_nhidden
+        self.encoder_dropout = encoder_dropout = args.encoder_dropout
         self.decoder_a_nlayers = decoder_a_nlayers = args.decoder_a_nlayers
+        self.decoder_a_nhidden = decoder_a_nhidden = args.decoder_a_nhidden
         self.decoder_a_dropout = decoder_a_dropout = args.decoder_a_dropout
         self.decoder_q_nlayers = decoder_q_nlayers = args.decoder_q_nlayers
+        self.decoder_q_nhidden = decoder_q_nhidden = args.decoder_q_nhidden
         self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_dropout
         self.d_model = d_model = config.hidden_size
 
-        self.tokenizer = BertTokenizer.from_pretrained(base_model)
-        self.vocab_size = self.tokenizer.vocab_size
+        self.tokenizer = BertTokenizer.from_pretrained(context_encoder)
+        self.vocab_size = vocab_size = self.tokenizer.vocab_size
         self.pad_token_id = self.tokenizer.pad_token_id
-        self.sos_id = self.tokenizer.cls_token_id
-        self.eos_id = self.tokenizer.sep_token_id
+        self.sos_id = sos_id = self.tokenizer.cls_token_id
+        self.eos_id = eos_id = self.tokenizer.sep_token_id
 
-        # ENCODER - Initialize posterior encoder
-        self.encoder = bert_model
+        """ Define components """
+        self.posterior_encoder = PosteriorEncoder(embedding_model, d_model,
+                                                  encoder_nhidden, encoder_nlayers,
+                                                  nzqdim, nzadim, nza_values,
+                                                  dropout=encoder_dropout, pad_token_id=self.pad_token_id)
 
-        # Pooling layer for computing the latent variables
-        self.first_token_pooler = deepcopy(bert_model.pooler)
-        bert_model.pooler = None # remove pooler from pretrained ckpt
+        self.prior_encoder = PriorEncoder(embedding_model, d_model,
+                                          encoder_nhidden, encoder_nlayers,
+                                          nzqdim, nzadim, nza_values,
+                                          dropout=encoder_dropout, pad_token_id=self.pad_token_id)
 
-        # Freeze embedding layer
-        enc_embedding_layer = self.encoder.get_input_embeddings()
-        for params in enc_embedding_layer.parameters():
-            params.requires_grad = False
-        # freeze encoder layers, except `num_finetune_enc_layers` top layers
-        for i in range(config.num_hidden_layers - encoder_finetune_nlayers):
-            for param in self.encoder.encoder.layer[i].parameters():
-                param.requires_grad = False
+        self.answer_decoder = AnswerDecoder(context_encoder, d_model, nzadim, nza_values,
+                                            decoder_a_nhidden, decoder_a_nlayers,
+                                            dropout=decoder_a_dropout)
 
-        # DECODER - Initialize answer & question decoder
-        # Answer decoder is the encoder with only `num_finetune_enc_layers` on top
-        self.answer_decoder = CustomLSTM(input_size=d_model, hidden_size=d_model // 2,
-                                         num_layers=decoder_a_nlayers, dropout=decoder_a_dropout,
-                                         bidirectional=True)
-        self.answer_dec_luong_attention = LuongAttention(d_model, d_model)
-
-        # Question decoder
-        self.question_decoder = CustomLSTM(input_size=d_model, hidden_size=d_model,
-                                           num_layers=decoder_q_nlayers, dropout=decoder_q_dropout,
-                                           bidirectional=False)
-        self.question_dec_luong_attention = LuongAttention(d_model, d_model)
-        self.attended_question_projection = nn.Linear(2 * d_model, d_model, bias=False)
-
-        """ Encoder properties """
-        self.question_attention = LuongAttention(d_model, d_model)
-        self.context_attention = LuongAttention(d_model, d_model)
-
-        self.za_linear = nn.Linear(2 * d_model + nzqdim, nzadim * nza_values, bias=False)
-        self.zq_mu_linear = nn.Linear(4 * d_model, nzqdim, bias=False)
-        self.zq_logvar_linear = nn.Linear(4 * d_model, nzqdim, bias=False)
-
-        """ Answer decoder properties """
-        self.za_enc_zq_attention = LuongAttention(nzqdim, d_model)
-        self.za_zq_projection = nn.Linear(nzadim * nza_values + nzqdim, d_model, bias=False)
-        self.answer_dec_projection = nn.Linear(5 * d_model, d_model, bias=False)
-        self.start_linear = nn.Linear(2*d_model, 1)
-        self.end_linear = nn.Linear(2*d_model, 1)
-
-        """ Question decoder properties """
-        self.q_init_hidden_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
-        self.q_init_cell_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
-        self.question_context_copy_attention = LuongAttention(d_model, d_model)
-        self.concat_linear = nn.Sequential(nn.Linear(2 * d_model, 2 * d_model),
-                                           nn.Dropout(decoder_q_dropout),
-                                           nn.Linear(2 * d_model, 2 * d_model))
-
-        self.lm_head = nn.Linear(d_model, self.vocab_size, bias=False)
-
-        # fix output word matrix
-        self.lm_head.weight = enc_embedding_layer.weight
-        for param in self.lm_head.parameters():
-            param.requires_grad = False
+        self.question_decoder = QuestionDecoder(
+            context_encoder.get_input_embeddings(), embedding_model, context_encoder,
+            nzqdim, d_model, decoder_q_nhidden, decoder_q_nlayers, sos_id, eos_id, vocab_size,
+            dropout=decoder_q_dropout, max_q_len=self.max_q_len)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
-        self.gaussian_kl_criterion = VaeGaussianKLLoss()
-        self.categorical_kl_criterion = VaeGumbelKLLoss(categorical_dim=nza_values)
+        self.gaussian_kl_criterion = GaussianKLLoss()
+        self.categorical_kl_criterion = CategoricalKLLoss()
 
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
         self.gumbel_mmd_criterion = GumbelMMDLoss()
@@ -177,66 +143,32 @@ class BertQAGConditionalVae(pl.LightningModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
-        parser.add_argument("--base_model", default='bert-base-uncased', type=str)
-        parser.add_argument('--encoder_finetune_nlayers', type=int, default=2)
-        parser.add_argument('--decoder_a_nlayers', type=int, default=1)
-        parser.add_argument('--decoder_a_dropout', type=float, default=0.2)
-        parser.add_argument('--decoder_q_nlayers', type=int, default=2)
-        parser.add_argument('--decoder_q_dropout', type=float, default=0.3)
-        parser.add_argument('--nzqdim', type=int, default=64)
-        parser.add_argument('--nzadim', type=int, default=20)
-        parser.add_argument('--nza_values', type=int, default=10)
-        parser.add_argument('--pooling_strategy', type=str, default="first", choices=["max", "mean", "first"])
-        parser.add_argument('--alpha_kl_q', type=float, default=0)
-        parser.add_argument('--alpha_kl_a', type=float, default=0)
-        parser.add_argument('--lambda_mmd_q', type=float, default=20)
-        parser.add_argument('--lambda_mmd_a', type=float, default=20)
-        parser.add_argument('--lambda_qa_info', type=float, default=1)
+        parser.add_argument("--embedding_model", default="Intel/bert-base-uncased-mrpc-int8-qat", type=str)
+        parser.add_argument("--context_encoder", default="bert-base-uncased", type=str)
+        parser.add_argument("--encoder_nhidden", type=int, default=384)
+        parser.add_argument("--encoder_nlayers", type=int, default=1)
+        parser.add_argument("--encoder_dropout", type=float, default=0.2)
+        parser.add_argument("--decoder_a_nlayers", type=int, default=1)
+        parser.add_argument("--decoder_a_nhidden", type=int, default=384)
+        parser.add_argument("--decoder_a_dropout", type=float, default=0.2)
+        parser.add_argument("--decoder_q_nlayers", type=int, default=2)
+        parser.add_argument("--decoder_q_nhidden", type=int, default=900)
+        parser.add_argument("--decoder_q_dropout", type=float, default=0.3)
+        parser.add_argument("--nzqdim", type=int, default=64)
+        parser.add_argument("--nzadim", type=int, default=20)
+        parser.add_argument("--nza_values", type=int, default=10)
+        parser.add_argument("--pooling_strategy", type=str, default="first", choices=["max", "mean", "first"])
+        parser.add_argument("--alpha_kl_q", type=float, default=0)
+        parser.add_argument("--alpha_kl_a", type=float, default=0)
+        parser.add_argument("--lambda_mmd_q", type=float, default=20)
+        parser.add_argument("--lambda_mmd_a", type=float, default=20)
+        parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
         parser.add_argument("--optimizer", default="adamw", choices=["sgd", "adam", "swats", "adamw"], type=str,
                             help="optimizer to use, [\"adam\", \"sgd\", \"swats\", \"adamw\"] are supported")
 
         return parent_parser
-
-    """ Pooling """
-    def pool(self, last_hidden_states):
-        # last_hidden_states shape = (batch_size, seq_length, hidden_size)
-        # pooling over `seq_length` dim
-        if self.pooling_strategy == "mean":
-            return last_hidden_states.mean(dim=1)
-        elif self.pooling_strategy == "max":
-            return torch.max(last_hidden_states, dim=1)[0]  # Pool from last layer
-        elif self.pooling_strategy == "first":
-            return self.first_token_pooler(last_hidden_states)
-        else:
-            raise Exception("Wrong pooling strategy!")
-
-    """ `zq`-related methods """
-    def calculate_zq_latent(self, pooled):
-        zq_mu, zq_logvar = self.zq_mu_linear(pooled), self.zq_logvar_linear(pooled)
-        zq = sample_gaussian(zq_mu, zq_logvar)
-        return zq, zq_mu, zq_logvar
-
-    def build_zq_init_state(self, zq):
-        q_init_h = self.q_init_hidden_linear(zq)
-        q_init_c = self.q_init_cell_linear(zq)
-        q_init_h = q_init_h.view(-1, self.decoder_q_nlayers, self.d_model).transpose(0, 1).contiguous()
-        q_init_c = q_init_c.view(-1, self.decoder_q_nlayers, self.d_model).transpose(0, 1).contiguous()
-        q_init_state = (q_init_h, q_init_c)
-        return q_init_state
-
-    """ `za`-related methods """
-    def calculate_za_latent(self, pooled, hard=True):
-        za_logits = self.za_linear(pooled).view(-1, self.nzadim, self.nza_values)
-        za = gumbel_softmax(za_logits, hard=hard)
-        return za, za_logits
-
-    def build_za_init_state_with_zq(self, za, zq):
-        z_input = torch.cat([za.view(-1, self.nzadim * self.nza_values), zq], dim=-1)
-        z_projected = self.za_zq_projection(z_input)  # shape = (N, d_model)
-        z_projected = z_projected.unsqueeze(1).expand(-1, self.max_c_len, -1)  # shape = (N, c_len, d_model)
-        return z_projected
 
     """ Encoding-related methods """
     def _encode_latent_posteriors(self, q_ids, q_mask, c_ids, c_mask, c_a_mask):
@@ -279,140 +211,32 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ END: Answer encoding to get latent `za` """
         return zq, zq_mu, zq_logvar, za, za_logits, c_a_hidden_states
 
-    """ Decoding-related methods """
-    def _decode_answer(self, c_ids, c_mask, za, zq):
-        # context enc
-        c_hidden_states = _encode_input_tokens(
-            encoder=self.encoder, input_ids=c_ids, input_mask=c_mask)
-
-        za_zq_projected = self.build_za_init_state_with_zq(za, zq)
-        dec_input_emb = self.answer_dec_projection(
-            torch.cat(
-                [c_hidden_states,
-                 za_zq_projected,
-                 c_hidden_states * za_zq_projected,
-                 c_hidden_states + za_zq_projected,
-                 torch.abs(c_hidden_states - za_zq_projected)],
-                dim=-1)
-        )
-
-        c_lengths = torch.sum(c_mask, dim=1)
-        answer_hs, _ = self.answer_decoder(dec_input_emb, c_lengths.to("cpu"))
-
-        mask = torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))
-        # attention answer_hs with answer_hs
-        answer_hs = torch.cat([answer_hs,
-                               self.answer_dec_luong_attention(answer_hs, answer_hs, mask)],
-                              dim=-1)
-
-        start_logits = self.start_linear(answer_hs).squeeze(-1)
-        end_logits = self.end_linear(answer_hs).squeeze(-1)
-
-        start_end_mask = (c_mask == 0)
-        start_logits = start_logits.masked_fill(start_end_mask, -1000000.0)
-        end_logits = end_logits.masked_fill(start_end_mask, -1000000.0)
-        return start_logits, end_logits
-
-    def _decode_question(self, q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
-                         init_state=None, past_lstm_outputs=None, use_cache=None):
-        def get_question_logits_from_out_hidden_states(q_out_hidden_states):
-            N, max_q_len = q_ids.size()
-
-            # context-question attention
-            mask = torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))
-            c_attned_by_q, attn_logits = self.question_context_copy_attention(
-                q_out_hidden_states, c_a_hidden_states, mask, return_attention_logits=True)
-
-            # gen logits
-            q_concated = torch.cat([q_out_hidden_states, c_attned_by_q], dim=2)
-            q_concated = self.concat_linear(q_concated)
-            q_maxouted, _ = q_concated.view(N, max_q_len, self.d_model, 2).max(dim=-1)
-            gen_logits = self.lm_head(q_maxouted)
-
-            # copy logits
-            bq = N * max_q_len
-            context_ids = c_ids.unsqueeze(1).repeat(
-                1, max_q_len, 1).view(bq, -1).contiguous()
-            attn_logits = attn_logits.view(bq, -1).contiguous()
-            copy_logits = torch.zeros(bq, self.vocab_size).to(context_ids.device) - 10000.0
-            copy_logits, _ = scatter_max(attn_logits, context_ids, out=copy_logits)
-            copy_logits = copy_logits.masked_fill(copy_logits == -10000.0, 0)
-            copy_logits = copy_logits.view(N, max_q_len, -1).contiguous()
-
-            total_logits = gen_logits + copy_logits
-            return total_logits, q_maxouted
-
-        if init_state is None:
-            init_state = self.build_zq_init_state(zq)
-
-        # question dec
-        q_embeddings = _encode_input_tokens(encoder=self.encoder, input_ids=q_ids, input_mask=q_mask)
-        q_lengths = q_mask.sum(dim=1)
-        q_outputs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
-
-        # this implementation requires `mask` to be the indices required to be not attended to
-        q_hs = q_outputs
-        present_lstm_outputs = None
-        if past_lstm_outputs is None:
-            causal_attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1))) # causal mask
-            q_hs = self.attended_question_projection(torch.cat(
-                [q_hs, self.question_dec_luong_attention(q_outputs, q_outputs, causal_attention_mask)], dim=-1))
-        else:
-            present_lstm_outputs = torch.cat([past_lstm_outputs, q_outputs], dim=1)  # concat along seq_len dimension
-            q_mask = torch.ones_like(present_lstm_outputs).to(present_lstm_outputs.device)
-            causal_attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
-            # Only take the last state after applying attention to match with the length of input
-            q_hs = self.attended_question_projection(
-                torch.cat(
-                    [q_hs, self.question_dec_luong_attention(
-                        present_lstm_outputs, present_lstm_outputs, causal_attention_mask)[:, -1, :]],
-                    dim=-1))
-
-        # Generate question id
-        lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(q_hs)
-        if use_cache is not None and use_cache:
-            return lm_logits, q_last_outputs, next_state, present_lstm_outputs
-        else:
-            return lm_logits, q_last_outputs
-
     """ Training-related methods """
     def forward(
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
-            return_qa_mean_embeds: Optional[bool] = None,
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
+        posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
+            posterior_za, posterior_za_logits = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
-        """ ENCODING PART or LATENT CODE GENERATION PART """
-        zq, zq_mu, zq_logvar, za, za_logits, c_a_hidden_states = self._encode_latent_posteriors(
-            q_ids, q_mask, c_ids, c_mask, c_a_mask)
+        prior_zq, prior_zq_mu, prior_zq_logvar, \
+            prior_za, prior_za_logits = self.prior_encoder(c_ids)
 
-        """ ANSWER DECODING PART """
-        start_logits, end_logits = self._decode_answer(c_ids, c_mask, za, zq)
-
-        """ QUESTION DECODING PART """
-        lm_logits, question_out_hidden_states = self._decode_question(
-            q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq)
-
-        out_mean_qa = (None, None)
-        if return_qa_mean_embeds is not None and return_qa_mean_embeds:
-            # mutual information btw averged answer and question representations
-            a_emb = c_a_hidden_states * c_a_mask.float().unsqueeze(2)
-            a_mean_emb = torch.sum(a_emb, dim=1) / c_a_mask.sum(1).unsqueeze(1).float()
-
-            q_emb = question_out_hidden_states * q_mask.unsqueeze(2)
-            q_mean_emb = torch.sum(q_emb, dim=1) / q_mask.sum(dim=1, keepdim=True).float()
-
-            out_mean_qa = (q_mean_emb, a_mean_emb)
+        # answer decoding
+        start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
+        # question decoding
+        lm_logits, mean_embeds = self.question_decoder(
+            c_ids, q_ids, c_a_mask, return_qa_mean_embeds=True)
 
         out = dict({
-            "za_out": (za, za_logits),
-            "zq_out": (zq, zq_mu, zq_logvar),
+            "posterior_za_out": (posterior_za, posterior_za_logits),
+            "prior_za_out": (prior_za, prior_za_logits),
+            "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
+            "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
             "answer_out": (start_logits, end_logits),
-            "question_out": (lm_logits,) + out_mean_qa
+            "question_out": (lm_logits,) + mean_embeds
         })
         return out
 
@@ -420,22 +244,38 @@ class BertQAGConditionalVae(pl.LightningModule):
         _, q_ids, c_ids, a_mask, _, no_q_start_positions, no_q_end_positions = batch
         out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, return_qa_mean_embeds=True)
 
-        za, za_logits = out["za_out"]
-        zq, zq_mu, zq_logvar = out["zq_out"]
+        posterior_za, posterior_za_logits = out["posterior_za_out"]
+        prior_za, prior_za_logits = out["prior_za_out"]
+        posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
+        prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
         start_logits, end_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         num_sample_times = 256 // c_ids.size(0) + (0 if 256 % c_ids.size(0) == 0 else 1)
-        zq = torch.cat([zq,
-                        sample_gaussian(
-                            zq_mu.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim),
-                            zq_logvar.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim))],
-                       dim=0)  # concat in batch dimension
-        za = torch.cat([za,
-                        gumbel_softmax(
-                            za_logits.unsqueeze(1).repeat(1, num_sample_times - 1, 1, 1)
-                            .view(-1, self.nzadim, self.nza_values))],
-                       dim=0)  # concat in batch dimension
+        posterior_zq = torch.cat(
+            [posterior_zq,
+             sample_gaussian(
+                 posterior_zq_mu.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim),
+                 posterior_zq_logvar.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim))],
+            dim=0)  # concat in batch dimension
+        prior_zq = torch.cat(
+            [prior_zq,
+             sample_gaussian(
+                 prior_zq_mu.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim),
+                 prior_zq_logvar.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim))],
+            dim=0)  # concat in batch dimension
+        posterior_za = torch.cat(
+            [posterior_za,
+             gumbel_softmax(
+                 posterior_za_logits.unsqueeze(1).repeat(1, num_sample_times - 1, 1, 1)
+                 .view(-1, self.nzadim, self.nza_values))],
+            dim=0)  # concat in batch dimension
+        prior_za = torch.cat(
+            [prior_za,
+             gumbel_softmax(
+                 prior_za_logits.unsqueeze(1).repeat(1, num_sample_times - 1, 1, 1)
+                 .view(-1, self.nzadim, self.nza_values))],
+            dim=0)  # concat in batch dimension
 
         # Compute losses
         # q rec loss
@@ -453,21 +293,20 @@ class BertQAGConditionalVae(pl.LightningModule):
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = 0.0, 0.0, 0.0
         if self.alpha_kl_a < 1. or self.alpha_kl_q < 1.:
-            loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(zq_mu, zq_logvar)
-            loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(za_logits)
+            loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
+                posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
+            loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(
+                posterior_za_logits, prior_za_logits)
             loss_kl = loss_zq_kl + loss_za_kl
 
-        loss_zq_mmd = self.cont_mmd_criterion(zq)
-        loss_za_mmd = self.gumbel_mmd_criterion(za)
+        loss_zq_mmd = self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
+        loss_za_mmd = self.gumbel_mmd_criterion(posterior_z=posterior_za, prior_z=prior_za)
         loss_zq_mmd[loss_zq_mmd >= 0] = loss_zq_mmd[loss_zq_mmd >= 0] * self.lambda_mmd_q  # combat unknown negativity
         loss_za_mmd[loss_za_mmd >= 0] = loss_za_mmd[loss_za_mmd >= 0] * self.lambda_mmd_a  # combat unknown negativity
         loss_mmd = loss_zq_mmd + loss_za_mmd
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-
-        # loss reconstruction
-        # loss_rec = loss_q_rec + loss_a_rec
 
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_mmd
 
@@ -494,96 +333,24 @@ class BertQAGConditionalVae(pl.LightningModule):
         return total_loss
 
     """ Generation-related methods """
-    def _generate_answer(self, c_ids, c_mask, za, zq):
-        def generate_answer_mask_from_context(start_logits, end_logits):
-            batch_size, max_c_len = c_ids.size()
-
-            mask = torch.matmul(c_mask.unsqueeze(2).float(),
-                                c_mask.unsqueeze(1).float())
-            mask = torch.triu(mask) == 0
-            score = (F.log_softmax(start_logits, dim=1).unsqueeze(2)
-                     + F.log_softmax(end_logits, dim=1).unsqueeze(1))
-            score = score.masked_fill(mask, -10000.0)
-            score, start_positions = score.max(dim=1)
-            score, end_positions = score.max(dim=1)
-            start_positions = torch.gather(start_positions, 1, end_positions.view(-1, 1)).squeeze(1)
-
-            idxes = torch.arange(0, max_c_len, out=torch.LongTensor(max_c_len))
-            idxes = idxes.unsqueeze(0).to(
-                start_logits.device).repeat(batch_size, 1)
-
-            start_positions = start_positions.unsqueeze(1)
-            start_mask = (idxes >= start_positions).long()
-            end_positions = end_positions.unsqueeze(1)
-            end_mask = (idxes <= end_positions).long()
-            a_mask = start_mask + end_mask - 1
-
-            return a_mask, start_positions.squeeze(1), end_positions.squeeze(1)
-
-        return_start_logits, return_end_logits = self._decode_answer(c_ids, c_mask, za, zq)
+    def _generate_answer(self, c_ids, za):
+        return_start_logits, return_end_logits = self.answer_decoder(c_ids, za)
 
         # Get generated answer mask from context ids `c_ids`
-        gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = generate_answer_mask_from_context(
-            return_start_logits, return_end_logits)
+        gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = self.answer_decoder.generate(
+            c_ids, start_logits=return_start_logits, end_logits=return_end_logits)
         return gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, return_start_logits, return_end_logits
 
-    def _generate_question(self, c_ids, c_mask, a_mask, zq):
-        """ Greedy decoding """
-
-        def postprocess(q_ids):
-            eos_mask = (q_ids == self.eos_id).float()
-            no_eos_idx_sum = (eos_mask.sum(dim=1) == 0).long() * \
-                             (self.max_q_len - 1)
-            eos_mask = eos_mask.cpu().numpy()
-            q_lengths = np.argmax(eos_mask, axis=1) + 1
-            q_lengths = torch.tensor(q_lengths).to(
-                q_ids.device).long() + no_eos_idx_sum
-            batch_size, max_len = q_ids.size()
-            idxes = torch.arange(0, max_len).to(q_ids.device)
-            idxes = idxes.unsqueeze(0).repeat(batch_size, 1)
-            q_mask = (idxes < q_lengths.unsqueeze(1))
-            q_ids = q_ids.long() * q_mask.long()
-            return q_ids
-
-        batch_size = c_ids.size(0)
-
-        # Init state, only BOS token is available for each question
-        q_ids = torch.LongTensor([self.sos_id] * batch_size).unsqueeze(1).to(c_ids.device)
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
-
-        current_state = None
-        past_lstm_outputs = None
-
-        c_a_hidden_states = _encode_input_tokens(
-            encoder=self.encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=a_mask)
-
-        # unroll
-        all_q_ids = list()
-        all_q_ids.append(q_ids)
-        for _ in range(self.max_q_len - 1):
-            lm_logits, _, current_state, past_lstm_outputs = self._decode_question(
-                q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
-                init_state=current_state, past_lstm_outputs=past_lstm_outputs, use_cache=True)
-
-            q_ids = torch.argmax(lm_logits, dim=2)
-            all_q_ids.append(q_ids)
-            q_mask = return_attention_mask(q_ids, self.pad_token_id)
-
-        q_ids = torch.cat(all_q_ids, dim=1)
-        q_ids = postprocess(q_ids)
-
-        return q_ids
+    def _generate_question(self, c_ids, c_a_mask, zq):
+        return self.question_decoder.generate(c_ids, c_a_mask, zq)
 
     def generate_qa_from_prior(self, c_ids):
         with torch.no_grad():
-            c_mask = return_attention_mask(c_ids, self.pad_token_id)
-
-            zq = torch.randn(c_ids.size(0), self.nzqdim).to(c_ids.device)
-            za = gumbel_latent_var_sampling(c_ids.size(0), self.nzadim, self.nza_values, c_ids.device)
+            zq, _, _, za, _ = self.prior_encoder(c_ids)
 
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
-                self._generate_answer(c_ids, c_mask, za, zq)
-            q_ids = self._generate_question(c_ids, c_mask, gen_c_a_mask, zq)
+                self._generate_answer(c_ids, za)
+            q_ids = self._generate_question(c_ids, gen_c_a_mask, zq)
 
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
 
@@ -591,16 +358,12 @@ class BertQAGConditionalVae(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         def generate_qa_from_posterior(question_ids, context_ids, c_a_mask):
             with torch.no_grad():
-                c_mask = return_attention_mask(context_ids, self.pad_token_id)
-                q_mask = return_attention_mask(question_ids, self.pad_token_id)
-
-                zq, _, _, za, _, _ = self._encode_latent_posteriors(
-                    question_ids, q_mask, context_ids, c_mask, c_a_mask)
+                zq, _, _, za, _, _ = self.posterior_encoder(context_ids, question_ids, c_a_mask)
 
                 """ Generation """
                 gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
-                    self._generate_answer(context_ids, c_mask, za, zq)
-                question_ids = self._generate_question(context_ids, c_mask, gen_c_a_mask, zq)
+                    self._generate_answer(c_ids, za)
+                question_ids = self._generate_question(c_ids, gen_c_a_mask, zq)
 
                 return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 

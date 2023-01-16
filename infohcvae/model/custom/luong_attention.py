@@ -4,10 +4,9 @@ import torch.nn.functional as F
 
 
 class LuongAttention(nn.Module):
-    def __init__(self, in_features, out_features):
+    def __init__(self, in_features, out_features, bias=True):
         super().__init__()
-
-        self.linear_proj = nn.Linear(in_features, out_features)
+        self.linear_proj = nn.Linear(in_features, out_features, bias=bias)
 
     def forward(self, query, memories, mask, return_attention_logits=None):
         # project query to the same hidden_size as memories

@@ -66,26 +66,29 @@ class GumbelMMDLoss(nn.Module):
     def __init__(self):
         super(GumbelMMDLoss, self).__init__()
 
-    def forward(self, posterior_z):
+    def forward(self, posterior_z, prior_z=None):
         batch_size, latent_dim, nlatent = posterior_z.size()
-        # sample more prior variables
-        prior_z = gumbel_latent_var_sampling(batch_size, latent_dim, nlatent, device=posterior_z.device)
+
+        if prior_z is None: # sampling from categorical prior
+            prior_z = gumbel_latent_var_sampling(batch_size, latent_dim, nlatent, device=posterior_z.device)
 
         # do softargmax to make measuring the mean in MMD possible
         prior_z = softargmax(prior_z)
         posterior_z = softargmax(posterior_z)
-        return compute_mmd(posterior_z, prior_z) # use RBF kernel for categorical distribution
+        return compute_mmd(posterior_z, prior_z)
 
 
 class ContinuousKernelMMDLoss(nn.Module):
     def __init__(self):
         super(ContinuousKernelMMDLoss, self).__init__()
 
-    def forward(self, posterior_z):
+    def forward(self, posterior_z, prior_z=None):
         # input shape = (batch, dim)
         batch_size, latent_dim = posterior_z.size()
-        # sample more prior variables
-        prior_z = torch.randn(batch_size, latent_dim).to(posterior_z.device)
+
+        if prior_z is None: # assuming using Isotropic Gaussian prior
+            prior_z = torch.randn(batch_size, latent_dim).to(posterior_z.device)
+
         return compute_mmd(posterior_z, prior_z)
 
 

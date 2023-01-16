@@ -1,16 +1,14 @@
 import torch
 import torch.nn.functional as F
-from typing import Optional, Tuple
+import torch.nn as nn
 import numpy as np
 
 from math import pi, sqrt, exp
 
 
-def scatter_max(
-        src: torch.Tensor, index: torch.Tensor, dim: int = -1,
-        out: Optional[torch.Tensor] = None,
-        dim_size: Optional[int] = None) -> Tuple[torch.Tensor, torch.Tensor]:
-    return torch.ops.torch_scatter.scatter_max(src, index, dim, out, dim_size)
+def freeze_neural_model(network: nn.Module):
+    for param in network.parameters():
+        param.requires_grad = False
 
 
 def softargmax(onehot_x, beta=1e4):
@@ -39,19 +37,13 @@ def sample_gaussian(mu, logvar, num_samples=None):
             return mu + torch.randn((num_samples, mu.size(1)), device=device)*torch.exp(0.5 * logvar)
 
 
-def return_attention_mask(ids: torch.Tensor, pad_token_id):
+def return_attention_mask(ids: torch.Tensor, pad_token_id=0):
     mask = (ids != pad_token_id).float().to(ids.device)
     return mask
 
 
-def cal_attn(query, memories, mask):
-    mask = (1.0 - mask.float()) * -10000.0
-    # query (N, len, hidden_size), memories (N, len, hidden_size)
-    attn_logits = torch.matmul(query, memories.transpose(-1, -2).contiguous())
-    attn_logits = attn_logits + mask
-    attn_weights = F.softmax(attn_logits, dim=-1)
-    attn_outputs = torch.matmul(attn_weights, memories)
-    return attn_outputs, attn_logits
+def return_inputs_length(attention_mask: torch.Tensor):
+    return attention_mask.sum(dim=-1)
 
 
 def sample_gumbel(shape, device, eps=1e-10):
