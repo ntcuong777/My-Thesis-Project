@@ -1,3 +1,4 @@
+from typing import Optional
 import random
 import torch
 import torch.nn as nn
@@ -10,7 +11,9 @@ class JensenShannonInfoMax(nn.Module):
         y_dim (int): dimension of latent code (typically a number in [10 - 256])
     """
 
-    def __init__(self, x_preprocessor: nn.Module, y_preprocessor: nn.Module, discriminator: nn.Module):
+    def __init__(self, discriminator: nn.Module,
+                 x_preprocessor: Optional[nn.Module] = None,
+                 y_preprocessor: Optional[nn.Module] = None):
         super(JensenShannonInfoMax, self).__init__()
         self.discriminator = discriminator
         self.x_preprocessor = x_preprocessor
