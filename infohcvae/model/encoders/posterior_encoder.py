@@ -43,7 +43,7 @@ class PosteriorEncoder(nn.Module):
         q_lengths = return_inputs_length(q_ids)
 
         # question enc
-        q_embeddings = self.embedding(input_ids=q_ids, attention_mask=q_mask)[0]
+        q_embeddings = self.embedding(q_ids)
         q_hidden_states, q_state = self.encoder(q_embeddings, q_lengths)
         q_hidden_states = self.shared_self_attention(q_hidden_states)
         # q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
@@ -52,7 +52,7 @@ class PosteriorEncoder(nn.Module):
         q_h = torch.cat([q_hidden_states[:, -1, :self.nhidden], q_hidden_states[:, 0, self.nhidden:]], dim=-1)
 
         # context enc
-        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)[0]
+        c_embeddings = self.embedding(c_ids)
         c_hidden_states, c_state = self.encoder(c_embeddings, c_lengths)
         c_hidden_states = self.shared_self_attention(c_hidden_states)
         # c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
@@ -61,7 +61,7 @@ class PosteriorEncoder(nn.Module):
         c_h = torch.cat([c_hidden_states[:, -1, :self.nhidden], c_hidden_states[:, 0, self.nhidden:]], dim=-1)
 
         # context and answer enc
-        c_a_embeddings = self.embedding(input_ids=c_ids, token_type_ids=c_a_mask, attention_mask=c_mask)[0]
+        c_a_embeddings = self.embedding(c_ids, c_a_mask)
         c_a_hidden_states, c_a_state = self.encoder(c_a_embeddings, c_lengths)
         c_a_hidden_states = self.shared_self_attention(c_a_hidden_states)
         # c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]

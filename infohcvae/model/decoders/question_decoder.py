@@ -69,7 +69,7 @@ class QuestionDecoder(nn.Module):
         init_state = self._build_zq_init_state(zq)
 
         # question dec
-        q_embeddings = self.embedding(input_ids=q_ids, attention_mask=q_mask)[0]
+        q_embeddings = self.embedding(q_ids)
         q_outputs, _ = self.question_lstm(q_embeddings, q_lengths, init_state)
 
         logits, q_last_outputs = self.get_question_logits_from_out_hidden_states(
@@ -139,7 +139,7 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.to(c_ids.device)
         token_type_ids = torch.zeros_like(q_ids)
         position_ids = torch.zeros_like(q_ids)
-        q_embeddings = self.embedding(input_ids=q_ids, token_type_ids=token_type_ids, position_ids=position_ids)[0]
+        q_embeddings = self.embedding(q_ids, token_type_ids, position_ids)[0]
 
         state = self._build_zq_init_state(zq)
 
@@ -156,7 +156,7 @@ class QuestionDecoder(nn.Module):
             q_ids = torch.argmax(logits, 2)
             all_q_ids.append(q_ids)
 
-            q_embeddings = self.embedding(input_ids=q_ids, token_type_ids=token_type_ids, position_ids=position_ids)[0]
+            q_embeddings = self.embedding(q_ids, token_type_ids, position_ids)[0]
 
         q_ids = torch.cat(all_q_ids, 1)
         q_ids = postprocess(q_ids)
