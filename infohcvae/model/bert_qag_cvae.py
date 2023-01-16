@@ -184,7 +184,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument('--decoder_a_nlayers', type=int, default=1)
         parser.add_argument('--decoder_a_dropout', type=float, default=0.2)
         parser.add_argument('--decoder_q_nlayers', type=int, default=2)
-        parser.add_argument('--dec_q_dropout', type=float, default=0.3)
+        parser.add_argument('--decoder_q_dropout', type=float, default=0.3)
         parser.add_argument('--nzqdim', type=int, default=64)
         parser.add_argument('--nzadim', type=int, default=20)
         parser.add_argument('--nza_values', type=int, default=10)
