@@ -23,8 +23,11 @@ class JensenShannonInfoMax(nn.Module):
             x : input from train_loader (batch_size x input_size )
             z : latent codes associated with x (batch_size x z_dim)
         """
-        x = self.x_preprocessor(x_raw)
-        y = self.y_preprocessor(y_raw)
+        x, y = x_raw, y_raw # identity
+        if self.x_preprocessor is not None:
+            x = self.x_preprocessor(x_raw)
+        if self.y_preprocessor is not None:
+            y = self.y_preprocessor(y_raw)
 
         # Generate fake data by shifting
         shift = random.randint(1, x.size(0) - 1)

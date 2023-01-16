@@ -164,7 +164,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.gumbel_mmd_criterion = GumbelMMDLoss()
 
         # Define QA infomax model
-        preprocessor = nn.Sigmoid()
+        preprocessor = None # nn.Sigmoid()
         qa_discriminator = nn.Bilinear(d_model, d_model, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
