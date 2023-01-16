@@ -134,8 +134,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.za_enc_zq_attention = LuongAttention(nzqdim, d_model)
         self.za_zq_projection = nn.Linear(nzadim * nza_values + nzqdim, d_model, bias=False)
         self.answer_dec_projection = nn.Linear(5 * d_model, d_model, bias=False)
-        self.start_linear = nn.Linear(2 * d_model, 1)
-        self.end_linear = nn.Linear(2 * d_model, 1)
+        self.start_linear = nn.Linear(d_model, 1)
+        self.end_linear = nn.Linear(d_model, 1)
 
         """ Question decoder properties """
         self.q_init_hidden_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
