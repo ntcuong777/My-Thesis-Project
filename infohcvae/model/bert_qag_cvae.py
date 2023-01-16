@@ -84,7 +84,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.decoder_a_nlayers = decoder_a_nlayers = args.decoder_a_nlayers
         self.decoder_a_dropout = decoder_a_dropout = args.decoder_a_dropout
         self.decoder_q_nlayers = decoder_q_nlayers = args.decoder_q_nlayers
-        self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_nhidden
+        self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_dropout
         self.d_model = d_model = config.encoder.hidden_size
 
         self.tokenizer = BertTokenizer.from_pretrained(base_model, add_pooling_layer=False)
