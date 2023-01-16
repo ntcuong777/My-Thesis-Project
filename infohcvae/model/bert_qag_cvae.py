@@ -224,10 +224,8 @@ class BertQAGConditionalVae(pl.LightningModule):
     def build_zq_init_state(self, zq):
         q_init_h = self.q_h_linear(zq)
         q_init_c = self.q_c_linear(zq)
-        q_init_h = q_init_h.view(-1, self.decoder_q_nlayers,
-                                 self.decoder_q_nhidden).transpose(0, 1).contiguous()
-        q_init_c = q_init_c.view(-1, self.decoder_q_nlayers,
-                                 self.decoder_q_nhidden).transpose(0, 1).contiguous()
+        q_init_h = q_init_h.view(-1, self.decoder_q_nlayers, self.d_model).transpose(0, 1).contiguous()
+        q_init_c = q_init_c.view(-1, self.decoder_q_nlayers, self.d_model).transpose(0, 1).contiguous()
         q_init_state = (q_init_h, q_init_c)
         return q_init_state
 
