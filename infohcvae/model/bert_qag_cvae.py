@@ -200,7 +200,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         return parent_parser
 
     """ Pooling """
-
     def pool(self, last_hidden_states):
         # last_hidden_states shape = (batch_size, seq_length, hidden_size)
         # pooling over `seq_length` dim
@@ -214,7 +213,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             raise Exception("Wrong pooling strategy!")
 
     """ `zq`-related methods """
-
     def calculate_zq_latent(self, pooled):
         zq_mu, zq_logvar = self.zq_mu_linear(pooled), self.zq_logvar_linear(pooled)
         zq = sample_gaussian(zq_mu, zq_logvar)
@@ -229,7 +227,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         return q_init_state
 
     """ `za`-related methods """
-
     def calculate_za_latent(self, pooled, hard=True):
         za_logits = self.za_linear(pooled).view(-1, self.nzadim, self.nza_values)
         za = gumbel_softmax(za_logits, hard=hard)
@@ -242,7 +239,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         return z_projected
 
     """ Encoding-related methods """
-
     def _encode_latent_posteriors(self, q_ids, q_mask, c_ids, c_mask, c_a_mask):
         # context enc
         c_hidden_states = _encode_input_tokens(
@@ -284,7 +280,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         return zq, zq_mu, zq_logvar, za, za_logits, c_a_hidden_states
 
     """ Decoding-related methods """
-
     def _decode_answer(self, c_ids, c_mask, za, zq):
         # context enc
         c_hidden_states = _encode_input_tokens(
@@ -381,7 +376,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             return lm_logits, q_last_outputs
 
     """ Training-related methods """
-
     def forward(
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
@@ -500,7 +494,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         return total_loss
 
     """ Generation-related methods """
-
     def _generate_answer(self, c_ids, c_mask, za, zq):
         def generate_answer_mask_from_context(start_logits, end_logits):
             batch_size, max_c_len = c_ids.size()
@@ -595,7 +588,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
 
     """ Validation-related methods """
-
     def validation_step(self, batch, batch_idx):
         def generate_qa_from_posterior(question_ids, context_ids, c_a_mask):
             with torch.no_grad():
@@ -702,7 +694,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.example_idx = -1  # reset example index for next validation loop
 
     """ Optimizer """
-
     def configure_optimizers(self):
         params = filter(lambda p: p.requires_grad, self.parameters())
         if self.optimizer_algorithm == "sgd":
