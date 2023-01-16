@@ -162,9 +162,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
         self.gumbel_mmd_criterion = GumbelMMDLoss()
 
-        self.acummulated_posterior_zq = None
-        self.acummulated_posterior_za = None
-
         # Define QA infomax model
         preprocessor = nn.Sigmoid()
         qa_discriminator = nn.Bilinear(d_model, d_model, 1)
