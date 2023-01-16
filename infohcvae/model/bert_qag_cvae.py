@@ -121,6 +121,7 @@ class BertQAGConditionalVae(pl.LightningModule):
                                            num_layers=decoder_q_nlayers, dropout=decoder_q_dropout,
                                            bidirectional=False)
         self.question_dec_luong_attention = LuongAttention(d_model, d_model)
+        self.attended_question_projection = nn.Linear(2 * d_model, d_model, bias=False)
 
         """ Encoder properties """
         self.question_attention = LuongAttention(d_model, d_model)
@@ -140,7 +141,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ Question decoder properties """
         self.q_init_hidden_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
         self.q_init_cell_linear = nn.Linear(nzqdim, decoder_q_nlayers * d_model)
-        self.question_decoder_attention = LuongAttention(d_model, d_model)
+        self.question_context_copy_attention = LuongAttention(d_model, d_model)
         self.concat_linear = nn.Sequential(nn.Linear(2 * d_model, 2 * d_model),
                                            nn.Dropout(decoder_q_dropout),
                                            nn.Linear(2 * d_model, 2 * d_model))
@@ -319,7 +320,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             # context-question attention
             mask = torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))
-            c_attned_by_q, attn_logits = self.question_decoder_attention(
+            c_attned_by_q, attn_logits = self.question_context_copy_attention(
                 q_out_hidden_states, c_a_hidden_states, mask, return_attention_logits=True)
 
             # gen logits
@@ -354,12 +355,18 @@ class BertQAGConditionalVae(pl.LightningModule):
         present_lstm_outputs = None
         if past_lstm_outputs is None:
             causal_attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1))) # causal mask
-            q_hs = self.question_dec_luong_attention(q_outputs, q_outputs, causal_attention_mask)
+            q_hs = self.attended_question_projection(torch.cat(
+                [q_hs, self.question_dec_luong_attention(q_outputs, q_outputs, causal_attention_mask)], dim=-1))
         else:
             present_lstm_outputs = torch.cat([past_lstm_outputs, q_outputs], dim=1)  # concat along seq_len dimension
             q_mask = torch.ones_like(present_lstm_outputs).to(present_lstm_outputs.device)
             causal_attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
-            q_hs = self.question_dec_luong_attention(present_lstm_outputs, present_lstm_outputs, causal_attention_mask)
+            # Only take the last state after applying attention to match with the length of input
+            q_hs = self.attended_question_projection(
+                torch.cat(
+                    [q_hs, self.question_dec_luong_attention(
+                        present_lstm_outputs, present_lstm_outputs, causal_attention_mask)[:, -1, :]],
+                    dim=-1))
 
         # Generate question id
         lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(q_hs)
