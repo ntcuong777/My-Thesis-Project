@@ -305,8 +305,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self_attned_ans_hs, _ = self.answer_dec_cross_attention(answer_hs, answer_hs, answer_hs, mask)
         # cross_attned_ans_hs, _ = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
 
-        start_logits = self.start_linear(answer_hs).squeeze(-1)
-        end_logits = self.end_linear(answer_hs).squeeze(-1)
+        start_logits = self.start_linear(self_attned_ans_hs).squeeze(-1)
+        end_logits = self.end_linear(self_attned_ans_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
         start_logits = start_logits.masked_fill(start_end_mask, -1000000.0)
