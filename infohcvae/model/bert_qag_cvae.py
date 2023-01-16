@@ -315,7 +315,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         end_logits = end_logits.masked_fill(start_end_mask, -1000000.0)
         return start_logits, end_logits
 
-    def _decode_question(self, q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq, init_state=None, use_cache=None):
+    def _decode_question(self, q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
+                         init_state=None, past_outputs=None, use_cache=None):
         def get_question_logits_from_out_hidden_states(q_out_hidden_states):
             N, max_q_len = q_ids.size()
 
@@ -352,14 +353,27 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_outputs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
 
         # this implementation requires `mask` to be the indices required to be not attended to
-        mask = (1.0 - torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1))) > 0.0 # convert to bool tensor
-        self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, mask)
-        cross_attned_q_hs, _ = self.question_dec_cross_attention(self_attned_q_hs, q_embeddings, q_embeddings, mask)
+        self_attned_q_hs = None
+        if past_outputs is None:
+            attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
+            causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
+            self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, causal_masking)
+        else:
+            present_outputs = torch.cat([past_outputs, q_outputs], dim=1) # concat along seq_len dimension
+            q_mask = torch.ones_like(present_outputs).to(present_outputs.device)
+            attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
+            causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
+            self_attned_q_hs, _ = self.question_dec_self_attention(
+                present_outputs, present_outputs, present_outputs, causal_masking)
+
+        mask = (1.0 - torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0 # to bool tensor
+        cross_attned_q_hs, _ = self.question_dec_cross_attention(
+            self_attned_q_hs, c_a_hidden_states, c_a_hidden_states, mask)
 
         # Generate question id
         lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(cross_attned_q_hs)
         if use_cache is not None and use_cache:
-            return lm_logits, q_last_outputs, next_state
+            return lm_logits, q_last_outputs, next_state, present_outputs
         else:
             return lm_logits, q_last_outputs
 
@@ -533,6 +547,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
         current_state = None
+        past_outputs = None
 
         c_a_hidden_states = _encode_input_tokens(
             encoder=self.encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=a_mask)
@@ -541,9 +556,9 @@ class BertQAGConditionalVae(pl.LightningModule):
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
-            lm_logits, _, current_state = self._decode_question(
+            lm_logits, _, current_state, past_outputs = self._decode_question(
                 q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
-                init_state=current_state, use_cache=True)
+                init_state=current_state, past_outputs=past_outputs, use_cache=True)
 
             q_ids = torch.argmax(lm_logits, dim=2)
             all_q_ids.append(q_ids)
