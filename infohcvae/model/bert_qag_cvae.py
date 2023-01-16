@@ -88,8 +88,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
         freeze_neural_model(bert_model)
         # use a few first layer for encoder
-        embedding_model = deepcopy(bert_model).encoder.layer[:encoder_bert_nlayers]
-        context_encoder = bert_model
+        embedding_model = deepcopy(bert_model)
+        embedding_model.encoder.layer = embedding_model.encoder.layer[:encoder_bert_nlayers]
 
         self.tokenizer = BertTokenizer.from_pretrained(base_model)
         self.vocab_size = vocab_size = self.tokenizer.vocab_size
@@ -108,12 +108,12 @@ class BertQAGConditionalVae(pl.LightningModule):
                                           nzqdim, nzadim, nza_values,
                                           dropout=encoder_dropout, pad_token_id=self.pad_token_id)
 
-        self.answer_decoder = AnswerDecoder(context_encoder, d_model, nzadim, nza_values,
+        self.answer_decoder = AnswerDecoder(bert_model, d_model, nzadim, nza_values,
                                             decoder_a_nhidden, decoder_a_nlayers,
                                             dropout=decoder_a_dropout)
 
         self.question_decoder = QuestionDecoder(
-            context_encoder.get_input_embeddings(), embedding_model, context_encoder,
+            bert_model.get_input_embeddings(), embedding_model, bert_model,
             nzqdim, d_model, decoder_q_nhidden, decoder_q_nlayers, sos_id, eos_id, vocab_size,
             dropout=decoder_q_dropout, max_q_len=self.max_q_len)
 
