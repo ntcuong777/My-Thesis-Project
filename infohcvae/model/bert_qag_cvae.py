@@ -78,7 +78,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ Initialize model """
         base_model = args.base_model
         config = BertConfig.from_pretrained(base_model)
-        bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
+        bert_model = BertModel.from_pretrained(base_model)
 
         self.encoder_finetune_nlayers = encoder_finetune_nlayers = args.encoder_finetune_nlayers
         self.decoder_a_nlayers = decoder_a_nlayers = args.decoder_a_nlayers
