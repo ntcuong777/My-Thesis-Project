@@ -87,9 +87,12 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
         freeze_neural_model(bert_model)
-        # use a few first layer for encoder
-        embedding_model = deepcopy(bert_model)
-        embedding_model.encoder.layer = embedding_model.encoder.layer[:encoder_bert_nlayers]
+
+        embedding_model = bert_model.get_input_embeddings()
+        if encoder_bert_nlayers > 0:
+            # use a few first layer for encoder
+            embedding_model = deepcopy(bert_model)
+            embedding_model.encoder.layer = embedding_model.encoder.layer[:encoder_bert_nlayers]
 
         self.tokenizer = BertTokenizer.from_pretrained(base_model)
         self.vocab_size = vocab_size = self.tokenizer.vocab_size
@@ -143,7 +146,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
         parser.add_argument("--base_model", default="bert-base-uncased", type=str)
         parser.add_argument("--encoder_nlayers", type=int, default=1)
-        parser.add_argument("--encoder_bert_nlayers", type=int, default=2)
+        parser.add_argument("--encoder_bert_nlayers", type=int, default=0)
         parser.add_argument("--encoder_nhidden", type=int, default=384)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)
         parser.add_argument("--decoder_a_nlayers", type=int, default=1)
