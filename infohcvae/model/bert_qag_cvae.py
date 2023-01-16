@@ -142,7 +142,7 @@ class BertQAGConditionalVae(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
         parser.add_argument("--base_model", default="bert-base-uncased", type=str)
-        parser.add_argument("--encoder_nlayers", type=int, default=1)
+        parser.add_argument("--encoder_nlayers", type=int, default=2)
         parser.add_argument("--encoder_bert_nlayers", type=int, default=4)
         parser.add_argument("--encoder_nhidden", type=int, default=384)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)

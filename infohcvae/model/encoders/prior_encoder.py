@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
 from infohcvae.model.custom.custom_lstm import CustomLSTM
+from infohcvae.model.custom.bert_self_attention import BertSelfAttention
 from infohcvae.model.model_utils import (
     gumbel_softmax, return_inputs_length,
     return_attention_mask, sample_gaussian,
@@ -26,6 +27,7 @@ class PriorEncoder(nn.Module):
         self.context_encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
                                           num_layers=lstm_enc_nlayers, dropout=dropout,
                                           bidirectional=True)
+        self.shared_self_attention = BertSelfAttention(hidden_size=lstm_enc_nhidden * 2, num_attention_heads=12)
 
         self.za_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -39,8 +41,11 @@ class PriorEncoder(nn.Module):
 
         c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)[0]
         c_hidden_states, c_state = self.context_encoder(c_embeddings, c_lengths)
-        c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        c_hidden_states = self.shared_self_attention(c_hidden_states)
+        # c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        # c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # concat final forward and reverse states after being self-attended
+        c_h = torch.cat([c_hidden_states[:, -1, :self.nhidden], c_hidden_states[:, 0, self.nhidden:]], dim=-1)
 
         zq_mu = self.zq_mu_linear(c_h)
         zq_logvar = self.zq_logvar_linear(c_h)

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
 from infohcvae.model.custom.custom_lstm import CustomLSTM
+from infohcvae.model.custom.bert_self_attention import BertSelfAttention
 from infohcvae.model.model_utils import (
     gumbel_softmax, return_inputs_length,
     return_attention_mask, sample_gaussian,
@@ -22,15 +23,10 @@ class PosteriorEncoder(nn.Module):
         self.nzadim = nzadim
         self.nza_values = nza_values
 
-        self.answer_encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
-                                         num_layers=lstm_enc_nlayers, dropout=dropout,
-                                         bidirectional=True)
-        self.question_encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
-                                           num_layers=lstm_enc_nlayers, dropout=dropout,
-                                           bidirectional=True)
-        self.context_encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
-                                          num_layers=lstm_enc_nlayers, dropout=dropout,
-                                          bidirectional=True)
+        self.encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
+                                  num_layers=lstm_enc_nlayers, dropout=dropout,
+                                  bidirectional=True)
+        self.shared_self_attention = BertSelfAttention(hidden_size=lstm_enc_nhidden*2, num_attention_heads=12)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
@@ -48,21 +44,30 @@ class PosteriorEncoder(nn.Module):
 
         # question enc
         q_embeddings = self.embedding(input_ids=q_ids, attention_mask=q_mask)[0]
-        q_hidden_states, q_state = self.question_encoder(q_embeddings, q_lengths)
-        q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        q_hidden_states, q_state = self.encoder(q_embeddings, q_lengths)
+        q_hidden_states = self.shared_self_attention(q_hidden_states)
+        # q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        # q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # concat final forward and reverse states after being self-attended
+        q_h = torch.cat([q_hidden_states[:, -1, :self.nhidden], q_hidden_states[:, 0, self.nhidden:]], dim=-1)
 
         # context enc
         c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)[0]
-        c_hidden_states, c_state = self.context_encoder(c_embeddings, c_lengths)
-        c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        c_hidden_states, c_state = self.encoder(c_embeddings, c_lengths)
+        c_hidden_states = self.shared_self_attention(c_hidden_states)
+        # c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        # c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # concat final forward and reverse states after being self-attended
+        c_h = torch.cat([c_hidden_states[:, -1, :self.nhidden], c_hidden_states[:, 0, self.nhidden:]], dim=-1)
 
         # context and answer enc
         c_a_embeddings = self.embedding(input_ids=c_ids, token_type_ids=c_a_mask, attention_mask=c_mask)[0]
-        c_a_hidden_states, c_a_state = self.answer_encoder(c_a_embeddings, c_lengths)
-        c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        c_a_hidden_states, c_a_state = self.encoder(c_a_embeddings, c_lengths)
+        c_a_hidden_states = self.shared_self_attention(c_a_hidden_states)
+        # c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        # c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # concat final forward and reverse states after being self-attended
+        c_a_h = torch.cat([c_a_hidden_states[:, -1, :self.nhidden], c_a_hidden_states[:, 0, self.nhidden:]], dim=-1)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)
