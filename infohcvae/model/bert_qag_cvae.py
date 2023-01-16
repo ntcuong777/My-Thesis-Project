@@ -14,7 +14,7 @@ import numpy as np
 import pytorch_lightning as pl
 from torch_scatter import scatter_max
 from transformers import BertConfig, BertTokenizer, BertModel
-from transformers.models.bert.modeling_bert import BertPooler
+from transformers.models.bert.modeling_bert import BertAttention
 from infohcvae.model.model_utils import (
     return_attention_mask,
     gumbel_softmax, sample_gaussian,
@@ -114,14 +114,18 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.answer_decoder = CustomLSTM(input_size=2 * d_model, hidden_size=d_model,
                                          num_layers=decoder_a_nlayers, dropout=decoder_a_dropout,
                                          bidirectional=True)
-        self.answer_dec_self_attention = MultiHeadAttention(d_model=2 * d_model, num_heads=12)
+        answer_attention_config = deepcopy(config)
+        answer_attention_config.hidden_size = 2*d_model
+        self.answer_dec_self_attention = BertAttention(answer_attention_config)
         # self.answer_dec_cross_attention = MultiHeadAttention(d_model=2 * d_model, num_heads=12)
 
         # Question decoder
         self.question_decoder = CustomLSTM(input_size=d_model, hidden_size=d_model,
                                            num_layers=decoder_q_nlayers, dropout=decoder_q_dropout,
                                            bidirectional=False)
-        self.question_dec_self_attention = MultiHeadAttention(d_model=d_model, num_heads=12)
+        question_attention_config = deepcopy(config)
+        question_attention_config.is_decoder = True
+        self.question_dec_self_attention = BertAttention(question_attention_config)
         # self.question_dec_cross_attention = MultiHeadAttention(d_model=d_model, num_heads=12)
 
         """ Encoder properties """
@@ -301,12 +305,13 @@ class BertQAGConditionalVae(pl.LightningModule):
         answer_hs, _ = self.answer_decoder(dec_input_emb, c_lengths.to("cpu"))
 
         # this implementation requires `mask` to be the indices required to be not attended to
-        mask = (1.0 - torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # convert to bool tensor
-        self_attned_ans_hs, _ = self.answer_dec_self_attention(answer_hs, answer_hs, answer_hs, mask)
+        # mask = (1.0 - torch.matmul(c_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # convert to bool tensor
+        # self_attned_ans_hs, _ = self.answer_dec_self_attention(answer_hs, answer_hs, answer_hs, mask)
+        answer_hs = self.answer_dec_self_attention(hidden_states=answer_hs, attention_mask=c_mask)[0]
         # cross_attned_ans_hs, _ = self.answer_dec_cross_attention(self_attned_ans_hs, dec_input_emb, dec_input_emb, mask)
 
-        start_logits = self.start_linear(self_attned_ans_hs).squeeze(-1)
-        end_logits = self.end_linear(self_attned_ans_hs).squeeze(-1)
+        start_logits = self.start_linear(answer_hs).squeeze(-1)
+        end_logits = self.end_linear(answer_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
         start_logits = start_logits.masked_fill(start_end_mask, -1000000.0)
@@ -314,7 +319,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return start_logits, end_logits
 
     def _decode_question(self, q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
-                         init_state=None, past_lstm_outputs=None, use_cache=None):
+                         init_state=None, past_key_values=None, use_cache=None):
         def get_question_logits_from_out_hidden_states(q_out_hidden_states):
             N, max_q_len = q_ids.size()
 
@@ -348,31 +353,36 @@ class BertQAGConditionalVae(pl.LightningModule):
         # question dec
         q_embeddings = _encode_input_tokens(encoder=self.encoder, input_ids=q_ids, input_mask=q_mask)
         q_lengths = q_mask.sum(dim=1)
-        q_outputs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
+        q_hs, next_state = self.question_decoder(q_embeddings, q_lengths.to("cpu"), init_state)
 
         # this implementation requires `mask` to be the indices required to be not attended to
-        self_attned_q_hs = None
-        present_lstm_outputs = None
-        if past_lstm_outputs is None:
-            attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
-            causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
-            self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, causal_masking)
-        else:
-            present_lstm_outputs = torch.cat([past_lstm_outputs, q_outputs], dim=1)  # concat along seq_len dimension
-            q_mask = torch.ones_like(present_lstm_outputs).to(present_lstm_outputs.device)
-            attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
-            causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
-            self_attned_q_hs, _ = self.question_dec_self_attention(
-                present_lstm_outputs, present_lstm_outputs, present_lstm_outputs, causal_masking)
+        # self_attned_q_hs = None
+        # present_lstm_outputs = None
+        # if past_key_values is None:
+        #     attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
+        #     causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
+        #     self_attned_q_hs, _ = self.question_dec_self_attention(q_outputs, q_outputs, q_outputs, causal_masking)
+        # else:
+        #     present_lstm_outputs = torch.cat([past_key_values, q_outputs], dim=1)  # concat along seq_len dimension
+        #     q_mask = torch.ones_like(present_lstm_outputs).to(present_lstm_outputs.device)
+        #     attention_mask = torch.tril(torch.matmul(q_mask.unsqueeze(2), q_mask.unsqueeze(1)))  # causal mask
+        #     causal_masking = (1.0 - attention_mask) > 0.0  # convert to bool tensor
+        #     self_attned_q_hs, _ = self.question_dec_self_attention(
+        #         present_lstm_outputs, present_lstm_outputs, present_lstm_outputs, causal_masking)
+
+        q_outputs = self.question_decoder_attention(
+            hidden_states=q_hs, attention_mask=q_mask, past_key_values=past_key_values)
+        q_hs = q_outputs[0]
+        present_key_values = q_outputs[-1]
 
         # mask = (1.0 - torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))) > 0.0  # to bool tensor
         # cross_attned_q_hs, _ = self.question_dec_cross_attention(
         #     self_attned_q_hs, c_a_hidden_states, c_a_hidden_states, mask)
 
         # Generate question id
-        lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(self_attned_q_hs)
+        lm_logits, q_last_outputs = get_question_logits_from_out_hidden_states(q_hs)
         if use_cache is not None and use_cache:
-            return lm_logits, q_last_outputs, next_state, present_lstm_outputs
+            return lm_logits, q_last_outputs, next_state, present_key_values
         else:
             return lm_logits, q_last_outputs
 
@@ -553,7 +563,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
 
         current_state = None
-        past_lstm_outputs = None
+        past_key_values = None
 
         c_a_hidden_states = _encode_input_tokens(
             encoder=self.encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=a_mask)
@@ -562,9 +572,9 @@ class BertQAGConditionalVae(pl.LightningModule):
         all_q_ids = list()
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
-            lm_logits, _, current_state, past_lstm_outputs = self._decode_question(
+            lm_logits, _, current_state, past_key_values = self._decode_question(
                 q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq,
-                init_state=current_state, past_lstm_outputs=past_lstm_outputs, use_cache=True)
+                init_state=current_state, past_key_values=past_key_values, use_cache=True)
 
             q_ids = torch.argmax(lm_logits, dim=2)
             all_q_ids.append(q_ids)
