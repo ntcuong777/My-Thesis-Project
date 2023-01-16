@@ -91,7 +91,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         embedding_model = deepcopy(bert_model).encoder.layer[:encoder_bert_nlayers]
         context_encoder = bert_model
 
-        self.tokenizer = BertTokenizer.from_pretrained(context_encoder)
+        self.tokenizer = BertTokenizer.from_pretrained(base_model)
         self.vocab_size = vocab_size = self.tokenizer.vocab_size
         self.pad_token_id = self.tokenizer.pad_token_id
         self.sos_id = sos_id = self.tokenizer.cls_token_id
