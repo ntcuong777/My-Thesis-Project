@@ -382,7 +382,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         start_logits, end_logits = self._decode_answer(c_ids, c_mask, za, zq)
 
         """ QUESTION DECODING PART """
-        lm_logits, question_out_hidden_states, _ = self._decode_question(
+        lm_logits, question_out_hidden_states = self._decode_question(
             q_ids, q_mask, c_ids, c_a_hidden_states, c_mask, zq)
 
         out_mean_qa = (None, None)
