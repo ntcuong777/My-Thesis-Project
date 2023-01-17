@@ -39,9 +39,9 @@ class QuestionDecoder(nn.Module):
 
         self.concat_linear = nn.Sequential(nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
                                            nn.Dropout(dropout),
-                                           nn.Linear(2 * lstm_dec_nhidden, 2 * d_model))
+                                           nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden))
 
-        self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
+        self.lm_head = nn.Linear(lstm_dec_nhidden, vocab_size, bias=False)
 
         # fix output word matrix
         self.lm_head.weight = word_embeddings.weight
@@ -93,7 +93,7 @@ class QuestionDecoder(nn.Module):
         # gen logits
         q_concated = torch.cat([q_hidden_states, c_attned_by_q], dim=2)
         q_concated = self.concat_linear(q_concated)
-        q_maxouted, _ = q_concated.view(batch_size, max_q_len, self.d_model, 2).max(dim=-1)
+        q_maxouted, _ = q_concated.view(batch_size, max_q_len, self.dec_nhidden, 2).max(dim=-1)
         gen_logits = self.lm_head(q_maxouted)
 
         # copy logits
