@@ -29,9 +29,10 @@ class PriorEncoder(nn.Module):
             query_in_features=2 * lstm_enc_nhidden, value_in_features=2 * lstm_enc_nhidden,
             key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12, dropout=dropout)
 
-        self.za_zq_attention = MultiHeadAttention(
+        self.answer_zq_attention = MultiHeadAttention(
             query_in_features=nzqdim, value_in_features=2 * lstm_enc_nhidden,
             key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12)
+        self.answer_zq_attention_layer_norm = nn.LayerNorm(2 * lstm_enc_nhidden)
 
         self.zq_mu_linear = nn.Linear(2 * lstm_enc_nhidden, nzqdim)
         self.zq_logvar_linear = nn.Linear(2 * lstm_enc_nhidden, nzqdim)
@@ -55,8 +56,8 @@ class PriorEncoder(nn.Module):
         zq = sample_gaussian(zq_mu, zq_logvar)
 
         mask = c_mask.unsqueeze(1)
-        c_attned_by_zq = self.za_zq_attention(
-            zq.unsqueeze(1), c_hidden_states, c_hidden_states, mask).squeeze(1)
+        c_attned_by_zq = self.answer_zq_attention_layer_norm(self.answer_zq_attention(
+            zq.unsqueeze(1), c_hidden_states, c_hidden_states, mask)).squeeze(1)
 
         h = torch.cat([zq, c_attned_by_zq, c_h], dim=-1)
         za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)
