@@ -82,12 +82,12 @@ class PosteriorEncoder(nn.Module):
         # attetion q, c
         mask = c_mask.unsqueeze(1)
         c_attned_by_q = self.question_attention(
-            q_h.unsqueeze(1), c_hidden_states, c_hidden_states, mask).squeeze(1)
+            q_h.unsqueeze(1), q_h.unsqueeze(1), c_hidden_states, c_hidden_states, mask).squeeze(1)
 
         # attetion c, q
         mask = q_mask.unsqueeze(1)
         q_attned_by_c = self.context_attention(
-            c_h.unsqueeze(1), q_hidden_states, q_hidden_states, mask).squeeze(1)
+            c_h.unsqueeze(1), c_h.unsqueeze(1), q_hidden_states, q_hidden_states, mask).squeeze(1)
 
         h = torch.cat([q_h, q_attned_by_c, c_h, c_attned_by_q], dim=-1)
         zq_mu = self.zq_mu_linear(h)
