@@ -1,1 +1,3 @@
 from .answer_span_infomax_loss import AnswerSpanInfoMaxLoss
+from .jensen_shannon_infomax import JensenShannonInfoMax
+from .answer_jensen_shannon_infomax import AnswerJensenShannonInfoMax

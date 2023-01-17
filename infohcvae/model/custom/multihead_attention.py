@@ -21,7 +21,7 @@ class ScaledDotProductAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
 
     def __init__(self, query_in_features, key_in_features, value_in_features,
-                 out_features, num_heads, bias=True, activation=F.gelu, dropout=0.0):
+                 out_features, num_heads, bias=True, activation=F.gelu):
         """Multi-head attention.
         :param query_in_features: Size of each input sample.
         :param num_heads: Number of heads.
@@ -39,10 +39,6 @@ class MultiHeadAttention(nn.Module):
         self.linear_key = nn.Linear(key_in_features, out_features, bias)
         self.linear_value = nn.Linear(value_in_features, out_features, bias)
         self.linear_output = nn.Linear(out_features, out_features, bias)
-
-        self.dropout = None
-        if dropout > 0.0:
-            self.dropout = nn.Dropout(dropout)
 
     def forward(self, queries, keys, values, mask=None):
         """
@@ -68,9 +64,6 @@ class MultiHeadAttention(nn.Module):
         y = self.linear_output(y)
         if self.activation is not None:
             y = self.activation(y)
-
-        if self.dropout is not None:
-            y = self.dropout(y)
 
         return y
 
@@ -102,3 +95,18 @@ class MultiHeadAttention(nn.Module):
         return 'out_features={}, head_num={}, bias={}, activation={}'.format(
             self.out_features, self.head_num, self.bias, self.activation,
         )
+
+
+class AddNormWithMultiHeadAttention(nn.Module):
+    def __init__(self, query_in_features, key_in_features, value_in_features,
+                 out_features, num_heads, bias=True, activation=F.gelu, dropout=0.0):
+        super().__init__()
+        self.attention = MultiHeadAttention(
+            query_in_features, key_in_features, value_in_features,
+            out_features, num_heads, bias=bias, activation=activation)
+        self.norm = nn.LayerNorm(out_features)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, prev_hidden_states, queries, keys, values, mask=None):
+        """Apply residual connection to any sublayer with the same size."""
+        return prev_hidden_states + self.dropout(self.norm(self.attention(queries, keys, values, mask)))

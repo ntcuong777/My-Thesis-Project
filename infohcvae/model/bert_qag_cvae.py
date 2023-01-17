@@ -2,7 +2,6 @@ import collections
 import json
 import logging
 import itertools
-from copy import deepcopy
 from typing import Dict
 
 import torch
@@ -23,7 +22,7 @@ from infohcvae.model.losses import (
 from infohcvae.model.custom.custom_torch_dataset import CustomDataset
 from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder
 from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
-from infohcvae.model.infomax.jensen_shannon_infomax import JensenShannonInfoMax
+from infohcvae.model.infomax import JensenShannonInfoMax, AnswerJensenShannonInfoMax
 from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
 
@@ -80,11 +79,11 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.bert_encoder = bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
         freeze_neural_model(bert_model)
 
-        embedding_model = bert_model.get_input_embeddings()
-        if encoder_bert_nlayers > 0:
-            # use a few first layer for encoder
-            embedding_model = deepcopy(bert_model)
-            embedding_model.encoder.layer = embedding_model.encoder.layer[:encoder_bert_nlayers]
+        # embedding_model = bert_model.get_input_embeddings()
+        # if encoder_bert_nlayers > 0:
+        #     # use a few first layer for encoder
+        #     embedding_model = deepcopy(bert_model)
+        #     embedding_model.encoder.layer = embedding_model.encoder.layer[:encoder_bert_nlayers]
 
         self.tokenizer = BertTokenizer.from_pretrained(base_model)
         self.vocab_size = vocab_size = self.tokenizer.vocab_size
@@ -124,6 +123,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         qa_discriminator = nn.Bilinear(d_model, decoder_q_nhidden, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
+        self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
 
         """ Validation """
         with open(args.dev_dir, "r") as f:
@@ -184,7 +184,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             prior_za, prior_za_logits = self.prior_encoder(c_hidden_states, c_mask, c_lengths)
 
         # answer decoding
-        start_logits, end_logits = self.answer_decoder(c_hidden_states, c_mask, c_lengths, posterior_za)
+        start_logits, end_logits, a_dec_outputs =\
+            self.answer_decoder(c_hidden_states, c_mask, c_lengths, posterior_za, return_embeds=True)
         # question decoding
         lm_logits, mean_embeds = self.question_decoder(
             c_ids, q_hidden_states, q_mask, q_lengths, c_a_hidden_states, c_mask, c_lengths,
@@ -195,20 +196,21 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_logits),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
-            "answer_out": (start_logits, end_logits),
+            "answer_out": (start_logits, end_logits, a_dec_outputs),
             "question_out": (lm_logits,) + mean_embeds
         })
         return out
 
     def training_step(self, batch, batch_idx):
         _, q_ids, c_ids, a_mask, _, no_q_start_positions, no_q_end_positions = batch
+        c_mask = return_attention_mask(c_ids)
         out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask)
 
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
-        start_logits, end_logits = out["answer_out"]
+        start_logits, end_logits, a_dec_outputs = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         num_sample_times = 256 // c_ids.size(0) + (0 if 256 % c_ids.size(0) == 0 else 1)
@@ -267,8 +269,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
+        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(a_dec_outputs, a_mask, c_mask)
 
-        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_mmd
+        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 
         current_losses = {
             "total_loss": total_loss,
@@ -279,6 +282,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "loss_za_mmd": loss_za_mmd,
             "loss_kl": loss_kl,
             "loss_qa_info": loss_qa_info,
+            "loss_ac_info": loss_ac_info,
         }
 
         if batch_idx % 1 == 0:
