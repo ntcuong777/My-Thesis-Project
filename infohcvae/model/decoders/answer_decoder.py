@@ -69,7 +69,7 @@ class AnswerDecoder(nn.Module):
         start_positions = torch.gather(start_positions, 1, end_positions.view(-1, 1)).squeeze(1)
 
         idxes = torch.arange(0, max_c_len, out=torch.LongTensor(max_c_len))
-        idxes = idxes.unsqueeze(0).to(start_logits.device).expand(batch_size, 1)
+        idxes = idxes.unsqueeze(0).to(start_logits.device).expand(batch_size, -1)
 
         start_positions = start_positions.unsqueeze(1)
         start_mask = (idxes >= start_positions).long()
