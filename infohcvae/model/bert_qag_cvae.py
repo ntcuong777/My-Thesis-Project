@@ -253,7 +253,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         loss_a_rec = 0.5 * (loss_start_a_rec + loss_end_a_rec)
 
         # kl loss
-        loss_kl, loss_zq_kl, loss_za_kl = 0.0, 0.0, 0.0
+        loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
         if self.alpha_kl_a > 0.0 or self.alpha_kl_q > 0.0:
             loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
                 posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
@@ -274,15 +274,15 @@ class BertQAGConditionalVae(pl.LightningModule):
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 
         current_losses = {
-            "total_loss": total_loss,
-            "loss_q_rec": loss_q_rec,
-            "loss_a_rec": loss_a_rec,
-            "loss_mmd": loss_mmd,
-            "loss_zq_mmd": loss_zq_mmd,
-            "loss_za_mmd": loss_za_mmd,
-            "loss_kl": loss_kl,
-            "loss_qa_info": loss_qa_info,
-            "loss_ac_info": loss_ac_info,
+            "total_loss": total_loss.item(),
+            "loss_q_rec": loss_q_rec.item(),
+            "loss_a_rec": loss_a_rec.item(),
+            "loss_mmd": loss_mmd.item(),
+            "loss_zq_mmd": loss_zq_mmd.item(),
+            "loss_za_mmd": loss_za_mmd.item(),
+            "loss_kl": loss_kl.item(),
+            "loss_qa_info": loss_qa_info.item(),
+            "loss_ac_info": loss_ac_info.item(),
         }
 
         if batch_idx % 1 == 0:
