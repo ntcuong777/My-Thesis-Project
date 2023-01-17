@@ -21,7 +21,8 @@ class AnswerJensenShannonInfoMax(nn.Module):
 
         answer_embs = hidden_states * answer_mask.unsqueeze(2)
         mean_answer_emb = answer_embs.sum(dim=1).div(answer_mask.sum(dim=-1, keepdims=True))
-        answer_span_loss_info = self.answer_span_loss(mean_answer_emb.unsqueeze(1), answer_embs)
+        answer_span_loss_info = self.answer_span_loss(
+            mean_answer_emb.unsqueeze(1).expand(-1, hidden_states.size(1), -1), answer_embs)
 
         context_embs = hidden_states * context_mask.unsqueeze(2)
         mean_context_emb = context_embs.sum(dim=1).div(context_mask.sum(dim=-1, keepdims=True))
