@@ -17,7 +17,7 @@ from infohcvae.model.model_utils import (
 )
 from infohcvae.model.losses import (
     GaussianKLLoss, CategoricalKLLoss,
-    ContinuousKernelMMDLoss, GumbelMMDLoss,
+    ContinuousKernelMMDLoss, CategoricalMMDLoss,
 )
 from infohcvae.model.custom.custom_torch_dataset import CustomDataset
 from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder
@@ -116,7 +116,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.categorical_kl_criterion = CategoricalKLLoss()
 
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
-        self.gumbel_mmd_criterion = GumbelMMDLoss()
+        self.gumbel_mmd_criterion = CategoricalMMDLoss()
 
         # Define QA infomax model
         preprocessor = None # nn.Sigmoid()

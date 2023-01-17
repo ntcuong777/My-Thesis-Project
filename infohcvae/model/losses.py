@@ -62,9 +62,9 @@ class GaussianKLLoss(nn.Module):
         return kl.mean(dim=0)
 
 
-class GumbelMMDLoss(nn.Module):
+class CategoricalMMDLoss(nn.Module):
     def __init__(self):
-        super(GumbelMMDLoss, self).__init__()
+        super(CategoricalMMDLoss, self).__init__()
 
     def forward(self, posterior_z, prior_z=None):
         batch_size, latent_dim, nlatent = posterior_z.size()
@@ -73,9 +73,9 @@ class GumbelMMDLoss(nn.Module):
             prior_z = gumbel_latent_var_sampling(batch_size, latent_dim, nlatent, device=posterior_z.device)
 
         # do softargmax to make measuring the mean in MMD possible
-        prior_z = softargmax(prior_z)
-        posterior_z = softargmax(posterior_z)
-        return compute_mmd(posterior_z, prior_z)
+        # prior_z = softargmax(prior_z)
+        # posterior_z = softargmax(posterior_z)
+        return compute_mmd(posterior_z.view(batch_size, -1), prior_z.view(batch_size, -1))
 
 
 class ContinuousKernelMMDLoss(nn.Module):

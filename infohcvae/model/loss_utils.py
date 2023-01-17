@@ -1,7 +1,7 @@
 import torch
 
 
-def imq_kernel(z1, z2, kernel_bandwidth=2.0, scales=[0.1, 0.2, 0.5, 1.0, 2.0]):
+def imq_kernel(z1, z2, kernel_bandwidth=2.0, scales=[0.1, 0.2, 0.5, 1.0, 2.0, 5, 10]):
     """Returns a matrix of shape [batch x batch] containing the pairwise kernel computation"""
 
     Cbase = 2.0 * z1.size(-1) * kernel_bandwidth ** 2
