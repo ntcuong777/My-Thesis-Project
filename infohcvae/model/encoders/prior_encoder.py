@@ -35,12 +35,14 @@ class PriorEncoder(nn.Module):
 
     def forward(self, c_embeds, c_mask, c_lengths):
         c_hidden_states, c_state = self.context_encoder(c_embeds, c_lengths.to("cpu"))
-        c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
+        # skip connection
+        c_hidden_states = c_hidden_states + self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = c_mask.unsqueeze(1)
-        c_h = self.context_luong_attention(c_h, c_hidden_states, mask)
+        # skip connection
+        c_h = c_h + self.context_luong_attention(c_h, c_hidden_states, mask)
 
         zq_mu = self.zq_mu_linear(c_h)
         zq_logvar = self.zq_logvar_linear(c_h)

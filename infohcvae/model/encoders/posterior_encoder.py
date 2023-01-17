@@ -38,30 +38,36 @@ class PosteriorEncoder(nn.Module):
     def forward(self, c_embeds, c_a_embeds, q_embeds, c_mask, q_mask, c_lengths, q_lengths):
         # question enc
         q_hidden_states, q_state = self.encoder(q_embeds, q_lengths.to("cpu"))
-        q_hidden_states = self.shared_self_attention(q_hidden_states, attention_mask=q_mask)
+        # skip connection
+        q_hidden_states = q_hidden_states + self.shared_self_attention(q_hidden_states, attention_mask=q_mask)
         q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = q_mask.unsqueeze(1)
-        q_h = self.context_luong_attention(q_h, q_hidden_states, mask)
+        # skip connection
+        q_h = q_h + self.context_luong_attention(q_h, q_hidden_states, mask)
 
         # context enc
         c_hidden_states, c_state = self.encoder(c_embeds, c_lengths.to("cpu"))
-        c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
+        # skip connection
+        c_hidden_states = c_hidden_states + self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = c_mask.unsqueeze(1)
-        c_h = self.context_luong_attention(c_h, c_hidden_states, mask)
+        # skip connection
+        c_h = c_h + self.context_luong_attention(c_h, c_hidden_states, mask)
 
         # context and answer enc
         c_a_hidden_states, c_a_state = self.encoder(c_a_embeds, c_lengths.to("cpu"))
-        c_a_hidden_states = self.shared_self_attention(c_a_hidden_states, attention_mask=c_mask)
+        # skip connection
+        c_a_hidden_states = c_a_hidden_states + self.shared_self_attention(c_a_hidden_states, attention_mask=c_mask)
         c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = c_mask.unsqueeze(1)
-        c_a_h = self.context_luong_attention(c_a_h, c_a_hidden_states, mask)
+        # skip connection
+        c_a_h = c_a_h + self.context_luong_attention(c_a_h, c_a_hidden_states, mask)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)

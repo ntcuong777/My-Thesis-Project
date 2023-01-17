@@ -34,7 +34,8 @@ class AnswerDecoder(nn.Module):
                                 torch.abs(c_embeds - init_state)],
                                dim=-1)
         dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths.to("cpu"))
-        dec_outputs = self.self_attention(dec_outputs, attention_mask=c_mask)
+        # skip connection
+        dec_outputs = dec_outputs + self.self_attention(dec_outputs, attention_mask=c_mask)
 
         start_logits = self.start_linear(dec_outputs).squeeze(-1)
         end_logits = self.end_linear(dec_outputs).squeeze(-1)
