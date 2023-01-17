@@ -334,7 +334,7 @@ class BertQAGConditionalVae(pl.LightningModule):
                 q_lengths = return_inputs_length(q_mask)
                 q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
 
-                zq, _, _, za, _, _ = self.posterior_encoder(
+                zq, _, _, za, _ = self.posterior_encoder(
                     c_hidden_states, c_a_hidden_states, q_hidden_states, c_mask, q_mask, c_lengths, q_lengths)
 
                 """ Generation """
