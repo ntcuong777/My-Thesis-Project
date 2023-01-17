@@ -77,10 +77,6 @@ class PosteriorEncoder(nn.Module):
         mask = q_mask.unsqueeze(1)
         q_attned_by_c = self.context_attention(c_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
 
-        print(q_h.size())
-        print(q_attned_by_c.size())
-        print(c_h.size())
-        print(c_attned_by_q.size())
         h = torch.cat([q_h, q_attned_by_c, c_h, c_attned_by_q], dim=-1)
         zq_mu = self.zq_mu_linear(h)
         zq_logvar = self.zq_logvar_linear(h)
