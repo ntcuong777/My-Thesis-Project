@@ -254,7 +254,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
-        if self.alpha_kl_a > 0.0 or self.alpha_kl_q > 0.0:
+        if self.alpha_kl_a > 0.001 or self.alpha_kl_q > 0.001: # eps = 1e-3
             loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
                 posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
             loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(
