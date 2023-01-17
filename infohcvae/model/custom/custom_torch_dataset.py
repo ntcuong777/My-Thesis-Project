@@ -6,18 +6,18 @@ from infohcvae.squad_utils import SquadExample, InputFeatures
 
 
 class CustomDataset(Dataset):
-    def __init__(self, all_q_c_ids: torch.Tensor, all_c_ids: torch.Tensor, all_q_ids: torch.Tensor,
-                 all_a_mask: torch.Tensor, all_q_c_qa_mask: torch.Tensor,
+    def __init__(self, all_c_ids: torch.Tensor, all_q_ids: torch.Tensor,
+                 all_a_mask: torch.Tensor, all_start_mask: torch.Tensor, all_end_mask: torch.Tensor,
                  all_no_q_start_positions: torch.Tensor, all_no_q_end_positions: torch.Tensor,
                  is_train_set: bool = True, all_text_examples: Optional[List[SquadExample]] = None,
                  all_preprocessed_examples: Optional[List[InputFeatures]] = None, to_device: str="cpu"):
         self.num_items = all_c_ids.size(0)
 
-        self.all_q_c_ids = all_q_c_ids
         self.all_c_ids = all_c_ids
         self.all_q_ids = all_q_ids
         self.all_a_mask = all_a_mask
-        self.all_q_c_qa_mask = all_q_c_qa_mask
+        self.all_start_mask = all_start_mask
+        self.all_end_mask = all_end_mask
         self.all_no_q_start_positions = all_no_q_start_positions
         self.all_no_q_end_positions = all_no_q_end_positions
 
@@ -33,17 +33,17 @@ class CustomDataset(Dataset):
             self.all_preprocessed_examples = all_preprocessed_examples
 
     def __getitem__(self, index):
-        qc_ids = self.all_q_c_ids[index]
         q_ids = self.all_q_ids[index]
         c_ids = self.all_c_ids[index]
         a_mask = self.all_a_mask[index]
-        q_c_qa_mask = self.all_q_c_qa_mask[index]
+        start_mask = self.all_start_mask[index]
+        end_mask = self.all_end_mask[index]
         no_q_start_positions = self.all_no_q_start_positions[index]
         no_q_end_positions = self.all_no_q_end_positions[index]
 
-        return qc_ids.to(self.to_device), q_ids.to(self.to_device), c_ids.to(self.to_device),\
-            a_mask.to(self.to_device), q_c_qa_mask.to(self.to_device), no_q_start_positions.to(self.to_device),\
-            no_q_end_positions.to(self.to_device)
+        return q_ids.to(self.to_device), c_ids.to(self.to_device),\
+            a_mask.to(self.to_device), start_mask, end_mask,\
+            no_q_start_positions.to(self.to_device), no_q_end_positions.to(self.to_device)
 
     def __len__(self):
         return self.num_items

@@ -202,7 +202,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return out
 
     def training_step(self, batch, batch_idx):
-        _, q_ids, c_ids, a_mask, _, no_q_start_positions, no_q_end_positions = batch
+        q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
         c_mask = return_attention_mask(c_ids)
         out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask)
 
@@ -267,7 +267,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(a_dec_outputs, a_mask, c_mask)
+        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
+            a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
 
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 

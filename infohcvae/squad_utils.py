@@ -600,6 +600,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 # Inside tag
                 for idx in range(noq_start_position + 1, noq_end_position + 1):
                     context_tag_ids[idx] = 2
+                context_tag_ids[noq_end_position] = 3
 
             input_tag_ids = [0] * len(input_ids)  # Outside
             # mark question part
@@ -610,6 +611,7 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
                 # Inside tag
                 for idx in range(start_position + 1, end_position + 1):
                     input_tag_ids[idx] = 2
+                input_tag_ids[end_position] = 3
 
             assert len(context_tag_ids) == len(c_ids), "length of tag :{}, length of c :{}".format(
                 len(context_tag_ids), len(c_ids))

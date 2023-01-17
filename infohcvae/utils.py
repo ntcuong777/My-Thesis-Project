@@ -14,11 +14,9 @@ def generate_testing_dataset_for_model_choosing(dataset: CustomDataset, batch_si
     assert dataset.all_preprocessed_examples is not None, "For debugging `all_preprocessed_examples` is required"
     assert dataset.all_text_examples is not None, "For debugging `all_text_examples` is required"
 
-    all_q_c_ids = dataset.all_q_c_ids[:num_samples]
     all_c_ids = dataset.all_c_ids[:num_samples]
     all_q_ids = dataset.all_q_ids[:num_samples]
     all_a_mask = dataset.all_a_mask[:num_samples]
-    all_q_c_qa_mask = dataset.all_q_c_qa_mask[:num_samples]
     all_no_q_start_positions = dataset.all_no_q_start_positions[:num_samples]
     all_no_q_end_positions = dataset.all_no_q_end_positions[:num_samples]
     all_text_examples = deepcopy(dataset.all_text_examples[:num_samples])
@@ -29,8 +27,8 @@ def generate_testing_dataset_for_model_choosing(dataset: CustomDataset, batch_si
     shuffled_examples = [all_text_examples[idx] for idx in rand_perm.tolist()]
     shuffled_features = [all_preprocessed_examples[idx] for idx in rand_perm.tolist()]
 
-    perm_dataset = CustomDataset(all_q_c_ids[rand_perm], all_c_ids[rand_perm], all_q_ids[rand_perm],
-                                 all_a_mask[rand_perm], all_q_c_qa_mask[rand_perm], all_no_q_start_positions[rand_perm],
+    perm_dataset = CustomDataset(all_c_ids[rand_perm], all_q_ids[rand_perm],
+                                 all_a_mask[rand_perm], all_no_q_start_positions[rand_perm],
                                  all_no_q_end_positions[rand_perm], is_train_set=False,
                                  all_text_examples=shuffled_examples,
                                  all_preprocessed_examples=shuffled_features)
@@ -50,17 +48,16 @@ def get_squad_data_loader(tokenizer, file, shuffle, is_train_set, args):
                                                       doc_stride=128,
                                                       is_training=True)
 
-    all_q_c_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_c_ids = torch.tensor([f.c_ids for f in features], dtype=torch.long)
     all_q_ids = torch.tensor([f.q_ids for f in features], dtype=torch.long)
     all_tag_ids = torch.tensor([f.tag_ids for f in features], dtype=torch.long)
     all_a_mask = (all_tag_ids != 0).long()
-    all_q_c_qa_tag_ids = torch.tensor([f.input_tag_ids for f in features], dtype=torch.long)
-    all_q_c_qa_mask = (all_q_c_qa_tag_ids != 0).long()
+    all_start_mask = (all_tag_ids == 1).long()
+    all_end_mask = (all_tag_ids == 3).long()
     all_no_q_start_positions = torch.tensor([f.noq_start_position for f in features], dtype=torch.long)
     all_no_q_end_positions = torch.tensor([f.noq_end_position for f in features], dtype=torch.long)
 
-    all_data = CustomDataset(all_q_c_ids, all_c_ids, all_q_ids, all_a_mask, all_q_c_qa_mask, all_no_q_start_positions,
+    all_data = CustomDataset(all_c_ids, all_q_ids, all_a_mask, all_no_q_start_positions,
                              all_no_q_end_positions, is_train_set=is_train_set,
                              all_text_examples=None if is_train_set else examples,
                              all_preprocessed_examples=None if is_train_set else features,
