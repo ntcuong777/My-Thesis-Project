@@ -147,7 +147,7 @@ class QuestionDecoder(nn.Module):
             q_outputs, state = self.question_lstm(q_embeddings, q_lengths.to("cpu"), state)
 
             logits, _ = self.get_question_logits_from_out_hidden_states(
-                c_ids, c_mask, q_ids, torch.ones_like(q_ids), q_outputs, c_outputs)
+                c_ids, c_mask, q_embeddings, torch.ones_like(q_ids), q_outputs, c_outputs)
 
             q_ids = torch.argmax(logits, 2)
             all_q_ids.append(q_ids)
