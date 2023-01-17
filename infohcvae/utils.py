@@ -57,8 +57,8 @@ def get_squad_data_loader(tokenizer, file, shuffle, is_train_set, args):
     all_no_q_start_positions = torch.tensor([f.noq_start_position for f in features], dtype=torch.long)
     all_no_q_end_positions = torch.tensor([f.noq_end_position for f in features], dtype=torch.long)
 
-    all_data = CustomDataset(all_c_ids, all_q_ids, all_a_mask, all_no_q_start_positions,
-                             all_no_q_end_positions, is_train_set=is_train_set,
+    all_data = CustomDataset(all_c_ids, all_q_ids, all_a_mask, all_start_mask, all_end_mask,
+                             all_no_q_start_positions, all_no_q_end_positions, is_train_set=is_train_set,
                              all_text_examples=None if is_train_set else examples,
                              all_preprocessed_examples=None if is_train_set else features,
                              to_device=args.device)
