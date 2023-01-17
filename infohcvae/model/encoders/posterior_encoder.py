@@ -33,7 +33,7 @@ class PosteriorEncoder(nn.Module):
 
         self.zq_mu_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
         self.zq_logvar_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
-        self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nza_values * nza_values)
+        self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values)
 
     def forward(self, c_embeds, c_a_embeds, q_embeds, c_mask, q_mask, c_lengths, q_lengths):
         # question enc
@@ -91,7 +91,5 @@ class PosteriorEncoder(nn.Module):
         za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)
         # Sample `za`
         za = gumbel_softmax(za_logits, hard=True)
-        print(za.size())
-        print(za_logits.size())
 
         return zq, zq_mu, zq_logvar, za, za_logits
