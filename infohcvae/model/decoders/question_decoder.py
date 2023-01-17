@@ -32,8 +32,8 @@ class QuestionDecoder(nn.Module):
                                         num_layers=lstm_dec_nlayers, dropout=dropout,
                                         bidirectional=False)
 
-        self.q_init_hidden_linear = nn.Linear(nzqdim, lstm_dec_nlayers * d_model)
-        self.q_init_cell_linear = nn.Linear(nzqdim, lstm_dec_nlayers * d_model)
+        self.q_init_hidden_linear = nn.Linear(nzqdim, lstm_dec_nlayers * lstm_dec_nhidden)
+        self.q_init_cell_linear = nn.Linear(nzqdim, lstm_dec_nlayers * lstm_dec_nhidden)
 
         self.question_attention = LuongAttention(lstm_dec_nhidden, lstm_dec_nhidden)
 
