@@ -121,7 +121,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # Define QA infomax model
         preprocessor = None # nn.Sigmoid()
-        qa_discriminator = nn.Bilinear(d_model, d_model, 1)
+        qa_discriminator = nn.Bilinear(decoder_q_nhidden, decoder_a_nhidden * 2, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
 
