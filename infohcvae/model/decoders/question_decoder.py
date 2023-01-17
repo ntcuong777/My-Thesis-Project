@@ -53,8 +53,8 @@ class QuestionDecoder(nn.Module):
     def _build_zq_init_state(self, zq):
         q_init_h = self.q_init_hidden_linear(zq)
         q_init_c = self.q_init_cell_linear(zq)
-        q_init_h = q_init_h.view(-1, self.dec_nlayers, self.d_model).transpose(0, 1).contiguous()
-        q_init_c = q_init_c.view(-1, self.dec_nlayers, self.d_model).transpose(0, 1).contiguous()
+        q_init_h = q_init_h.view(-1, self.dec_nlayers, self.dec_nhidden).transpose(0, 1).contiguous()
+        q_init_c = q_init_c.view(-1, self.dec_nlayers, self.dec_nhidden).transpose(0, 1).contiguous()
         q_init_state = (q_init_h, q_init_c)
         return q_init_state
 
