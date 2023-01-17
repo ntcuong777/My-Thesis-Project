@@ -45,7 +45,7 @@ class PosteriorEncoder(nn.Module):
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = q_mask.unsqueeze(1)
         # skip connection
-        q_h = q_h + self.shared_luong_attention(q_h, q_hidden_states, mask)
+        q_h = q_h + self.shared_luong_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
 
         # context enc
         c_hidden_states, c_state = self.encoder(c_embeds, c_lengths.to("cpu"))
@@ -56,7 +56,7 @@ class PosteriorEncoder(nn.Module):
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = c_mask.unsqueeze(1)
         # skip connection
-        c_h = c_h + self.shared_luong_attention(c_h, c_hidden_states, mask)
+        c_h = c_h + self.shared_luong_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         # context and answer enc
         c_a_hidden_states, c_a_state = self.encoder(c_a_embeds, c_lengths.to("cpu"))
@@ -67,7 +67,7 @@ class PosteriorEncoder(nn.Module):
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = c_mask.unsqueeze(1)
         # skip connection
-        c_a_h = c_a_h + self.shared_luong_attention(c_a_h, c_a_hidden_states, mask)
+        c_a_h = c_a_h + self.shared_luong_attention(c_a_h.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)

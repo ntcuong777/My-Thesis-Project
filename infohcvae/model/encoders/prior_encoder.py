@@ -42,7 +42,7 @@ class PriorEncoder(nn.Module):
         # the final forward and reverse hidden states should attend to the whole sentence
         mask = c_mask.unsqueeze(1)
         # skip connection
-        c_h = c_h + self.context_luong_attention(c_h, c_hidden_states, mask)
+        c_h = c_h + self.context_luong_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(c_h)
         zq_logvar = self.zq_logvar_linear(c_h)

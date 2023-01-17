@@ -13,12 +13,12 @@ class LuongAttention(nn.Module):
         query = self.linear_proj(query)
 
         # Luong attention computation
-        mask = (1.0 - mask.float()) * -1000000.0
-        # query (N, len, hidden_size), memories (N, len, hidden_size)
-        attn_logits = torch.matmul(query, memories.transpose(-1, -2).contiguous())
+        mask = (1.0 - mask.float()) * -1e9
+        # query (N, x, hidden_size), memories (N, len, hidden_size)
+        attn_logits = torch.matmul(query, memories.transpose(-1, -2).contiguous()) # size = (N, x, len)
         attn_logits = attn_logits + mask
-        attn_weights = F.softmax(attn_logits, dim=-1)
-        attn_outputs = torch.matmul(attn_weights, memories)
+        attn_weights = F.softmax(attn_logits, dim=-1) # size = (N, x, len)
+        attn_outputs = torch.matmul(attn_weights, memories) # size = (N, x, hidden_size)
 
         if return_attention_logits is not None and return_attention_logits:
             return attn_outputs, attn_logits
