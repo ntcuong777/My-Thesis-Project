@@ -24,7 +24,9 @@ class PosteriorEncoder(nn.Module):
                                   num_layers=lstm_enc_nlayers, dropout=dropout,
                                   bidirectional=True)
         self.shared_self_attention = BertSelfAttention(hidden_size=lstm_enc_nhidden*2, num_attention_heads=12)
-        self.shared_multihead_attention = MultiHeadAttention(2 * lstm_enc_nhidden, num_heads=12)
+        self.shared_multihead_attention = MultiHeadAttention(
+            query_in_features=2 * lstm_enc_nhidden, value_in_features=2 * lstm_enc_nhidden,
+            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12)
 
         self.question_attention = MultiHeadAttention(
             query_in_features=2 * lstm_enc_nhidden, value_in_features=2 * lstm_enc_nhidden,
