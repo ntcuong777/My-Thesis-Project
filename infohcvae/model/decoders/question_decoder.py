@@ -66,7 +66,7 @@ class QuestionDecoder(nn.Module):
         init_state = self._build_zq_init_state(zq)
 
         # question dec
-        q_outputs, _ = self.question_lstm(q_embeds, q_lengths, init_state)
+        q_outputs, _ = self.question_lstm(q_embeds, q_lengths.to("cpu"), init_state)
 
         logits, q_last_outputs = self.get_question_logits_from_out_hidden_states(
             c_ids, c_mask, q_embeds, q_mask, q_outputs, c_outputs)
