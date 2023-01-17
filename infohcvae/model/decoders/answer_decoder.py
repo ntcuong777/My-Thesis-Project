@@ -30,7 +30,6 @@ class AnswerDecoder(nn.Module):
     def forward(self, c_embeds, c_mask, c_lengths, za):
         _, max_c_len, _ = c_embeds.size()
 
-        print(za.size())
         init_state = self._build_za_init_state(za, max_c_len)
         dec_inputs = torch.cat([c_embeds, init_state,
                                 c_embeds * init_state,
