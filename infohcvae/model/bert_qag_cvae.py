@@ -151,7 +151,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--pooling_strategy", type=str, default="first", choices=["max", "mean", "first"])
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
-        parser.add_argument("--lambda_mmd_q", type=float, default=50)
+        parser.add_argument("--lambda_mmd_q", type=float, default=1000)
         parser.add_argument("--lambda_mmd_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
