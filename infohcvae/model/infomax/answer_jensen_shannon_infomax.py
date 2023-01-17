@@ -15,6 +15,8 @@ class AnswerJensenShannonInfoMax(nn.Module):
         self.infomax_loss = JensenShannonInfoMax(discriminator=nn.Bilinear(hidden_size, hidden_size, 1))
 
     def forward(self, hidden_states, answer_mask, context_mask, answer_context_weight=0.2):
+        answer_mask = answer_mask.type(torch.FloatTensor)
+        context_mask = context_mask.type(torch.FloatTensor)
         answer_mask_mat = torch.matmul(answer_mask.unsqueeze(1), answer_mask.unsqueeze(2))
         answer_context_mask = torch.matmul(answer_mask.unsqueeze(1), context_mask.unsqueeze(2))
         pairwise_loss_info = self.infomax_loss(hidden_states, hidden_states)
