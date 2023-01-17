@@ -23,6 +23,6 @@ class AnswerJensenShannonInfoMax(nn.Module):
 
         pairwise_loss_info = self.infomax_loss(hidden_states, hidden_states)
 
-        loss_answer_info = (pairwise_loss_info * answer_mask_mat).div(answer_mask_mat.sum())
-        loss_answer_context_info = (pairwise_loss_info * answer_context_mask).div(answer_context_mask.sum())
+        loss_answer_info = (pairwise_loss_info * answer_mask_mat).sum().div(answer_mask_mat.sum())
+        loss_answer_context_info = (pairwise_loss_info * answer_context_mask).sum().div(answer_context_mask.sum())
         return (1. - answer_context_weight) * loss_answer_info + answer_context_weight * loss_answer_context_info
