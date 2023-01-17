@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.custom.bert_self_attention import CustomBertAttention
+from infohcvae.model.custom.self_attention import SelfAttention
 
 
 class CustomContextEncoderForQG(nn.Module):
@@ -11,7 +11,7 @@ class CustomContextEncoderForQG(nn.Module):
         self.context_lstm = CustomLSTM(input_size=d_model, hidden_size=lstm_dec_nhidden,
                                        num_layers=lstm_dec_nlayers, dropout=dropout,
                                        bidirectional=True)
-        self.context_attention = CustomBertAttention(2 * lstm_dec_nhidden, num_attention_heads=10)
+        self.context_attention = SelfAttention(2 * lstm_dec_nhidden, num_attention_heads=10)
         # self.fusion = nn.Linear(4 * lstm_dec_nhidden, 2 * lstm_dec_nhidden, bias=False)
         # self.gate = nn.Linear(4 * lstm_dec_nhidden, 2 * lstm_dec_nhidden, bias=False)
 

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.custom.bert_self_attention import CustomBertAttention
+from infohcvae.model.custom.self_attention import SelfAttention
 
 
 class AnswerDecoder(nn.Module):
@@ -17,7 +17,7 @@ class AnswerDecoder(nn.Module):
         self.answer_decoder = CustomLSTM(input_size=4 * d_model, hidden_size=lstm_dec_nhidden,
                                          num_layers=lstm_dec_nlayers, dropout=dropout,
                                          bidirectional=True)
-        self.self_attention = CustomBertAttention(2 * lstm_dec_nhidden, num_attention_heads=12)
+        self.self_attention = SelfAttention(2 * lstm_dec_nhidden, num_attention_heads=12)
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)

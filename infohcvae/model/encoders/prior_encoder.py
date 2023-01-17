@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from infohcvae.model.custom.multihead_attention import MultiHeadAttention, AddNormWithMultiHeadAttention
 from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.custom.bert_self_attention import CustomBertAttention
+from infohcvae.model.custom.self_attention import SelfAttention
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
 )
@@ -24,7 +24,7 @@ class PriorEncoder(nn.Module):
         self.context_encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
                                           num_layers=lstm_enc_nlayers, dropout=dropout,
                                           bidirectional=True)
-        self.self_attention = CustomBertAttention(hidden_size=lstm_enc_nhidden * 2, num_attention_heads=12)
+        self.self_attention = SelfAttention(hidden_size=lstm_enc_nhidden * 2, num_attention_heads=12)
         self.multihead_attention = AddNormWithMultiHeadAttention(
             query_in_features=2 * lstm_enc_nhidden, value_in_features=2 * lstm_enc_nhidden,
             key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12, dropout=dropout)
