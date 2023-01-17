@@ -10,6 +10,8 @@ class AnswerDecoder(nn.Module):
                  lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0):
         super(AnswerDecoder, self).__init__()
 
+        self.nzadim = nzadim
+        self.nza_values = nza_values
         self.za_projection = nn.Linear(nzadim * nza_values, d_model, bias=False)
 
         self.answer_decoder = CustomLSTM(input_size=4 * d_model, hidden_size=lstm_dec_nhidden,
@@ -21,7 +23,7 @@ class AnswerDecoder(nn.Module):
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
 
     def _build_za_init_state(self, za, max_c_len):
-        z_projected = self.za_projection(za)  # shape = (N, d_model)
+        z_projected = self.za_projection(za.view(-1, self.nzadim, self.nza_values))  # shape = (N, d_model)
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
