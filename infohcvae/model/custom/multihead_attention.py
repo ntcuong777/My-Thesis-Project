@@ -21,7 +21,7 @@ class ScaledDotProductAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
 
     def __init__(self, query_in_features, key_in_features, value_in_features,
-                 out_features, num_heads, bias=True, activation=F.gelu):
+                 out_features, num_heads, bias=True, activation=F.gelu, dropout=0.0):
         """Multi-head attention.
         :param query_in_features: Size of each input sample.
         :param num_heads: Number of heads.
@@ -39,6 +39,10 @@ class MultiHeadAttention(nn.Module):
         self.linear_key = nn.Linear(key_in_features, out_features, bias)
         self.linear_value = nn.Linear(value_in_features, out_features, bias)
         self.linear_output = nn.Linear(out_features, out_features, bias)
+
+        self.dropout = None
+        if dropout > 0.0:
+            self.dropout = nn.Dropout(dropout)
 
     def forward(self, queries, keys, values, mask=None):
         """
@@ -64,6 +68,10 @@ class MultiHeadAttention(nn.Module):
         y = self.linear_output(y)
         if self.activation is not None:
             y = self.activation(y)
+
+        if self.dropout is not None:
+            y = self.dropout(y)
+
         return y
 
     @staticmethod

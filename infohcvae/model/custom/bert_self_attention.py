@@ -6,7 +6,7 @@ import math
 
 
 class BertSelfAttention(nn.Module):
-    def __init__(self, hidden_size=768, num_attention_heads=12, activation=F.gelu):
+    def __init__(self, hidden_size=768, num_attention_heads=12, activation=F.gelu, dropout=0.0):
         super().__init__()
         assert hidden_size % num_attention_heads == 0,\
             "The hidden size is not a multiple of the number of attention heads"
@@ -20,7 +20,11 @@ class BertSelfAttention(nn.Module):
         self.value = nn.Linear(hidden_size, self.all_head_size)
 
         self.dense = nn.Linear(hidden_size, hidden_size)
+
         self.activation = activation
+        self.dropout = None
+        if dropout > 0.0:
+            self.dropout = nn.Dropout(dropout)
 
     def transpose_for_scores(self, x):
         new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
@@ -62,5 +66,8 @@ class BertSelfAttention(nn.Module):
         output = self.dense(context_layer)
         if self.activation is not None:
             output = self.activation(output)
+
+        if self.dropout is not None:
+            output = self.dropout(output)
 
         return output

@@ -151,8 +151,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--pooling_strategy", type=str, default="first", choices=["max", "mean", "first"])
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
-        parser.add_argument("--lambda_mmd_q", type=float, default=20)
-        parser.add_argument("--lambda_mmd_a", type=float, default=20)
+        parser.add_argument("--lambda_mmd_q", type=float, default=50)
+        parser.add_argument("--lambda_mmd_a", type=float, default=50)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
@@ -252,7 +252,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = 0.0, 0.0, 0.0
-        if self.alpha_kl_a < 1. or self.alpha_kl_q < 1.:
+        if self.alpha_kl_a > 0.0 or self.alpha_kl_q > 0.0:
             loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
                 posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
             loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(
@@ -281,7 +281,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "loss_qa_info": loss_qa_info,
         }
 
-        if batch_idx % 1 == 0:
+        if batch_idx % 50 == 0:
             # Log to file
             log_str = ""
             for k, v in current_losses.items():

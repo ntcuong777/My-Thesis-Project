@@ -23,20 +23,21 @@ class PosteriorEncoder(nn.Module):
         self.encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
                                   num_layers=lstm_enc_nlayers, dropout=dropout,
                                   bidirectional=True)
-        self.shared_self_attention = BertSelfAttention(hidden_size=lstm_enc_nhidden*2, num_attention_heads=12)
+        self.shared_self_attention = BertSelfAttention(
+            hidden_size=lstm_enc_nhidden*2, num_attention_heads=12, dropout=dropout)
         self.shared_multihead_attention = MultiHeadAttention(
             query_in_features=2 * lstm_enc_nhidden, value_in_features=2 * lstm_enc_nhidden,
-            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12)
+            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12, dropout=dropout)
 
         self.question_attention = MultiHeadAttention(
             query_in_features=2 * lstm_enc_nhidden, value_in_features=2 * lstm_enc_nhidden,
-            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12)
+            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12, dropout=dropout)
         self.context_attention = MultiHeadAttention(
             query_in_features=2 * lstm_enc_nhidden, value_in_features=2 * lstm_enc_nhidden,
-            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12)
+            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12, dropout=dropout)
         self.answer_zq_attention = MultiHeadAttention(
             query_in_features=nzqdim, value_in_features=2 * lstm_enc_nhidden,
-            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12)
+            key_in_features=2 * lstm_enc_nhidden, out_features=2 * lstm_enc_nhidden, num_heads=12, dropout=dropout)
 
         self.zq_mu_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
         self.zq_logvar_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
