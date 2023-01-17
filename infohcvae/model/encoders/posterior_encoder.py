@@ -10,13 +10,11 @@ from infohcvae.model.model_utils import (
 
 
 class PosteriorEncoder(nn.Module):
-    def __init__(self, embedding_model, d_model,
-                 lstm_enc_nhidden, lstm_enc_nlayers,
+    def __init__(self, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
                  nzqdim, nzadim, nza_values, dropout=0.0, pad_token_id=0):
         super(PosteriorEncoder, self).__init__()
 
         self.pad_token_id = pad_token_id
-        self.embedding = embedding_model
         self.nhidden = lstm_enc_nhidden
         self.nlayers = lstm_enc_nlayers
         self.nzqdim = nzqdim
@@ -27,6 +25,7 @@ class PosteriorEncoder(nn.Module):
                                   num_layers=lstm_enc_nlayers, dropout=dropout,
                                   bidirectional=True)
         self.shared_self_attention = BertSelfAttention(hidden_size=lstm_enc_nhidden*2, num_attention_heads=12)
+        self.shared_luong_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
@@ -36,38 +35,33 @@ class PosteriorEncoder(nn.Module):
         self.zq_logvar_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
         self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nza_values * nza_values)
 
-    def forward(self, c_ids, q_ids, c_a_mask):
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_lengths = return_inputs_length(c_mask)
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
-        q_lengths = return_inputs_length(q_ids)
-
+    def forward(self, c_embeds, c_a_embeds, q_embeds, c_mask, q_mask, c_lengths, q_lengths):
         # question enc
-        q_embeddings = self.embedding(q_ids)
-        q_hidden_states, q_state = self.encoder(q_embeddings, q_lengths)
-        q_hidden_states = self.shared_self_attention(q_hidden_states)
-        # q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # concat final forward and reverse states after being self-attended
-        q_h = torch.cat([q_hidden_states[:, -1, :self.nhidden], q_hidden_states[:, 0, self.nhidden:]], dim=-1)
+        q_hidden_states, q_state = self.encoder(q_embeds, q_lengths.to("cpu"))
+        q_hidden_states = self.shared_self_attention(q_hidden_states, attention_mask=q_mask)
+        q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # the final forward and reverse hidden states should attend to the whole sentence
+        mask = q_mask.unsqueeze(1)
+        q_h = self.context_luong_attention(q_h, q_hidden_states, mask)
 
         # context enc
-        c_embeddings = self.embedding(c_ids)
-        c_hidden_states, c_state = self.encoder(c_embeddings, c_lengths)
-        c_hidden_states = self.shared_self_attention(c_hidden_states)
-        # c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # concat final forward and reverse states after being self-attended
-        c_h = torch.cat([c_hidden_states[:, -1, :self.nhidden], c_hidden_states[:, 0, self.nhidden:]], dim=-1)
+        c_hidden_states, c_state = self.encoder(c_embeds, c_lengths.to("cpu"))
+        c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
+        c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # the final forward and reverse hidden states should attend to the whole sentence
+        mask = c_mask.unsqueeze(1)
+        c_h = self.context_luong_attention(c_h, c_hidden_states, mask)
 
         # context and answer enc
-        c_a_embeddings = self.embedding(c_ids, c_a_mask)
-        c_a_hidden_states, c_a_state = self.encoder(c_a_embeddings, c_lengths)
-        c_a_hidden_states = self.shared_self_attention(c_a_hidden_states)
-        # c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # concat final forward and reverse states after being self-attended
-        c_a_h = torch.cat([c_a_hidden_states[:, -1, :self.nhidden], c_a_hidden_states[:, 0, self.nhidden:]], dim=-1)
+        c_a_hidden_states, c_a_state = self.encoder(c_a_embeds, c_lengths.to("cpu"))
+        c_a_hidden_states = self.shared_self_attention(c_a_hidden_states, attention_mask=c_mask)
+        c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # the final forward and reverse hidden states should attend to the whole sentence
+        mask = c_mask.unsqueeze(1)
+        c_a_h = self.context_luong_attention(c_a_h, c_a_hidden_states, mask)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)

@@ -2,22 +2,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.model_utils import (
-    return_inputs_length, return_attention_mask,
-)
+from infohcvae.model.custom.bert_self_attention import BertSelfAttention
 
 
 class AnswerDecoder(nn.Module):
-    def __init__(self, embedding_model, d_model, nzadim, nza_values,
+    def __init__(self, d_model, nzadim, nza_values,
                  lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0):
         super(AnswerDecoder, self).__init__()
 
-        self.embedding = embedding_model
         self.za_projection = nn.Linear(nzadim * nza_values, d_model, bias=False)
 
         self.answer_decoder = CustomLSTM(input_size=4 * d_model, hidden_size=lstm_dec_nhidden,
                                          num_layers=lstm_dec_nlayers, dropout=dropout,
                                          bidirectional=True)
+        self.self_attention = BertSelfAttention(2 * lstm_dec_nhidden, num_attention_heads=12)
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
@@ -27,18 +25,16 @@ class AnswerDecoder(nn.Module):
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
-    def forward(self, c_ids, za):
-        _, max_c_len = c_ids.size()
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_lengths = return_inputs_length(c_mask)
+    def forward(self, c_embeds, c_mask, c_lengths, za):
+        _, max_c_len, _ = c_embeds.size()
 
-        c_embeddings = self.embedding(input_ids=c_ids, attention_mask=c_mask)[0]
         init_state = self._build_za_init_state(za, max_c_len)
-        dec_inputs = torch.cat([c_embeddings, init_state,
-                                c_embeddings * init_state,
-                                torch.abs(c_embeddings - init_state)],
+        dec_inputs = torch.cat([c_embeds, init_state,
+                                c_embeds * init_state,
+                                torch.abs(c_embeds - init_state)],
                                dim=-1)
-        dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths)
+        dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths.to("cpu"))
+        dec_outputs = self.self_attention(dec_outputs, attention_mask=c_mask)
 
         start_logits = self.start_linear(dec_outputs).squeeze(-1)
         end_logits = self.end_linear(dec_outputs).squeeze(-1)
@@ -49,17 +45,16 @@ class AnswerDecoder(nn.Module):
 
         return masked_start_logits, masked_end_logits
 
-    def generate(self, c_ids, za=None, start_logits=None, end_logits=None):
+    def generate(self, c_embeds, c_mask, c_lengths, za=None, start_logits=None, end_logits=None):
         assert (start_logits is None and end_logits is None) or (start_logits is not None and end_logits is not None),\
             "`start_logits` and `end_logits` must be both provided or both empty"
         assert (start_logits is None and za is not None) or (start_logits is not None and za is None), \
             "cannot both provide logits and latent `za`, only <one> is accepted"
 
         if start_logits is None:
-            start_logits, end_logits = self.forward(c_ids, za)
+            start_logits, end_logits = self.forward(c_embeds, c_mask, c_lengths, za)
 
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        batch_size, max_c_len = c_ids.size()
+        batch_size, max_c_len, _ = c_embeds.size()
 
         mask = torch.matmul(c_mask.unsqueeze(2).float(), c_mask.unsqueeze(1).float())
         mask = torch.triu(mask) == 0

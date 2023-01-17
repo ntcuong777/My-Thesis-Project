@@ -25,7 +25,7 @@ class BertSelfAttention(nn.Module):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states):
+    def forward(self, hidden_states, attention_mask=None):
         mixed_query_layer = self.query(hidden_states)  # [Batch_size x Seq_length x Hidden_size]
         mixed_key_layer = self.key(hidden_states)  # [Batch_size x Seq_length x Hidden_size]
         mixed_value_layer = self.value(hidden_states)  # [Batch_size x Seq_length x Hidden_size]
@@ -36,6 +36,17 @@ class BertSelfAttention(nn.Module):
 
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2)) # [N x num_heads x Seq_len x seq_len]
         attention_scores = attention_scores / math.sqrt(self.attention_head_size) # [N x num_heads x seq_len x seq_len]
+
+        extended_attention_mask = None
+        if attention_mask is not None:
+            extended_attention_mask = torch.matmul(attention_mask.unsqueeze(2), attention_mask.unsqueeze(1))\
+                .unsqueeze(1).expand(-1, self.num_attention_heads, -1, -1)
+        else:
+            extended_attention_mask = torch.ones_like(attention_scores.size())
+
+        # attend to only some positions
+        attention_scores = extended_attention_mask * attention_scores - (1 - extended_attention_mask) * 1e9
+
         attention_probs = nn.Softmax(dim=-1)(attention_scores)  # [N x Num_of_heads x Seq_length x Seq_length]
         context_layer = torch.matmul(attention_probs, value_layer)  # [N x num_heads x seq_len x head_size]
 

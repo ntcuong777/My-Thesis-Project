@@ -11,7 +11,7 @@ from infohcvae.model.model_utils import (
 
 
 class QuestionDecoder(nn.Module):
-    def __init__(self, word_embeddings, embedding_model, context_embedding, nzqdim,
+    def __init__(self, word_embeddings, context_embedding, nzqdim,
                  d_model, lstm_dec_nhidden, lstm_dec_nlayers, sos_id, eos_id, vocab_size,
                  dropout=0.0, max_q_len=64):
         super(QuestionDecoder, self).__init__()
@@ -19,15 +19,14 @@ class QuestionDecoder(nn.Module):
         self.sos_id = sos_id
         self.eos_id = eos_id
         self.d_model = d_model
-        self.embedding = embedding_model
+        self.embedding = context_embedding
         self.dec_nhidden = lstm_dec_nhidden
         self.vocab_size = vocab_size
         self.dec_nlayers = lstm_dec_nlayers
         # this max_len include sos eos
         self.max_q_len = max_q_len
 
-        self.context_encoder = CustomContextEncoderForQG(context_embedding, d_model,
-                                                         lstm_dec_nhidden // 2, lstm_dec_nlayers, dropout)
+        self.context_encoder = CustomContextEncoderForQG(d_model, lstm_dec_nhidden // 2, lstm_dec_nlayers, dropout)
 
         self.question_lstm = CustomLSTM(input_size=d_model, hidden_size=lstm_dec_nhidden,
                                         num_layers=lstm_dec_nlayers, dropout=dropout,
@@ -59,21 +58,18 @@ class QuestionDecoder(nn.Module):
         q_init_state = (q_init_h, q_init_c)
         return q_init_state
 
-    def forward(self, c_ids, q_ids, c_a_mask, zq, return_qa_mean_embeds=None):
-        c_outputs = self.context_encoder(c_ids, c_a_mask)
-
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
-        q_lengths = return_inputs_length(q_ids)
+    def forward(self, c_ids, q_embeds, q_mask, q_lengths,
+                c_a_embeds, c_mask, c_lengths, c_a_mask,
+                zq, return_qa_mean_embeds=None):
+        c_outputs = self.context_encoder(c_a_embeds, c_mask, c_lengths)
 
         init_state = self._build_zq_init_state(zq)
 
         # question dec
-        q_embeddings = self.embedding(q_ids)
-        q_outputs, _ = self.question_lstm(q_embeddings, q_lengths, init_state)
+        q_outputs, _ = self.question_lstm(q_embeds, q_lengths, init_state)
 
         logits, q_last_outputs = self.get_question_logits_from_out_hidden_states(
-            c_ids, c_mask, q_ids, q_mask, q_outputs, c_outputs)
+            c_ids, c_mask, q_embeds, q_mask, q_outputs, c_outputs)
 
         if return_qa_mean_embeds is not None and return_qa_mean_embeds:
             a_emb = c_outputs * c_a_mask.float().unsqueeze(2)
@@ -86,8 +82,8 @@ class QuestionDecoder(nn.Module):
         return logits
 
     def get_question_logits_from_out_hidden_states(
-            self, c_ids, c_mask, q_ids, q_mask, q_hidden_states, c_hidden_states):
-        batch_size, max_q_len = q_ids.size()
+            self, c_ids, c_mask, q_embeds, q_mask, q_hidden_states, c_hidden_states):
+        batch_size, max_q_len, _ = q_embeds.size()
 
         # context-question attention
         mask = torch.matmul(q_mask.unsqueeze(2), c_mask.unsqueeze(1))
@@ -113,7 +109,7 @@ class QuestionDecoder(nn.Module):
         total_logits = gen_logits + copy_logits
         return total_logits, q_maxouted
 
-    def generate(self, c_ids, a_mask, zq):
+    def generate(self, c_ids, c_a_embeds, c_mask, c_lengths, zq):
         """ Generate question using greedy decoding """
         def postprocess(q_token_ids):
             eos_mask = q_token_ids == self.eos_id
@@ -130,8 +126,7 @@ class QuestionDecoder(nn.Module):
             q_token_ids = q_token_ids.long() * q_mask.long()
             return q_token_ids
 
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_outputs = self.context_encoder(c_ids, a_mask)
+        c_outputs = self.context_encoder(c_a_embeds, c_mask, c_lengths)
 
         batch_size = c_ids.size(0)
 
@@ -139,7 +134,7 @@ class QuestionDecoder(nn.Module):
         q_ids = q_ids.to(c_ids.device)
         token_type_ids = torch.zeros_like(q_ids)
         position_ids = torch.zeros_like(q_ids)
-        q_embeddings = self.embedding(q_ids, token_type_ids, position_ids)[0]
+        q_embeddings = self.embedding(input_ids=q_ids, token_type_ids=token_type_ids, position_ids=position_ids)[0]
 
         state = self._build_zq_init_state(zq)
 
@@ -148,7 +143,7 @@ class QuestionDecoder(nn.Module):
         all_q_ids.append(q_ids)
         for _ in range(self.max_q_len - 1):
             position_ids = position_ids + 1
-            q_outputs, state = self.question_lstm.lstm(q_embeddings, state)
+            q_outputs, state = self.question_lstm(q_embeddings, state)
 
             logits, _ = self.get_question_logits_from_out_hidden_states(
                 c_ids, c_mask, q_ids, torch.ones_like(q_ids), q_outputs, c_outputs)
@@ -156,7 +151,7 @@ class QuestionDecoder(nn.Module):
             q_ids = torch.argmax(logits, 2)
             all_q_ids.append(q_ids)
 
-            q_embeddings = self.embedding(q_ids, token_type_ids, position_ids)[0]
+            q_embeddings = self.embedding(input_ids=q_ids, token_type_ids=token_type_ids, position_ids=position_ids)[0]
 
         q_ids = torch.cat(all_q_ids, 1)
         q_ids = postprocess(q_ids)

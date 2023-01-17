@@ -13,7 +13,8 @@ import pytorch_lightning as pl
 from transformers import BertConfig, BertTokenizer, BertModel
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
-    freeze_neural_model,
+    freeze_neural_model, return_attention_mask,
+    return_inputs_length,
 )
 from infohcvae.model.losses import (
     GaussianKLLoss, CategoricalKLLoss,
@@ -27,15 +28,6 @@ from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
 
 __logger__ = logging.Logger(__name__)
-
-
-def _encode_input_tokens(encoder, input_ids, input_mask, subspan_mask=None):
-    encoder_outputs = encoder(
-        input_ids=input_ids,
-        attention_mask=input_mask,
-        token_type_ids=subspan_mask
-    )
-    return encoder_outputs[0]
 
 
 class BertQAGConditionalVae(pl.LightningModule):
@@ -85,7 +77,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_dropout
         self.d_model = d_model = config.hidden_size
 
-        bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
+        self.bert_encoder = bert_model = BertModel.from_pretrained(base_model, add_pooling_layer=False)
         freeze_neural_model(bert_model)
 
         embedding_model = bert_model.get_input_embeddings()
@@ -101,22 +93,20 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.eos_id = eos_id = self.tokenizer.sep_token_id
 
         """ Define components """
-        self.posterior_encoder = PosteriorEncoder(embedding_model, d_model,
-                                                  encoder_nhidden, encoder_nlayers,
+        self.posterior_encoder = PosteriorEncoder(d_model, encoder_nhidden, encoder_nlayers,
                                                   nzqdim, nzadim, nza_values,
                                                   dropout=encoder_dropout, pad_token_id=self.pad_token_id)
 
-        self.prior_encoder = PriorEncoder(embedding_model, d_model,
-                                          encoder_nhidden, encoder_nlayers,
+        self.prior_encoder = PriorEncoder(d_model, encoder_nhidden, encoder_nlayers,
                                           nzqdim, nzadim, nza_values,
                                           dropout=encoder_dropout, pad_token_id=self.pad_token_id)
 
-        self.answer_decoder = AnswerDecoder(bert_model, d_model, nzadim, nza_values,
+        self.answer_decoder = AnswerDecoder(d_model, nzadim, nza_values,
                                             decoder_a_nhidden, decoder_a_nlayers,
                                             dropout=decoder_a_dropout)
 
         self.question_decoder = QuestionDecoder(
-            bert_model.get_input_embeddings(), embedding_model, bert_model,
+            bert_model.get_input_embeddings(), bert_model,
             nzqdim, d_model, decoder_q_nhidden, decoder_q_nlayers, sos_id, eos_id, vocab_size,
             dropout=decoder_q_dropout, max_q_len=self.max_q_len)
 
@@ -171,47 +161,6 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         return parent_parser
 
-    """ Encoding-related methods """
-    def _encode_latent_posteriors(self, q_ids, q_mask, c_ids, c_mask, c_a_mask):
-        # context enc
-        c_hidden_states = _encode_input_tokens(
-            encoder=self.encoder, input_ids=c_ids, input_mask=c_mask)
-
-        """ START: Question encoding to get latent `zq` """
-        # question-context & answer enc
-        q_hidden_states = _encode_input_tokens(
-            encoder=self.encoder, input_ids=q_ids, input_mask=q_mask)
-        q_pooled = self.pool(q_hidden_states)
-
-        # attention q, c
-        mask = c_mask.unsqueeze(1)
-        c_attned_by_q = self.question_attention(q_pooled.unsqueeze(1), c_hidden_states, mask).squeeze(1)
-
-        # attention c, q
-        c_pooled = self.pool(c_hidden_states)
-        mask = q_mask.unsqueeze(1)
-        q_attned_by_c = self.context_attention(c_pooled.unsqueeze(1), q_hidden_states, mask).squeeze(1)
-
-        h = torch.cat([q_pooled, q_attned_by_c, c_pooled, c_attned_by_q], dim=-1)
-        # sample `zq`
-        zq, zq_mu, zq_logvar = self.calculate_zq_latent(h)
-        """ END: Question encoding to get latent `zq` """
-
-        """ START: Answer encoding to get latent `za` """
-        # context-answer enc
-        c_a_hidden_states = _encode_input_tokens(
-            encoder=self.encoder, input_ids=c_ids, input_mask=c_mask, subspan_mask=c_a_mask)
-
-        # attention zq, c_a
-        mask = c_mask.unsqueeze(1)
-        c_a_attned_by_zq = self.za_enc_zq_attention(zq.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
-
-        # sample `za`
-        h = torch.cat([zq, c_a_attned_by_zq, self.pool(c_a_hidden_states)], dim=-1)
-        za, za_logits = self.calculate_za_latent(h, hard=True)
-        """ END: Answer encoding to get latent `za` """
-        return zq, zq_mu, zq_logvar, za, za_logits, c_a_hidden_states
-
     """ Training-related methods """
     def forward(
             self, c_ids: torch.Tensor = None,
@@ -219,17 +168,27 @@ class BertQAGConditionalVae(pl.LightningModule):
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
+        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_lengths = return_inputs_length(c_mask)
+        c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)
+        c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)
+        q_mask = return_attention_mask(q_ids, self.pad_token_id)
+        q_lengths = return_inputs_length(q_mask)
+        q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=c_mask)
+
         posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
-            posterior_za, posterior_za_logits = self.posterior_encoder(c_ids, q_ids, c_a_mask)
+            posterior_za, posterior_za_logits = self.posterior_encoder(
+                c_hidden_states, c_a_hidden_states, q_hidden_states, c_mask, q_mask, c_lengths, q_lengths)
 
         prior_zq, prior_zq_mu, prior_zq_logvar, \
-            prior_za, prior_za_logits = self.prior_encoder(c_ids)
+            prior_za, prior_za_logits = self.prior_encoder(c_hidden_states, c_mask, c_lengths)
 
         # answer decoding
-        start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
+        start_logits, end_logits = self.answer_decoder(c_hidden_states, c_mask, c_lengths, posterior_za)
         # question decoding
         lm_logits, mean_embeds = self.question_decoder(
-            c_ids, q_ids, c_a_mask, return_qa_mean_embeds=True)
+            c_ids, q_hidden_states, q_mask, q_lengths, c_a_hidden_states, c_mask, c_lengths,
+            c_a_mask, posterior_zq, return_qa_mean_embeds=True)
 
         out = dict({
             "posterior_za_out": (posterior_za, posterior_za_logits),
@@ -243,7 +202,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         _, q_ids, c_ids, a_mask, _, no_q_start_positions, no_q_end_positions = batch
-        out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, return_qa_mean_embeds=True)
+        out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask)
 
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
@@ -334,37 +293,52 @@ class BertQAGConditionalVae(pl.LightningModule):
         return total_loss
 
     """ Generation-related methods """
-    def _generate_answer(self, c_ids, za):
-        return_start_logits, return_end_logits = self.answer_decoder(c_ids, za)
+    def _generate_answer(self, c_embeds, c_mask, c_lengths, za):
+        return_start_logits, return_end_logits = self.answer_decoder(c_embeds, c_mask, c_lengths, za)
 
         # Get generated answer mask from context ids `c_ids`
         gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = self.answer_decoder.generate(
-            c_ids, start_logits=return_start_logits, end_logits=return_end_logits)
+            c_embeds, c_mask, c_lengths, start_logits=return_start_logits, end_logits=return_end_logits)
         return gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, return_start_logits, return_end_logits
 
-    def _generate_question(self, c_ids, c_a_mask, zq):
-        return self.question_decoder.generate(c_ids, c_a_mask, zq)
+    def _generate_question(self, c_ids, c_a_embeds, c_mask, c_lengths, zq):
+        return self.question_decoder.generate(c_ids, c_a_embeds, c_mask, c_lengths, zq)
 
     def generate_qa_from_prior(self, c_ids):
         with torch.no_grad():
-            zq, _, _, za, _ = self.prior_encoder(c_ids)
+            c_mask = return_attention_mask(c_ids, self.pad_token_id)
+            c_lengths = return_inputs_length(c_mask)
+            c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)
+
+            zq, _, _, za, _ = self.prior_encoder(c_hidden_states, c_mask, c_lengths)
 
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
-                self._generate_answer(c_ids, za)
-            q_ids = self._generate_question(c_ids, gen_c_a_mask, zq)
+                self._generate_answer(c_hidden_states, c_mask, c_lengths, za)
+
+            c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=gen_c_a_mask)
+            q_ids = self._generate_question(c_ids, c_a_hidden_states, c_mask, c_lengths, zq)
 
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
 
     """ Validation-related methods """
     def validation_step(self, batch, batch_idx):
-        def generate_qa_from_posterior(question_ids, context_ids, c_a_mask):
+        def generate_qa_from_posterior(q_ids, c_ids, c_a_mask):
             with torch.no_grad():
-                zq, _, _, za, _, _ = self.posterior_encoder(context_ids, question_ids, c_a_mask)
+                c_mask = return_attention_mask(c_ids, self.pad_token_id)
+                c_lengths = return_inputs_length(c_mask)
+                c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)
+                c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)
+                q_mask = return_attention_mask(q_ids, self.pad_token_id)
+                q_lengths = return_inputs_length(q_mask)
+                q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=c_mask)
+
+                zq, _, _, za, _, _ = self.posterior_encoder(
+                    c_hidden_states, c_a_hidden_states, q_hidden_states, c_mask, q_mask, c_lengths, q_lengths)
 
                 """ Generation """
                 gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
-                    self._generate_answer(c_ids, za)
-                question_ids = self._generate_question(c_ids, gen_c_a_mask, zq)
+                    self._generate_answer(c_hidden_states, c_mask, c_lengths, za)
+                question_ids = self._generate_question(c_ids, c_a_hidden_states, c_mask, c_lengths, zq)
 
                 return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 

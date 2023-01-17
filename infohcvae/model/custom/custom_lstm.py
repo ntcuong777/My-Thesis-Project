@@ -19,7 +19,7 @@ class CustomLSTM(nn.Module):
     def forward(self, inputs, input_lengths, state=None):
         _, total_length, _ = inputs.size()
 
-        input_packed = pack_padded_sequence(inputs, input_lengths.to("cpu"),
+        input_packed = pack_padded_sequence(inputs, input_lengths,
                                             batch_first=True, enforce_sorted=False)
 
         self.lstm.flatten_parameters()
