@@ -14,10 +14,8 @@ class AnswerJensenShannonInfoMax(nn.Module):
         super(AnswerJensenShannonInfoMax, self).__init__()
         self.answer_span_loss = JensenShannonInfoMax(discriminator=nn.Bilinear(hidden_size, hidden_size, 1))
         self.answer_context_loss = JensenShannonInfoMax(discriminator=nn.Bilinear(hidden_size, hidden_size, 1))
-        self.answer_question_loss = JensenShannonInfoMax(discriminator=nn.Bilinear(hidden_size, hidden_size, 1))
 
-    def forward(self, hidden_states, q_mean_embeds, answer_mask,
-                start_mask, end_mask, context_mask, answer_span_weight=4.):
+    def forward(self, hidden_states, answer_mask, start_mask, end_mask, context_mask, answer_context_weight=0.25):
         answer_mask = answer_mask.type(torch.FloatTensor).to(hidden_states.device)
         context_mask = context_mask.type(torch.FloatTensor).to(hidden_states.device)
 
@@ -34,9 +32,4 @@ class AnswerJensenShannonInfoMax(nn.Module):
                                     0.25 * self.answer_context_loss(start_emb, mean_context_emb) +
                                     0.25 * self.answer_context_loss(end_emb, mean_context_emb))
 
-        answer_question_loss_info = self.answer_question_loss(mean_answer_emb, q_mean_embeds)
-
-        total_loss_info = (answer_span_weight * answer_span_loss_info + answer_context_loss_info
-                           + answer_question_loss_info) / (answer_span_weight + 2)
-
-        return total_loss_info
+        return (1. - answer_context_weight) * answer_span_loss_info + answer_context_weight * answer_context_loss_info

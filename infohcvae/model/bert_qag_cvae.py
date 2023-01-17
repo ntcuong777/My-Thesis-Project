@@ -429,8 +429,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.log_dict(metrics, prog_bar=True)
 
         # Log to file
-        log_str = "f1: {:.4f} - em: {:.4f} - bleu: {:.4f}".format(posterior_ret["f1"], posterior_ret["exact_match"],
-                                                                  bleu)
+        log_str = "f1: {:.4f} - em: {:.4f} - bleu: {:.4f}".format(
+            posterior_ret["f1"], posterior_ret["exact_match"], bleu)
         with open(self.eval_metrics_log_file, "a") as f:
             f.write(log_str + "\n\n")
 
