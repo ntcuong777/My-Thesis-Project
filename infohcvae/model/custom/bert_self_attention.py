@@ -21,7 +21,11 @@ class CustomBertAttention(nn.Module):
                 past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
                 use_cache: bool = None
     ):
-        outputs = self.attention(hidden_states=hidden_states, attention_mask=attention_mask,
+        extended_attention_mask = torch.matmul(attention_mask.unsqueeze(1), attention_mask.unsqueeze(2))
+        # masked positions = -1e9 while non-masked positions = 0 for bert attention
+        extended_attention_mask = (1.0 - extended_attention_mask) * (-1e9)
+
+        outputs = self.attention(hidden_states=hidden_states, attention_mask=extended_attention_mask,
                                  past_key_value=past_key_value)
         if use_cache:
             return outputs # out = (hidden_states, past_key_values)
