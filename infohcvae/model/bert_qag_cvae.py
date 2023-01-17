@@ -123,7 +123,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         qa_discriminator = nn.Bilinear(d_model, decoder_q_nhidden, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
-        # self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
+        self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
 
         """ Validation """
         with open(args.dev_dir, "r") as f:
@@ -151,8 +151,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--pooling_strategy", type=str, default="first", choices=["max", "mean", "first"])
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
-        parser.add_argument("--lambda_mmd_q", type=float, default=50)
-        parser.add_argument("--lambda_mmd_a", type=float, default=0.75)
+        parser.add_argument("--lambda_mmd_q", type=float, default=20)
+        parser.add_argument("--lambda_mmd_a", type=float, default=20)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
@@ -261,17 +261,15 @@ class BertQAGConditionalVae(pl.LightningModule):
                 posterior_za_logits, prior_za_logits)
             loss_kl = loss_zq_kl + loss_za_kl
 
-        loss_zq_mmd = self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
-        loss_za_mmd = self.gumbel_mmd_criterion(posterior_z=posterior_za, prior_z=prior_za)
-        loss_zq_mmd[loss_zq_mmd >= 0] = loss_zq_mmd[loss_zq_mmd >= 0] * self.lambda_mmd_q  # combat unknown negativity
-        loss_za_mmd[loss_za_mmd >= 0] = loss_za_mmd[loss_za_mmd >= 0] * self.lambda_mmd_a  # combat unknown negativity
+        loss_zq_mmd = self.lambda_mmd_q * self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
+        loss_za_mmd = self.lambda_mmd_a * self.gumbel_mmd_criterion(posterior_z=posterior_za, prior_z=prior_za)
         loss_mmd = loss_zq_mmd + loss_za_mmd
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-        # loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(a_dec_outputs, a_mask, c_mask)
+        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(a_dec_outputs, a_mask, c_mask)
 
-        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_mmd # + loss_ac_info + loss_mmd
+        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 
         current_losses = {
             "total_loss": total_loss.item(),
@@ -282,7 +280,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "loss_za_mmd": loss_za_mmd.item(),
             "loss_kl": loss_kl.item(),
             "loss_qa_info": loss_qa_info.item(),
-            # "loss_ac_info": loss_ac_info.item(),
+            "loss_ac_info": loss_ac_info.item(),
         }
 
         if batch_idx % 1 == 0:

@@ -1,7 +1,7 @@
 import torch
 
 
-def imq_kernel(z1, z2, kernel_bandwidth=1.0, scales=[0.1, 0.2, 0.5, 1.0, 2.0, 5, 10.0]):
+def imq_kernel(z1, z2, kernel_bandwidth=2.0, scales=[0.1, 0.2, 0.5, 1.0, 2.0]):
     """Returns a matrix of shape [batch x batch] containing the pairwise kernel computation"""
 
     Cbase = 2.0 * z1.size(-1) * kernel_bandwidth ** 2
@@ -12,7 +12,7 @@ def imq_kernel(z1, z2, kernel_bandwidth=1.0, scales=[0.1, 0.2, 0.5, 1.0, 2.0, 5,
     return k
 
 
-def rbf_kernel(z1, z2, kernel_bandwidth=1.0):
+def rbf_kernel(z1, z2, kernel_bandwidth=2.0):
     """Returns a matrix of shape [batch x batch] containing the pairwise kernel computation"""
 
     C = 2.0 * z1.size(-1) * kernel_bandwidth ** 2
@@ -27,7 +27,6 @@ def compute_mmd(posterior_z, prior_z, kernel_type="imq"):
         k_z = rbf_kernel(posterior_z, posterior_z)
         k_z_prior = rbf_kernel(prior_z, prior_z)
         k_cross = rbf_kernel(posterior_z, prior_z)
-
     else:
         k_z = imq_kernel(posterior_z, posterior_z)
         k_z_prior = imq_kernel(prior_z, prior_z)
