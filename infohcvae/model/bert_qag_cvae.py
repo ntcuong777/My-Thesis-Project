@@ -282,7 +282,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "loss_za_mmd": loss_za_mmd.item(),
             "loss_kl": loss_kl.item(),
             "loss_qa_info": loss_qa_info.item(),
-            "loss_ac_info": loss_ac_info.item(),
+            # "loss_ac_info": loss_ac_info.item(),
         }
 
         if batch_idx % 1 == 0:
