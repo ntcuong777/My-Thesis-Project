@@ -79,6 +79,7 @@ if __name__ == "__main__":
     parser.add_argument("--loss_log_file", default="./train_loss_info.log", type=str)
     parser.add_argument("--eval_metrics_log_file", default="./metrics_log.log", type=str)
     parser.add_argument("--save_frequency", default=5, type=int, help="save frequency by epoch")
+    parser.add_argument("--detect_anomaly", dest="detect_anomaly", action="store_true", default=True)
 
     # Add model-specific args
     parser = BertQAGConditionalVae.add_model_specific_args(parser)
@@ -88,6 +89,8 @@ if __name__ == "__main__":
     parser = Trainer.add_argparse_args(parser)
 
     args = parser.parse_args()
+
+    torch.autograd.set_detect_anomaly(args.detect_anomaly)
 
     if args.fast_dev_run:
         args.debug = True
