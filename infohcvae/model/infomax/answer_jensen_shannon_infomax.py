@@ -20,10 +20,11 @@ class AnswerJensenShannonInfoMax(nn.Module):
         context_mask = context_mask.type(torch.FloatTensor).to(hidden_states.device)
 
         answer_embs = hidden_states * answer_mask.unsqueeze(2)
-        mean_answer_emb = answer_embs.div(answer_mask.sum(dim=-1, keepdims=True))
+        mean_answer_emb = answer_embs.sum(dim=1).div(answer_mask.sum(dim=-1, keepdims=True))
         answer_span_loss_info = self.answer_span_loss(mean_answer_emb.unsqueeze(1), answer_embs)
 
-        mean_context_emb = (hidden_states * context_mask.unsqueeze(2)).div(context_mask.sum(dim=-1, keepdims=True))
+        context_embs = hidden_states * context_mask.unsqueeze(2)
+        mean_context_emb = context_embs.sum(dim=1).div(context_mask.sum(dim=-1, keepdims=True))
         answer_context_loss_info = self.answer_context_loss(mean_answer_emb, mean_context_emb)
 
         return (1. - answer_context_weight) * answer_span_loss_info + answer_context_weight * answer_context_loss_info
