@@ -23,7 +23,7 @@ class AnswerDecoder(nn.Module):
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
 
     def _build_za_init_state(self, za, max_c_len):
-        z_projected = self.za_projection(za.view(-1, self.nzadim, self.nza_values))  # shape = (N, d_model)
+        z_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
