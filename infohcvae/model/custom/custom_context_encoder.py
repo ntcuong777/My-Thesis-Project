@@ -16,7 +16,7 @@ class CustomContextEncoderForQG(nn.Module):
         # self.gate = nn.Linear(4 * lstm_dec_nhidden, 2 * lstm_dec_nhidden, bias=False)
 
     def forward(self, c_a_embeds, c_mask, c_lengths):
-        c_outputs, _ = self.context_lstm(c_a_embeds, c_lengths) # c_outputs.size() = (N, len, hidden_size)
+        c_outputs, _ = self.context_lstm(c_a_embeds, c_lengths.to("cpu")) # c_outputs.size() = (N, len, hidden_size)
 
         # skip connection with self attention
         c_outputs = c_outputs + self.context_attention(c_outputs, attention_mask=c_mask)
