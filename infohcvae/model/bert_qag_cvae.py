@@ -170,11 +170,11 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
-        c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)
-        c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)
+        c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
+        c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)[0]
         q_mask = return_attention_mask(q_ids, self.pad_token_id)
         q_lengths = return_inputs_length(q_mask)
-        q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=c_mask)
+        q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=c_mask)[0]
 
         posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
             posterior_za, posterior_za_logits = self.posterior_encoder(
@@ -308,14 +308,15 @@ class BertQAGConditionalVae(pl.LightningModule):
         with torch.no_grad():
             c_mask = return_attention_mask(c_ids, self.pad_token_id)
             c_lengths = return_inputs_length(c_mask)
-            c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)
+            c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
 
             zq, _, _, za, _ = self.prior_encoder(c_hidden_states, c_mask, c_lengths)
 
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
                 self._generate_answer(c_hidden_states, c_mask, c_lengths, za)
 
-            c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=gen_c_a_mask)
+            c_a_hidden_states = self.bert_encoder(
+                input_ids=c_ids, attention_mask=c_mask, token_type_ids=gen_c_a_mask)[0]
             q_ids = self._generate_question(c_ids, c_a_hidden_states, c_mask, c_lengths, zq)
 
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
@@ -326,11 +327,12 @@ class BertQAGConditionalVae(pl.LightningModule):
             with torch.no_grad():
                 c_mask = return_attention_mask(c_ids, self.pad_token_id)
                 c_lengths = return_inputs_length(c_mask)
-                c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)
-                c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)
+                c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
+                c_a_hidden_states = self.bert_encoder(
+                    input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)[0]
                 q_mask = return_attention_mask(q_ids, self.pad_token_id)
                 q_lengths = return_inputs_length(q_mask)
-                q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=q_mask)
+                q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
 
                 zq, _, _, za, _, _ = self.posterior_encoder(
                     c_hidden_states, c_a_hidden_states, q_hidden_states, c_mask, q_mask, c_lengths, q_lengths)
