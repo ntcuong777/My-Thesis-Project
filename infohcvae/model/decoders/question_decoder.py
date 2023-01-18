@@ -45,7 +45,7 @@ class QuestionDecoder(nn.Module):
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
 
         # fix output word matrix
-        self.lm_head.weight = word_embeddings.weight
+        self.lm_head.weight = word_embeddings.word_embeddings.weight
         for param in self.lm_head.parameters():
             param.requires_grad = False
 
