@@ -356,9 +356,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         batch_q_ids = q_ids.cpu().tolist()
         index_list = index_list[0].cpu().tolist()
 
-        print(len(index_list))
-        print(index_list)
-
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, batch_start_logits, batch_end_logits, \
             = generate_qa_from_posterior(q_ids, c_ids, a_mask)
 
@@ -371,19 +368,14 @@ class BertQAGConditionalVae(pl.LightningModule):
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
             example_idx = index_list[i]
-            print(example_idx)
             eval_feature = all_preprocessed_examples[example_idx]
             unique_id = int(eval_feature.unique_id)
 
             # debugging
-            orig_q_ids = torch.tensor(eval_feature.q_ids, dtype=torch.long).to(q_ids.device)
-            orig_c_ids = torch.tensor(eval_feature.c_ids, dtype=torch.long).to(c_ids.device)
-            # print(q_ids[i, ...].size())
-            # print(orig_q_ids.size())
-            # print(q_ids[i, ...])
-            # print(orig_q_ids)
-            assert torch.abs(q_ids[i, ...] - orig_q_ids).sum() == 0
-            assert torch.abs(c_ids[i, ...] - orig_c_ids).sum() == 0
+            # orig_q_ids = torch.tensor(eval_feature.q_ids, dtype=torch.long).to(q_ids.device)
+            # orig_c_ids = torch.tensor(eval_feature.c_ids, dtype=torch.long).to(c_ids.device)
+            # assert torch.abs(q_ids[i, ...] - orig_q_ids).sum() == 0
+            # assert torch.abs(c_ids[i, ...] - orig_c_ids).sum() == 0
 
             real_question = to_string(batch_q_ids[i], tokenizer)
             posterior_question = to_string(batch_posterior_q_ids[i], tokenizer)
