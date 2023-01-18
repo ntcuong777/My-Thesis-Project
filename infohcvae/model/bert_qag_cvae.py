@@ -326,12 +326,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         all_text_examples = val_dataloader.dataset.all_text_examples
         all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
 
-        posterior_metrics, prior_metrics, bleu = eval_vae(
+        posterior_metrics, bleu = eval_vae(
             self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
         posterior_f1 = posterior_metrics["f1"]
         posterior_em = posterior_metrics["exact_match"]
-        prior_f1 = prior_metrics["f1"]
-        prior_em = prior_metrics["exact_match"]
         bleu = bleu * 100
 
         if posterior_em > self.best_em:
