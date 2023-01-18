@@ -1,6 +1,7 @@
 import json
 import logging
-import os
+import itertools
+import collections
 from typing import Dict
 
 import torch
@@ -25,7 +26,6 @@ from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
 from infohcvae.model.infomax import JensenShannonInfoMax, AnswerJensenShannonInfoMax
 from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
-from evaluation.training_eval import eval_vae
 
 __logger__ = logging.Logger(__name__)
 
@@ -52,9 +52,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.eval_metrics_log_file = args.eval_metrics_log_file
         self.save_frequency = args.save_frequency
         self.eval_frequency = args.eval_frequency
-        self.best_em = 0.0
-        self.best_f1 = 0.0
-        self.best_bleu = 0.0
 
         self.nzqdim = nzqdim = args.nzqdim
         self.nzadim = nzadim = args.nzadim
@@ -126,7 +123,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         qa_discriminator = nn.Bilinear(d_model, decoder_q_nhidden, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
-        self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
+        # self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
 
         """ Validation """
         with open(args.dev_dir, "r") as f:
@@ -258,9 +255,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
-            a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
-        # loss_ac_info = torch.tensor(0.0)
+        # loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
+        #     a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
+        loss_ac_info = torch.tensor(0.0)
 
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 
@@ -276,7 +273,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "loss_ac_info": loss_ac_info.item(),
         }
 
-        if batch_idx % 1 == 0:
+        if batch_idx % 50 == 0:
             # Log to file
             log_str = ""
             for k, v in current_losses.items():
@@ -310,65 +307,106 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
 
-    def generate_qa_from_posterior(self, c_ids, q_ids, c_a_mask):
-        with torch.no_grad():
-            zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
-
-            """ Generation """
-            gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
-                self._generate_answer(c_ids, za)
-            question_ids = self._generate_question(c_ids, c_a_mask, zq)
-
-            return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
-
     """ Validation-related methods """
-    def evaluation(self, val_dataloader):
-        all_text_examples = val_dataloader.dataset.all_text_examples
-        all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
+    def validation_step(self, batch, batch_idx):
+        def generate_qa_from_posterior(q_ids, c_ids, c_a_mask):
+            with torch.no_grad():
+                zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
-        posterior_metrics, bleu = eval_vae(
-            self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
-        posterior_f1 = posterior_metrics["f1"]
-        posterior_em = posterior_metrics["exact_match"]
-        bleu = bleu * 100
+                """ Generation """
+                gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
+                    self._generate_answer(c_ids, za)
+                question_ids = self._generate_question(c_ids, c_a_mask, zq)
 
-        log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
-        log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
+                return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
+
+        def to_string(index, tokenizer_):
+            tok_tokens = tokenizer_.convert_ids_to_tokens(index)
+            tok_text = " ".join(tok_tokens)
+
+            # De-tokenize WordPieces that have been split off.
+            tok_text = tok_text.replace(tokenizer_.pad_token, "")
+            tok_text = tok_text.replace(tokenizer_.sep_token, "")
+            # tok_text = tok_text.replace(tokenizer.cls_token, "")
+            tok_text = tok_text.replace(" ##", "")
+            tok_text = tok_text.replace("##", "")
+
+            # Clean whitespace
+            tok_text = tok_text.strip()
+            tok_text = " ".join(tok_text.split())
+            return tok_text
+
+        RawResult = collections.namedtuple("RawResult",
+                                           ["unique_id", "start_logits", "end_logits"])
+
+        tokenizer = self.tokenizer
+
+        posterior_qa_results = []
+        qg_results = {}
+        real_question_dict = {}
+
+        assert isinstance(self.trainer.val_dataloaders[0].dataset, CustomDataset), \
+            "ERROR: validation set is not constructed from `CustomDataset` class"
+
+        # only one validation set
+        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
+
+        q_ids, c_ids, a_mask, _, _, no_q_start_positions, no_q_end_positions = batch
+        batch_size = c_ids.size(0)
+        batch_q_ids = q_ids.cpu().tolist()
+
+        batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, batch_start_logits, batch_end_logits, \
+            = generate_qa_from_posterior(q_ids, c_ids, a_mask)
+
+        # Convert posterior tensors to Python list
+        batch_posterior_q_ids, batch_posterior_start, batch_posterior_end = \
+            batch_posterior_q_ids.cpu().tolist(), batch_posterior_start.cpu().tolist(), \
+                batch_posterior_end.cpu().tolist()
+
+        example_idx = batch_idx * self.program_args.batch_size # starting idx of this
+        for i in range(batch_size):
+            example_idx += 1
+            posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
+            posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
+            eval_feature = all_preprocessed_examples[example_idx]
+            unique_id = int(eval_feature.unique_id)
+
+            real_question = to_string(batch_q_ids[i], tokenizer)
+            posterior_question = to_string(batch_posterior_q_ids[i], tokenizer)
+
+            qg_results[unique_id] = posterior_question
+            real_question_dict[unique_id] = real_question
+            posterior_qa_results.append(RawResult(unique_id=unique_id,
+                                                  start_logits=posterior_start_logits,
+                                                  end_logits=posterior_end_logits))
+
+        return {"posterior_qa": posterior_qa_results, "real_questions": real_question_dict, "qg_results": qg_results}
+
+    def validation_epoch_end(self, outputs: Dict):
+        # only one validation set
+        all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
+        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
+
+        posterior_qa_results = list(itertools.chain.from_iterable([out["posterior_qa"] for out in outputs]))
+        real_question_dict = {k: v for out in outputs for k, v in out["real_questions"].items()}
+        qg_results = {k: v for out in outputs for k, v in out["qg_results"].items()}
+
+        posterior_predictions = extract_predictions_to_dict(
+            all_text_examples, all_preprocessed_examples, posterior_qa_results,
+            n_best_size=20, max_answer_length=30, do_lower_case=True,
+            verbose_logging=False, version_2_with_negative=False, null_score_diff_threshold=0,
+            noq_position=True)
+        posterior_ret = evaluate(self.dev_dataset, posterior_predictions)
+        bleu = eval_qg(real_question_dict, qg_results)
+
+        metrics = {"f1": posterior_ret["f1"], "exact_match": posterior_ret["exact_match"], "bleu": bleu}
+        self.log_dict(metrics, prog_bar=True)
+
+        # Log to file
+        log_str = "f1: {:.4f} - em: {:.4f} - bleu: {:.4f}".format(
+            posterior_ret["f1"], posterior_ret["exact_match"], bleu)
         with open(self.eval_metrics_log_file, "a") as f:
             f.write(log_str + "\n\n")
-
-        if posterior_em > self.best_em:
-            self.best_em = posterior_em
-            filename = os.path.join(
-                self.program_args.best_model_dir,
-                "model-{epoch:02d}-best_em-{em:.3f}".format(epoch=self.current_epoch + 1, em=self.best_em))
-            self.trainer.save_checkpoint(filename, weights_only=True)
-        if posterior_f1 > self.best_f1:
-            self.best_f1 = posterior_f1
-            filename = os.path.join(
-                self.program_args.best_model_dir,
-                "model-{epoch:02d}-best_f1-{f1:.3f}".format(epoch=self.current_epoch + 1, f1=self.best_f1))
-            self.trainer.save_checkpoint(filename, weights_only=True)
-        if bleu > self.best_bleu:
-            self.best_bleu = bleu
-            filename = os.path.join(
-                self.program_args.best_model_dir,
-                "model-{epoch:02d}-best_bleu-{bleu:.3f}".format(epoch=self.current_epoch + 1, bleu=self.best_bleu))
-            self.trainer.save_checkpoint(filename, weights_only=True)
-
-        with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
-            import json
-            json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
-                       "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
-
-    def training_epoch_end(self, outputs):
-        if (self.current_epoch + 1) % self.save_frequency == 0:
-            filename = os.path.join(
-                self.program_args.save_by_epoch_dir, "model-epoch-{:02d}".format(self.current_epoch + 1))
-            self.trainer.save_checkpoint(filename, weights_only=True)
-
-        if (self.current_epoch + 1) % self.eval_frequency == 0:
-            self.evaluation(self.trainer.val_dataloaders[0])
 
     """ Optimizer """
     def configure_optimizers(self):
