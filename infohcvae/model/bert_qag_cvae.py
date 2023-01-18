@@ -350,10 +350,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         # only one validation set
         all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
 
+        # index list is a 2d list (batch_size, 1)
         index_list, q_ids, c_ids, a_mask, _, _, no_q_start_positions, no_q_end_positions = batch
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
-        index_list = index_list.cpu().tolist() # 2d list with size (batch_size, 1)
 
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, batch_start_logits, batch_end_logits, \
             = generate_qa_from_posterior(q_ids, c_ids, a_mask)
