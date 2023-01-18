@@ -41,7 +41,7 @@ class PosteriorEncoder(nn.Module):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
-        q_mask = return_attention_mask(c_ids, self.pad_token_id)
+        q_mask = return_attention_mask(q_ids, self.pad_token_id)
         q_lengths = return_inputs_length(q_mask)
 
         # question enc
