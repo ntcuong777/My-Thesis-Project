@@ -267,9 +267,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-        # loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
-        #     a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
-        loss_ac_info = torch.tensor(0.0)
+        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
+            a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
+        # loss_ac_info = torch.tensor(0.0)
 
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 
