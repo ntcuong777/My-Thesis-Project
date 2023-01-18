@@ -321,7 +321,6 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 
-    """ Validation-related methods """
     def evaluation(self, val_dataloader):
         all_text_examples = val_dataloader.dataset.all_text_examples
         all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples

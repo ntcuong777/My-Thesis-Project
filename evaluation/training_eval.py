@@ -50,7 +50,7 @@ class Result(object):
 
 
 def eval_vae(args, model: pl.LightningModule, eval_loader, eval_text_samples, eval_processed_samples):
-    model.freeze() # freeze for inference
+    model.eval() # to eval mode
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     RawResult = collections.namedtuple("RawResult",
@@ -106,6 +106,6 @@ def eval_vae(args, model: pl.LightningModule, eval_loader, eval_text_samples, ev
     posterior_ret = evaluate(dataset, posterior_predictions)
     bleu = eval_qg(res_dict, qg_results)
 
-    model.unfreeze() # unfreeze model for training
+    model.train() # back to train mode
 
     return posterior_ret, bleu
