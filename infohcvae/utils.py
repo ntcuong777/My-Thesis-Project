@@ -87,7 +87,7 @@ def get_harv_data_loader(tokenizer, file, shuffle, ratio, args):
 
 def batch_to_device(batch, device):
     batch = (b.to(device) for b in batch)
-    c_ids, q_ids, a_ids, start_positions, end_positions = batch
+    c_ids, q_ids, a_mask, start_mask, end_mask, start_positions, end_positions = batch
 
     # c_len = torch.sum(torch.sign(c_ids), 1)
     # max_c_len = torch.max(c_len)
@@ -98,4 +98,4 @@ def batch_to_device(batch, device):
     # max_q_len = torch.max(q_len)
     # q_ids = q_ids[:, :max_q_len]
 
-    return c_ids, q_ids, a_ids, start_positions, end_positions
+    return c_ids, q_ids, a_mask, start_mask, end_mask, start_positions, end_positions
