@@ -332,6 +332,11 @@ class BertQAGConditionalVae(pl.LightningModule):
         posterior_em = posterior_metrics["exact_match"]
         bleu = bleu * 100
 
+        log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
+        log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
+        with open(self.eval_metrics_log_file, "a") as f:
+            f.write(log_str + "\n\n")
+
         if posterior_em > self.best_em:
             self.best_em = posterior_em
             filename = os.path.join(
@@ -355,11 +360,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             import json
             json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
                        "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
-
-        log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
-        log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
-        with open(self.eval_metrics_log_file, "a") as f:
-            f.write(log_str + "\n\n")
 
     def training_epoch_end(self, outputs):
         if (self.current_epoch + 1) % self.save_frequency == 0:
