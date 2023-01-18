@@ -354,7 +354,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
             import json
             json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
-                       "latest_pri_em": prior_em, "latest_pri_f1": prior_f1,
                        "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
 
         log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
