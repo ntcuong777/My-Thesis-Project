@@ -367,6 +367,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
             example_idx = index_list[i]
+            print(example_idx)
             eval_feature = all_preprocessed_examples[example_idx]
             unique_id = int(eval_feature.unique_id)
 
