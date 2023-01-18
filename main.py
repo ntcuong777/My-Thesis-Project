@@ -40,6 +40,7 @@ def main(run_args):
     ckpt_path = args.checkpoint_file
     if ckpt_path is not None:
         model.load_from_checkpoint(ckpt_path, args=args)
+        model = model.to(args.device)
         model.evaluation(eval_dataloader)
     # full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=[eval_dataloader], ckpt_path=ckpt_path)
 
