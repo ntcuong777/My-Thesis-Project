@@ -376,10 +376,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             # debugging
             orig_q_ids = torch.tensor(eval_feature.q_ids, dtype=torch.long).to(q_ids.device)
             orig_c_ids = torch.tensor(eval_feature.c_ids, dtype=torch.long).to(c_ids.device)
-            print(q_ids[i, ...].size())
-            print(orig_q_ids.size())
-            print(q_ids[i, ...])
-            print(orig_q_ids)
+            # print(q_ids[i, ...].size())
+            # print(orig_q_ids.size())
+            # print(q_ids[i, ...])
+            # print(orig_q_ids)
             assert torch.abs(q_ids[i, ...] - orig_q_ids).sum() == 0
             assert torch.abs(c_ids[i, ...] - orig_c_ids).sum() == 0
 
