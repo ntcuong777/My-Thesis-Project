@@ -1,7 +1,6 @@
-import collections
 import json
 import logging
-import itertools
+import os
 from typing import Dict
 
 import torch
@@ -9,11 +8,10 @@ import torch.nn as nn
 import torch_optimizer as additional_optim
 import torch.optim as optim
 import pytorch_lightning as pl
-from transformers import BertConfig, BertTokenizer, BertModel
+from transformers import BertConfig, BertTokenizer
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
     freeze_neural_model, return_attention_mask,
-    return_inputs_length,
 )
 from infohcvae.model.losses import (
     GaussianKLLoss, CategoricalKLLoss,
@@ -27,6 +25,7 @@ from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
 from infohcvae.model.infomax import JensenShannonInfoMax, AnswerJensenShannonInfoMax
 from infohcvae.squad_utils import evaluate, extract_predictions_to_dict
 from evaluation.qgevalcap.eval import eval_qg
+from evaluation.training_eval import eval_vae
 
 __logger__ = logging.Logger(__name__)
 
@@ -35,6 +34,8 @@ class BertQAGConditionalVae(pl.LightningModule):
     def __init__(self, args):
         super().__init__()
         self.save_hyperparameters()
+
+        self.program_args = args
 
         self.debug = False
         if args.debug:
@@ -49,6 +50,11 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.optimizer_algorithm = args.optimizer
         self.loss_log_file = args.loss_log_file
         self.eval_metrics_log_file = args.eval_metrics_log_file
+        self.save_frequency = args.save_frequency
+        self.eval_frequency = args.eval_frequency
+        self.best_em = 0.0
+        self.best_f1 = 0.0
+        self.best_bleu = 0.0
 
         self.nzqdim = nzqdim = args.nzqdim
         self.nzadim = nzadim = args.nzadim
@@ -60,7 +66,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.lambda_mmd_a = args.lambda_mmd_a
         self.lambda_qa_info = args.lambda_qa_info
 
-        self.pooling_strategy = args.pooling_strategy
 
         """ Initialize model """
         base_model = args.base_model
@@ -127,7 +132,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         with open(args.dev_dir, "r") as f:
             dataset_json = json.load(f)
             self.dev_dataset = dataset_json["data"]
-        self.example_idx = -1  # to keep track of the current index of example
 
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -146,7 +150,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzqdim", type=int, default=64)
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
-        parser.add_argument("--pooling_strategy", type=str, default="first", choices=["max", "mean", "first"])
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
         parser.add_argument("--lambda_mmd_q", type=float, default=2000)
@@ -307,116 +310,70 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
 
+    def generate_qa_from_posterior(self, c_ids, q_ids, c_a_mask):
+        with torch.no_grad():
+            zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
+
+            """ Generation """
+            gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
+                self._generate_answer(c_ids, za)
+            question_ids = self._generate_question(c_ids, c_a_mask, zq)
+
+            return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
+
     """ Validation-related methods """
-    def validation_step(self, batch, batch_idx):
-        def generate_qa_from_posterior(q_ids, c_ids, c_a_mask):
-            with torch.no_grad():
-                zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
+    def training_epoch_end(self, outputs):
+        if (self.current_epoch + 1) % self.save_frequency == 0:
+            filename = os.path.join(
+                self.program_args.save_by_epoch_dir, "model-epoch-{:02d}".format(self.current_epoch + 1))
+            self.trainer.save_checkpoint(filename, weights_only=True)
 
-                """ Generation """
-                gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
-                    self._generate_answer(c_ids, za)
-                question_ids = self._generate_question(c_ids, c_a_mask, zq)
+        if (self.current_epoch + 1) % self.eval_frequency == 0:
+            val_dataloader = self.trainer.val_dataloaders[0]
+            all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
+            all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
 
-                return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
+            posterior_metrics, prior_metrics, bleu = eval_vae(
+                self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
+            posterior_f1 = posterior_metrics["f1"]
+            posterior_em = posterior_metrics["exact_match"]
+            prior_f1 = prior_metrics["f1"]
+            prior_em = prior_metrics["exact_match"]
+            bleu = bleu * 100
 
-        def to_string(index, tokenizer_):
-            tok_tokens = tokenizer_.convert_ids_to_tokens(index)
-            tok_text = " ".join(tok_tokens)
+            if posterior_em > self.best_em:
+                self.best_em = posterior_em
+                filename = os.path.join(
+                    self.program_args.best_model_dir,
+                    "model-{epoch:02d}-best_em-{em:.3f}".format(epoch=self.current_epoch + 1, em=self.best_em))
+                self.trainer.save_checkpoint(filename, weights_only=True)
+            if posterior_f1 > self.best_f1:
+                self.best_f1 = posterior_f1
+                filename = os.path.join(
+                    self.program_args.best_model_dir,
+                    "model-{epoch:02d}-best_f1-{f1:.3f}".format(epoch=self.current_epoch + 1, f1=self.best_f1))
+                self.trainer.save_checkpoint(filename, weights_only=True)
+            if bleu > self.best_bleu:
+                self.best_bleu = bleu
+                filename = os.path.join(
+                    self.program_args.best_model_dir,
+                    "model-{epoch:02d}-best_bleu-{bleu:.3f}".format(epoch=self.current_epoch + 1, bleu=self.best_bleu))
+                self.trainer.save_checkpoint(filename, weights_only=True)
 
-            # De-tokenize WordPieces that have been split off.
-            tok_text = tok_text.replace(tokenizer_.pad_token, "")
-            tok_text = tok_text.replace(tokenizer_.sep_token, "")
-            # tok_text = tok_text.replace(tokenizer.cls_token, "")
-            tok_text = tok_text.replace(" ##", "")
-            tok_text = tok_text.replace("##", "")
+            with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
+                import json
+                json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
+                           "latest_pri_em": prior_em, "latest_pri_f1": prior_f1,
+                           "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
 
-            # Clean whitespace
-            tok_text = tok_text.strip()
-            tok_text = " ".join(tok_text.split())
-            return tok_text
-
-        RawResult = collections.namedtuple("RawResult",
-                                           ["unique_id", "start_logits", "end_logits"])
-
-        tokenizer = self.tokenizer
-
-        posterior_qa_results = []
-        qg_results = {}
-        real_question_dict = {}
-
-        assert isinstance(self.trainer.val_dataloaders[0].dataset, CustomDataset), \
-            "ERROR: validation set is not constructed from `CustomDataset` class"
-
-        # only one validation set
-        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
-
-        q_ids, c_ids, a_mask, _, _, no_q_start_positions, no_q_end_positions = batch
-        batch_size = c_ids.size(0)
-        batch_q_ids = q_ids.cpu().tolist()
-
-        batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, batch_start_logits, batch_end_logits, \
-            = generate_qa_from_posterior(q_ids, c_ids, a_mask)
-
-        # Convert posterior tensors to Python list
-        batch_posterior_q_ids, batch_posterior_start, batch_posterior_end = \
-            batch_posterior_q_ids.cpu().tolist(), batch_posterior_start.cpu().tolist(), \
-                batch_posterior_end.cpu().tolist()
-
-        for i in range(batch_size):
-            self.example_idx += 1
-            posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
-            posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
-            eval_feature = all_preprocessed_examples[self.example_idx]
-            unique_id = int(eval_feature.unique_id)
-
-            real_question = to_string(batch_q_ids[i], tokenizer)
-            posterior_question = to_string(batch_posterior_q_ids[i], tokenizer)
-
-            qg_results[unique_id] = posterior_question
-            real_question_dict[unique_id] = real_question
-            posterior_qa_results.append(RawResult(unique_id=unique_id,
-                                                  start_logits=posterior_start_logits,
-                                                  end_logits=posterior_end_logits))
-
-        return {"posterior_qa": posterior_qa_results, "real_questions": real_question_dict, "qg_results": qg_results}
-
-    def validation_epoch_end(self, outputs: Dict):
-        # only one validation set
-        all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
-        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
-
-        posterior_qa_results = list(itertools.chain.from_iterable([out["posterior_qa"] for out in outputs]))
-        real_question_dict = {k: v for out in outputs for k, v in out["real_questions"].items()}
-        qg_results = {k: v for out in outputs for k, v in out["qg_results"].items()}
-
-        posterior_predictions = extract_predictions_to_dict(all_text_examples, all_preprocessed_examples,
-                                                            posterior_qa_results,
-                                                            n_best_size=20, max_answer_length=30, do_lower_case=True,
-                                                            verbose_logging=False, version_2_with_negative=False,
-                                                            null_score_diff_threshold=0, noq_position=True)
-        posterior_ret = evaluate(self.dev_dataset, posterior_predictions)
-        bleu = eval_qg(real_question_dict, qg_results)
-
-        metrics = {"f1": posterior_ret["f1"], "exact_match": posterior_ret["exact_match"], "bleu": bleu}
-        self.log_dict(metrics, prog_bar=True)
-
-        # Log to file
-        log_str = "f1: {:.4f} - em: {:.4f} - bleu: {:.4f}".format(
-            posterior_ret["f1"], posterior_ret["exact_match"], bleu)
-        with open(self.eval_metrics_log_file, "a") as f:
-            f.write(log_str + "\n\n")
-
-        self.example_idx = -1  # reset example index for next validation loop
+            log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
+            log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
+            with open(self.eval_metrics_log_file, "a") as f:
+                f.write(log_str + "\n\n")
 
     """ Optimizer """
     def configure_optimizers(self):
         params = filter(lambda p: p.requires_grad, self.parameters())
-
-        # Clip gradient
-        # clip_value = 5
-        # for p in self.parameters():
-        #     p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))
 
         if self.optimizer_algorithm == "sgd":
             optimizer = optim.SGD(params, lr=self.lr, momentum=0.9, nesterov=False)

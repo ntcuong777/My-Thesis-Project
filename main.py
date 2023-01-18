@@ -28,33 +28,17 @@ def main(run_args):
         train_dataloader = DataLoader(train_data, args.batch_size, shuffle=True)
         eval_dataloader = DataLoader(eval_data, args.batch_size, shuffle=True)
     else:
-        train_dataloader, train_data = get_squad_data_loader(tokenizer, run_args.train_dir,
-                                           shuffle=True, is_train_set=True, args=run_args)
-        eval_dataloader, eval_data = get_squad_data_loader(tokenizer, run_args.dev_dir,
-                                          shuffle=False, is_train_set=False, args=run_args)
+        train_dataloader, train_data = get_squad_data_loader(
+            tokenizer, run_args.train_dir, shuffle=True, is_train_set=True, args=run_args)
+        eval_dataloader, eval_data = get_squad_data_loader(
+            tokenizer, run_args.dev_dir, shuffle=False, is_train_set=False, args=run_args)
         torch.save(train_data, os.path.join(run_args.dataloader_dir, "train_data.pt"))
         torch.save(eval_data, os.path.join(run_args.dataloader_dir, "eval_data.pt"))
 
-    val_em_checkpoint_callback = ModelCheckpoint(dirpath=run_args.best_model_dir, save_top_k=1, monitor="exact_match",
-                                                 mode="max", filename="model-{epoch:02d}-best_em-{exact_match:.3f}",
-                                                 save_weights_only=True)
-    val_f1_checkpoint_callback = ModelCheckpoint(dirpath=run_args.best_model_dir, save_top_k=1, monitor="f1",
-                                                 mode="max", filename="model-{epoch:02d}-best_f1-{f1:.3f}",
-                                                 save_weights_only=True)
-    val_bleu_checkpoint_callback = ModelCheckpoint(dirpath=run_args.best_model_dir, save_top_k=1, monitor="bleu",
-                                                   mode="max", filename="model-{epoch:02d}-best_bleu-{f1:.3f}",
-                                                   save_weights_only=True)
-    train_loss_checkpoint_callback = ModelCheckpoint(dirpath=run_args.save_by_epoch_dir, monitor="total_loss",
-                                                     mode="min", filename="model-{epoch:02d}",
-                                                     every_n_epochs=run_args.save_frequency, save_weights_only=True,
-                                                     save_on_train_epoch_end=True)
-
     model = BertQAGConditionalVae(run_args)
-    callbacks = [val_em_checkpoint_callback, val_f1_checkpoint_callback, val_bleu_checkpoint_callback,
-                 val_bleu_checkpoint_callback, train_loss_checkpoint_callback]
-    full_trainer = Trainer.from_argparse_args(run_args, callbacks=callbacks)
+    full_trainer = Trainer.from_argparse_args(run_args)
     ckpt_path = args.checkpoint_file
-    full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader, ckpt_path=ckpt_path)
+    full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=[eval_dataloader], ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":
@@ -79,6 +63,7 @@ if __name__ == "__main__":
     parser.add_argument("--loss_log_file", default="./train_loss_info.log", type=str)
     parser.add_argument("--eval_metrics_log_file", default="./metrics_log.log", type=str)
     parser.add_argument("--save_frequency", default=5, type=int, help="save frequency by epoch")
+    parser.add_argument("--eval_frequency", default=5, type=int, help="save frequency by epoch")
     parser.add_argument("--detect_train_anomaly", dest="detect_train_anomaly", action="store_true", default=True)
 
     # Add model-specific args

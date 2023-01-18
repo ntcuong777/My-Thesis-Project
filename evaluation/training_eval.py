@@ -1,7 +1,8 @@
 import collections
 import json
 import os
-from transformers import MobileBertTokenizer
+import pytorch_lightning as pl
+from transformers import AutoTokenizer
 from tqdm import tqdm
 
 from evaluation.qgevalcap.eval import eval_qg
@@ -48,31 +49,25 @@ class Result(object):
         self.prior_z_prob = prior_z_prob
 
 
-def eval_vae(args, trainer, eval_data):
-    trainer.set_eval_mode(True)
+def eval_vae(args, model: pl.LightningModule, eval_loader, eval_text_samples, eval_processed_samples):
+    model.freeze() # freeze for inference
 
-    tokenizer = MobileBertTokenizer.from_pretrained(args.huggingface_model)
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     RawResult = collections.namedtuple("RawResult",
                                        ["unique_id", "start_logits", "end_logits"])
 
-    eval_loader, eval_examples, eval_features = eval_data
-
     posterior_qa_results = []
-    # prior_qa_result = []
     qg_results = {}
     res_dict = {}
     example_index = -1
 
     for batch in tqdm(eval_loader, desc="Eval iter", leave=False, position=4):
-        c_ids, q_ids, a_ids, _, _ = batch_to_device(batch, args.device)
+        c_ids, q_ids, c_a_mask, _, _, _, _ = batch_to_device(batch, args.device)
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
 
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, \
-            posterior_zq = trainer.generate_qa_from_posterior(c_ids, q_ids, a_ids)
-
-        batch_start_logits, batch_end_logits \
-            = trainer.generate_answer_logits_from_posterior(c_ids, q_ids, a_ids)
+            batch_start_logits, batch_end_logits = model.generate_qa_from_posterior(c_ids, q_ids, c_a_mask)
 
         # Convert posterior tensors to Python list
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end = \
@@ -83,7 +78,7 @@ def eval_vae(args, trainer, eval_data):
             example_index += 1
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
-            eval_feature = eval_features[example_index]
+            eval_feature = eval_processed_samples[example_index]
             unique_id = int(eval_feature.unique_id)
 
             real_question = to_string(batch_q_ids[i], tokenizer)
@@ -91,17 +86,13 @@ def eval_vae(args, trainer, eval_data):
 
             qg_results[unique_id] = posterior_question
             res_dict[unique_id] = real_question
-            posterior_qa_results.append(RawResult(unique_id=unique_id,
-                                                  start_logits=posterior_start_logits,
-                                                  end_logits=posterior_end_logits))
+            posterior_qa_results.append(RawResult(
+                unique_id=unique_id, start_logits=posterior_start_logits, end_logits=posterior_end_logits))
 
-    posterior_predictions = extract_predictions_to_dict(eval_examples, eval_features, posterior_qa_results,
-                                                        n_best_size=20,
-                                                        max_answer_length=30, do_lower_case=True,
-                                                        verbose_logging=False,
-                                                        version_2_with_negative=False,
-                                                        null_score_diff_threshold=0,
-                                                        noq_position=True)
+    posterior_predictions = extract_predictions_to_dict(
+        eval_text_samples, eval_processed_samples, posterior_qa_results,
+        n_best_size=20, max_answer_length=30, do_lower_case=True, verbose_logging=False,
+        version_2_with_negative=False, null_score_diff_threshold=0, noq_position=True)
 
     posterior_out_pred_file = os.path.join(args.model_dir, "posterior_pred.json")
     with open(posterior_out_pred_file, "w") as f:
@@ -114,5 +105,7 @@ def eval_vae(args, trainer, eval_data):
         posterior_predictions = json.load(prediction_file)
     posterior_ret = evaluate(dataset, posterior_predictions)
     bleu = eval_qg(res_dict, qg_results)
+
+    model.unfreeze() # unfreeze model for training
 
     return posterior_ret, bleu
