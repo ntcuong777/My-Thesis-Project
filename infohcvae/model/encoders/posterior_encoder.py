@@ -5,13 +5,16 @@ from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.custom.gated_self_attention import GatedAttention
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
+    return_attention_mask, return_inputs_length
 )
 
 
 class PosteriorEncoder(nn.Module):
-    def __init__(self, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
+    def __init__(self, embedding, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
                  nzqdim, nzadim, nza_values, dropout=0.0, pad_token_id=0):
         super(PosteriorEncoder, self).__init__()
+
+        self.embedding = embedding
 
         self.pad_token_id = pad_token_id
         self.nhidden = lstm_enc_nhidden
@@ -34,8 +37,15 @@ class PosteriorEncoder(nn.Module):
         self.zq_logvar_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
         self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values)
 
-    def forward(self, c_embeds, c_a_embeds, q_embeds, c_mask, q_mask, c_lengths, q_lengths):
+    def forward(self, c_ids, q_ids, a_mask):
+        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_lengths = return_inputs_length(c_mask)
+
+        q_mask = return_attention_mask(c_ids, self.pad_token_id)
+        q_lengths = return_inputs_length(c_mask)
+
         # question enc
+        q_embeds = self.embedding(q_ids)
         q_hidden_states, q_state = self.encoder(q_embeds, q_lengths.to("cpu"))
         q_hidden_states = self.shared_self_attention(q_hidden_states, attention_mask=q_mask)
         q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
@@ -45,6 +55,7 @@ class PosteriorEncoder(nn.Module):
         q_h = self.shared_luong_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
 
         # context enc
+        c_embeds = self.embedding(c_ids)
         c_hidden_states, c_state = self.encoder(c_embeds, c_lengths.to("cpu"))
         c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
@@ -54,6 +65,7 @@ class PosteriorEncoder(nn.Module):
         c_h = self.shared_luong_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         # context and answer enc
+        c_a_embeds = self.embedding(c_ids, a_mask, None)
         c_a_hidden_states, c_a_state = self.encoder(c_a_embeds, c_lengths.to("cpu"))
         c_a_hidden_states = self.shared_self_attention(c_a_hidden_states, attention_mask=c_mask)
         c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]

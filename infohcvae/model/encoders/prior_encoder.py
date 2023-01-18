@@ -5,13 +5,16 @@ from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.custom.gated_self_attention import GatedAttention
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
+    return_attention_mask, return_inputs_length
 )
 
 
 class PriorEncoder(nn.Module):
-    def __init__(self, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
+    def __init__(self, embedding, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
                  nzqdim, nzadim, nza_values, dropout=0, pad_token_id=0):
         super(PriorEncoder, self).__init__()
+
+        self.embedding = embedding
 
         self.pad_token_id = pad_token_id
 
@@ -33,7 +36,11 @@ class PriorEncoder(nn.Module):
         self.zq_logvar_linear = nn.Linear(2 * lstm_enc_nhidden, nzqdim)
         self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values)
 
-    def forward(self, c_embeds, c_mask, c_lengths):
+    def forward(self, c_ids):
+        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_lengths = return_inputs_length(c_mask)
+
+        c_embeds = self.embedding(c_ids)
         c_hidden_states, c_state = self.context_encoder(c_embeds, c_lengths.to("cpu"))
         c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
@@ -48,8 +55,6 @@ class PriorEncoder(nn.Module):
         zq = sample_gaussian(zq_mu, zq_logvar)
 
         mask = c_mask.unsqueeze(1)
-        # c_attned_by_zq = self.answer_zq_attention_layer_norm(self.answer_zq_attention(
-        #     zq.unsqueeze(1), c_hidden_states, c_hidden_states, mask)).squeeze(1)
         c_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         h = torch.cat([zq, c_attned_by_zq, c_h], dim=-1)

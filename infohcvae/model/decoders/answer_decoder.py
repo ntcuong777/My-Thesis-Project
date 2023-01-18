@@ -3,12 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.custom.gated_self_attention import GatedAttention
+from infohcvae.model.model_utils import (
+    return_attention_mask, return_inputs_length
+)
 
 
 class AnswerDecoder(nn.Module):
-    def __init__(self, d_model, nzadim, nza_values,
+    def __init__(self, embedding, d_model, nzadim, nza_values,
                  lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0):
         super(AnswerDecoder, self).__init__()
+
+        self.embedding = embedding
 
         self.nzadim = nzadim
         self.nza_values = nza_values
@@ -27,9 +32,13 @@ class AnswerDecoder(nn.Module):
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
-    def forward(self, c_embeds, c_mask, c_lengths, za, return_embeds=None):
-        _, max_c_len, _ = c_embeds.size()
+    def forward(self, c_ids, za, return_embeds=None):
+        _, max_c_len = c_ids.size()
 
+        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+        c_lengths = return_inputs_length(c_mask)
+
+        c_embeds = self.embedding(c_ids, c_mask)
         init_state = self._build_za_init_state(za, max_c_len)
         dec_inputs = torch.cat([c_embeds, init_state,
                                 c_embeds * init_state,
@@ -50,16 +59,18 @@ class AnswerDecoder(nn.Module):
 
         return masked_start_logits, masked_end_logits
 
-    def generate(self, c_embeds, c_mask, c_lengths, za=None, start_logits=None, end_logits=None):
+    def generate(self, c_ids, za=None, start_logits=None, end_logits=None):
         assert (start_logits is None and end_logits is None) or (start_logits is not None and end_logits is not None),\
             "`start_logits` and `end_logits` must be both provided or both empty"
         assert (start_logits is None and za is not None) or (start_logits is not None and za is None), \
             "cannot both provide logits and latent `za`, only <one> is accepted"
 
         if start_logits is None:
-            start_logits, end_logits = self.forward(c_embeds, c_mask, c_lengths, za)
+            start_logits, end_logits = self.forward(c_ids, za)
 
-        batch_size, max_c_len, _ = c_embeds.size()
+        batch_size, max_c_len = c_ids.size()
+
+        c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
         mask = torch.matmul(c_mask.unsqueeze(2).float(), c_mask.unsqueeze(1).float())
         mask = torch.triu(mask) == 0
