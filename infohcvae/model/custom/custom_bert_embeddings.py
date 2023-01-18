@@ -26,6 +26,9 @@ class CustomBertEmbedding(nn.Module):
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
         position_embeddings = self.position_embeddings(position_ids)
 
+        print(words_embeddings.size())
+        print(token_type_embeddings.size())
+        print(position_embeddings.size())
         embeddings = words_embeddings + token_type_embeddings + position_embeddings
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
