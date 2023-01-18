@@ -363,7 +363,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             batch_posterior_q_ids.cpu().tolist(), batch_posterior_start.cpu().tolist(), \
                 batch_posterior_end.cpu().tolist()
 
-        example_idx = batch_idx * self.program_args.batch_size # starting idx of this
+        example_idx = batch_idx * self.program_args.batch_size - 1 # starting idx of this batch
         for i in range(batch_size):
             example_idx += 1
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
