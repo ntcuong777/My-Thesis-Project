@@ -123,7 +123,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         qa_discriminator = nn.Bilinear(d_model, decoder_q_nhidden, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
-        # self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
+        self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
 
         """ Validation """
         with open(args.dev_dir, "r") as f:
@@ -193,6 +193,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
         out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask)
 
+        c_mask = return_attention_mask(c_ids, self.pad_token_id)
+
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
@@ -254,9 +256,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-        # loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
-        #     a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
-        loss_ac_info = torch.tensor(0.0)
+        # loss_ac_info = torch.tensor(0.0)
+        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
+            a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
 
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 
