@@ -322,6 +322,49 @@ class BertQAGConditionalVae(pl.LightningModule):
             return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 
     """ Validation-related methods """
+    def evaluation(self):
+        val_dataloader = self.trainer.val_dataloaders[0]
+        all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
+        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
+
+        posterior_metrics, prior_metrics, bleu = eval_vae(
+            self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
+        posterior_f1 = posterior_metrics["f1"]
+        posterior_em = posterior_metrics["exact_match"]
+        prior_f1 = prior_metrics["f1"]
+        prior_em = prior_metrics["exact_match"]
+        bleu = bleu * 100
+
+        if posterior_em > self.best_em:
+            self.best_em = posterior_em
+            filename = os.path.join(
+                self.program_args.best_model_dir,
+                "model-{epoch:02d}-best_em-{em:.3f}".format(epoch=self.current_epoch + 1, em=self.best_em))
+            self.trainer.save_checkpoint(filename, weights_only=True)
+        if posterior_f1 > self.best_f1:
+            self.best_f1 = posterior_f1
+            filename = os.path.join(
+                self.program_args.best_model_dir,
+                "model-{epoch:02d}-best_f1-{f1:.3f}".format(epoch=self.current_epoch + 1, f1=self.best_f1))
+            self.trainer.save_checkpoint(filename, weights_only=True)
+        if bleu > self.best_bleu:
+            self.best_bleu = bleu
+            filename = os.path.join(
+                self.program_args.best_model_dir,
+                "model-{epoch:02d}-best_bleu-{bleu:.3f}".format(epoch=self.current_epoch + 1, bleu=self.best_bleu))
+            self.trainer.save_checkpoint(filename, weights_only=True)
+
+        with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
+            import json
+            json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
+                       "latest_pri_em": prior_em, "latest_pri_f1": prior_f1,
+                       "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
+
+        log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
+        log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
+        with open(self.eval_metrics_log_file, "a") as f:
+            f.write(log_str + "\n\n")
+
     def training_epoch_end(self, outputs):
         if (self.current_epoch + 1) % self.save_frequency == 0:
             filename = os.path.join(
@@ -329,47 +372,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             self.trainer.save_checkpoint(filename, weights_only=True)
 
         if (self.current_epoch + 1) % self.eval_frequency == 0:
-            val_dataloader = self.trainer.val_dataloaders[0]
-            all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
-            all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
-
-            posterior_metrics, prior_metrics, bleu = eval_vae(
-                self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
-            posterior_f1 = posterior_metrics["f1"]
-            posterior_em = posterior_metrics["exact_match"]
-            prior_f1 = prior_metrics["f1"]
-            prior_em = prior_metrics["exact_match"]
-            bleu = bleu * 100
-
-            if posterior_em > self.best_em:
-                self.best_em = posterior_em
-                filename = os.path.join(
-                    self.program_args.best_model_dir,
-                    "model-{epoch:02d}-best_em-{em:.3f}".format(epoch=self.current_epoch + 1, em=self.best_em))
-                self.trainer.save_checkpoint(filename, weights_only=True)
-            if posterior_f1 > self.best_f1:
-                self.best_f1 = posterior_f1
-                filename = os.path.join(
-                    self.program_args.best_model_dir,
-                    "model-{epoch:02d}-best_f1-{f1:.3f}".format(epoch=self.current_epoch + 1, f1=self.best_f1))
-                self.trainer.save_checkpoint(filename, weights_only=True)
-            if bleu > self.best_bleu:
-                self.best_bleu = bleu
-                filename = os.path.join(
-                    self.program_args.best_model_dir,
-                    "model-{epoch:02d}-best_bleu-{bleu:.3f}".format(epoch=self.current_epoch + 1, bleu=self.best_bleu))
-                self.trainer.save_checkpoint(filename, weights_only=True)
-
-            with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
-                import json
-                json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
-                           "latest_pri_em": prior_em, "latest_pri_f1": prior_f1,
-                           "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
-
-            log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
-            log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
-            with open(self.eval_metrics_log_file, "a") as f:
-                f.write(log_str + "\n\n")
+            self.evaluation()
 
     """ Optimizer """
     def configure_optimizers(self):
