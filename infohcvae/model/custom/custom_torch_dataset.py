@@ -42,7 +42,7 @@ class CustomDataset(Dataset):
         no_q_end_positions = self.all_no_q_end_positions[index]
 
         return q_ids.to(self.to_device), c_ids.to(self.to_device),\
-            a_mask.to(self.to_device), start_mask, end_mask,\
+            a_mask.to(self.to_device), start_mask.to(self.to_device), end_mask.to(self.to_device),\
             no_q_start_positions.to(self.to_device), no_q_end_positions.to(self.to_device)
 
     def __len__(self):
