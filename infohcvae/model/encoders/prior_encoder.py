@@ -27,8 +27,8 @@ class PriorEncoder(nn.Module):
         self.context_encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
                                           num_layers=lstm_enc_nlayers, dropout=dropout,
                                           bidirectional=True)
-        # self.shared_self_attention = GatedAttention(hidden_size=lstm_enc_nhidden * 2)
-        # self.shared_luong_attention = LuongAttention(lstm_enc_nhidden * 2, lstm_enc_nhidden * 2)
+        self.shared_self_attention = GatedAttention(hidden_size=lstm_enc_nhidden * 2)
+        self.shared_luong_attention = LuongAttention(lstm_enc_nhidden * 2, lstm_enc_nhidden * 2)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -42,12 +42,12 @@ class PriorEncoder(nn.Module):
 
         c_embeds = self.embedding(c_ids)
         c_hidden_states, c_state = self.context_encoder(c_embeds, c_lengths.to("cpu"))
-        # c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
+        c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # the final forward and reverse hidden states should attend to the whole sentence
-        # mask = c_mask.unsqueeze(1)
-        # c_h = self.shared_luong_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
+        mask = c_mask.unsqueeze(1)
+        c_h = self.shared_luong_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(c_h)
         zq_logvar = self.zq_logvar_linear(c_h)
