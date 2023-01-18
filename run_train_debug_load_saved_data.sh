@@ -1,2 +1,2 @@
 # remember to pass the batch size to this model as first arg, num_workers as 2nd flag
-python main.py --checkpoint_file=/workspace/model.pt --num_workers="$2" --accelerator=gpu --devices=auto --load_saved_dataloader --save_frequency=1 --eval_frequency=1 --max_epochs=20 --batch_size="$1" --fast_dev_run=True --log_every_n_steps=30 --strategy=ddp --default_root_dir=./save/logs
+python main.py --checkpoint_file=/workspace/model.ckpt --num_workers="$2" --accelerator=gpu --devices=auto --load_saved_dataloader --save_frequency=1 --eval_frequency=1 --max_epochs=20 --batch_size="$1" --fast_dev_run=True --log_every_n_steps=30 --strategy=ddp --default_root_dir=./save/logs
