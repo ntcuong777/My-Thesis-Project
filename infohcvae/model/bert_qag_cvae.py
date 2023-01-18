@@ -166,14 +166,6 @@ class BertQAGConditionalVae(pl.LightningModule):
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-        c_lengths = return_inputs_length(c_mask)
-        c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
-        c_a_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)[0]
-        q_mask = return_attention_mask(q_ids, self.pad_token_id)
-        q_lengths = return_inputs_length(q_mask)
-        q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
-
         posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
             posterior_za, posterior_za_logits = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
