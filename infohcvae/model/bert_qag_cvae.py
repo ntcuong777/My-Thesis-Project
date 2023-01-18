@@ -354,6 +354,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         index_list, q_ids, c_ids, a_mask, _, _, no_q_start_positions, no_q_end_positions = batch
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
+        index_list = index_list[0].cpu().tolist()
 
         print(len(index_list))
         print(index_list)
