@@ -10,10 +10,12 @@ from infohcvae.model.model_utils import (
 
 class AnswerDecoder(nn.Module):
     def __init__(self, embedding, d_model, nzadim, nza_values,
-                 lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0):
+                 lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0, pad_token_id=0):
         super(AnswerDecoder, self).__init__()
 
         self.embedding = embedding
+
+        self.pad_token_id = pad_token_id
 
         self.nzadim = nzadim
         self.nza_values = nza_values

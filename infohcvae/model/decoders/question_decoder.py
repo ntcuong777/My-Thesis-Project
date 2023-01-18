@@ -12,12 +12,13 @@ from infohcvae.model.model_utils import (
 
 class QuestionDecoder(nn.Module):
     def __init__(self, word_embeddings, context_embedding, nzqdim,
-                 d_model, lstm_dec_nhidden, lstm_dec_nlayers, sos_id, eos_id, vocab_size,
-                 dropout=0.0, max_q_len=64):
+                 d_model, lstm_dec_nhidden, lstm_dec_nlayers, sos_id, eos_id,
+                 vocab_size, dropout=0.0, max_q_len=64, pad_token_id=0):
         super(QuestionDecoder, self).__init__()
 
         self.sos_id = sos_id
         self.eos_id = eos_id
+        self.pad_token_id = pad_token_id
         self.d_model = d_model
         self.embedding = word_embeddings
         self.dec_nhidden = lstm_dec_nhidden
