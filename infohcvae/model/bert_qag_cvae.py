@@ -371,6 +371,12 @@ class BertQAGConditionalVae(pl.LightningModule):
             eval_feature = all_preprocessed_examples[example_idx]
             unique_id = int(eval_feature.unique_id)
 
+            # debugging
+            orig_q_ids = torch.tensor(eval_feature.q_ids, dtype=torch.long)
+            orig_c_ids = torch.tensor(eval_feature.c_ids, dtype=torch.long)
+            assert torch.abs(q_ids[i, ...] - orig_q_ids).sum() == 0
+            assert torch.abs(c_ids[i, ...] - orig_c_ids).sum() == 0
+
             real_question = to_string(batch_q_ids[i], tokenizer)
             posterior_question = to_string(batch_posterior_q_ids[i], tokenizer)
 
