@@ -17,7 +17,7 @@ class AnswerDecoder(nn.Module):
         self.answer_decoder = CustomLSTM(input_size=4 * d_model, hidden_size=lstm_dec_nhidden,
                                          num_layers=lstm_dec_nlayers, dropout=dropout,
                                          bidirectional=True)
-        self.self_attention = SelfAttention(2 * lstm_dec_nhidden, num_attention_heads=12)
+        # self.self_attention = SelfAttention(2 * lstm_dec_nhidden, num_attention_heads=12)
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
@@ -37,7 +37,7 @@ class AnswerDecoder(nn.Module):
                                dim=-1)
         dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths.to("cpu"))
         # skip connection
-        dec_outputs = self.self_attention(dec_outputs, attention_mask=c_mask)
+        # dec_outputs = self.self_attention(dec_outputs, attention_mask=c_mask)
 
         start_logits = self.start_linear(dec_outputs).squeeze(-1)
         end_logits = self.end_linear(dec_outputs).squeeze(-1)

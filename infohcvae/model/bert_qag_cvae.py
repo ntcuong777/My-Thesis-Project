@@ -267,8 +267,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
-            a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
+        # loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
+        #     a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
+        loss_ac_info = torch.tensor(0.0)
 
         total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
 
@@ -378,7 +379,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         # only one validation set
         all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
 
-        _, q_ids, c_ids, a_mask, _, no_q_start_positions, no_q_end_positions = batch
+        q_ids, c_ids, a_mask, _, _, no_q_start_positions, no_q_end_positions = batch
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
 
@@ -439,6 +440,12 @@ class BertQAGConditionalVae(pl.LightningModule):
     """ Optimizer """
     def configure_optimizers(self):
         params = filter(lambda p: p.requires_grad, self.parameters())
+
+        # Clip gradient
+        clip_value = 5
+        for p in params:
+            p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))
+
         if self.optimizer_algorithm == "sgd":
             optimizer = optim.SGD(params, lr=self.lr, momentum=0.9, nesterov=False)
         elif self.optimizer_algorithm == "adam":
