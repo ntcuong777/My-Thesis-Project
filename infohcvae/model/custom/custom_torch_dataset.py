@@ -20,7 +20,7 @@ class CustomDataset(Dataset):
         self.all_end_mask = all_end_mask
         self.all_no_q_start_positions = all_no_q_start_positions
         self.all_no_q_end_positions = all_no_q_end_positions
-        self.indices = [[i] for i in range(self.num_items)]
+        self.indices = [i for i in range(self.num_items)]
 
         self.to_device = to_device
 
