@@ -8,8 +8,10 @@ from infohcvae.model.model_utils import (
 
 
 class CustomContextEncoderForQG(nn.Module):
-    def __init__(self, embedding, d_model, lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0):
+    def __init__(self, embedding, d_model, lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0, pad_token_id=0):
         super(CustomContextEncoderForQG, self).__init__()
+
+        self.pad_token_id = pad_token_id
 
         self.embedding = embedding
         self.context_lstm = CustomLSTM(input_size=d_model, hidden_size=lstm_dec_nhidden,

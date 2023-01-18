@@ -28,7 +28,8 @@ class QuestionDecoder(nn.Module):
         self.max_q_len = max_q_len
 
         self.context_encoder = CustomContextEncoderForQG(
-            context_embedding, d_model, lstm_dec_nhidden // 2, lstm_dec_nlayers, dropout)
+            context_embedding, d_model, lstm_dec_nhidden // 2, lstm_dec_nlayers,
+            dropout=dropout, pad_token_id=pad_token_id)
 
         self.question_lstm = CustomLSTM(input_size=d_model, hidden_size=lstm_dec_nhidden,
                                         num_layers=lstm_dec_nlayers, dropout=dropout,
