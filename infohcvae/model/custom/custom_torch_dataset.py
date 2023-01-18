@@ -20,6 +20,7 @@ class CustomDataset(Dataset):
         self.all_end_mask = all_end_mask
         self.all_no_q_start_positions = all_no_q_start_positions
         self.all_no_q_end_positions = all_no_q_end_positions
+        self.indices = [[i] for i in range(self.num_items)]
 
         self.to_device = to_device
 
@@ -41,7 +42,7 @@ class CustomDataset(Dataset):
         no_q_start_positions = self.all_no_q_start_positions[index]
         no_q_end_positions = self.all_no_q_end_positions[index]
 
-        return q_ids.to(self.to_device), c_ids.to(self.to_device),\
+        return self.indices[index], q_ids.to(self.to_device), c_ids.to(self.to_device),\
             a_mask.to(self.to_device), start_mask.to(self.to_device), end_mask.to(self.to_device),\
             no_q_start_positions.to(self.to_device), no_q_end_positions.to(self.to_device)
 

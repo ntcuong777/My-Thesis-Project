@@ -190,8 +190,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return out
 
     def training_step(self, batch, batch_idx):
-        q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
-        c_mask = return_attention_mask(c_ids)
+        _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
         out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask)
 
         posterior_za, posterior_za_logits = out["posterior_za_out"]
@@ -351,9 +350,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         # only one validation set
         all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
 
-        q_ids, c_ids, a_mask, _, _, no_q_start_positions, no_q_end_positions = batch
+        index_list, q_ids, c_ids, a_mask, _, _, no_q_start_positions, no_q_end_positions = batch
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
+        index_list = index_list.cpu().tolist() # 2d list with size (batch_size, 1)
 
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, batch_start_logits, batch_end_logits, \
             = generate_qa_from_posterior(q_ids, c_ids, a_mask)
@@ -363,11 +363,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             batch_posterior_q_ids.cpu().tolist(), batch_posterior_start.cpu().tolist(), \
                 batch_posterior_end.cpu().tolist()
 
-        example_idx = batch_idx * self.program_args.batch_size - 1 # starting idx of this batch
         for i in range(batch_size):
-            example_idx += 1
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
+            example_idx = index_list[i][0]
             eval_feature = all_preprocessed_examples[example_idx]
             unique_id = int(eval_feature.unique_id)
 
