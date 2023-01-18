@@ -442,9 +442,9 @@ class BertQAGConditionalVae(pl.LightningModule):
         params = filter(lambda p: p.requires_grad, self.parameters())
 
         # Clip gradient
-        clip_value = 5
-        for p in params:
-            p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))
+        # clip_value = 5
+        # for p in params:
+        #     p.register_hook(lambda grad: torch.clamp(grad, -clip_value, clip_value))
 
         if self.optimizer_algorithm == "sgd":
             optimizer = optim.SGD(params, lr=self.lr, momentum=0.9, nesterov=False)
