@@ -372,8 +372,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             unique_id = int(eval_feature.unique_id)
 
             # debugging
-            orig_q_ids = torch.tensor(eval_feature.q_ids, dtype=torch.long)
-            orig_c_ids = torch.tensor(eval_feature.c_ids, dtype=torch.long)
+            orig_q_ids = torch.tensor(eval_feature.q_ids, dtype=torch.long).to(q_ids.device)
+            orig_c_ids = torch.tensor(eval_feature.c_ids, dtype=torch.long).to(c_ids.device)
             assert torch.abs(q_ids[i, ...] - orig_q_ids).sum() == 0
             assert torch.abs(c_ids[i, ...] - orig_c_ids).sum() == 0
 
