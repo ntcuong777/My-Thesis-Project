@@ -322,10 +322,9 @@ class BertQAGConditionalVae(pl.LightningModule):
             return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 
     """ Validation-related methods """
-    def evaluation(self):
-        val_dataloader = self.trainer.val_dataloaders[0]
-        all_text_examples = self.trainer.val_dataloaders[0].dataset.all_text_examples
-        all_preprocessed_examples = self.trainer.val_dataloaders[0].dataset.all_preprocessed_examples
+    def evaluation(self, val_dataloader):
+        all_text_examples = val_dataloader.dataset.all_text_examples
+        all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
 
         posterior_metrics, prior_metrics, bleu = eval_vae(
             self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
@@ -372,7 +371,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             self.trainer.save_checkpoint(filename, weights_only=True)
 
         if (self.current_epoch + 1) % self.eval_frequency == 0:
-            self.evaluation()
+            self.evaluation(self.trainer.val_dataloaders[0])
 
     """ Optimizer """
     def configure_optimizers(self):
