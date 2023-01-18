@@ -355,7 +355,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
 
-        print(index_list.size())
+        print(len(index_list))
+        print(index_list)
 
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, batch_start_logits, batch_end_logits, \
             = generate_qa_from_posterior(q_ids, c_ids, a_mask)
