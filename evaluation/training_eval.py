@@ -59,12 +59,12 @@ def eval_vae(args, model: pl.LightningModule, eval_loader, eval_text_samples, ev
     posterior_qa_results = []
     qg_results = {}
     res_dict = {}
-    example_index = -1
 
     for batch in tqdm(eval_loader, desc="Eval iter", leave=False, position=4):
-        _, q_ids, c_ids, c_a_mask, _, _, _, _ = batch
+        index_list, q_ids, c_ids, c_a_mask, _, _, _, _ = batch
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
+        index_list = index_list[0].cpu().tolist()
 
         batch_posterior_q_ids, batch_posterior_start, batch_posterior_end, \
             batch_start_logits, batch_end_logits = model.generate_qa_from_posterior(c_ids, q_ids, c_a_mask)
@@ -75,10 +75,10 @@ def eval_vae(args, model: pl.LightningModule, eval_loader, eval_text_samples, ev
             batch_posterior_start.cpu().tolist(), batch_posterior_end.cpu().tolist()
 
         for i in range(batch_size):
-            example_index += 1
             posterior_start_logits = batch_start_logits[i].detach().cpu().tolist()
             posterior_end_logits = batch_end_logits[i].detach().cpu().tolist()
-            eval_feature = eval_processed_samples[example_index]
+            example_idx = index_list[i]
+            eval_feature = eval_processed_samples[example_idx]
             unique_id = int(eval_feature.unique_id)
 
             real_question = to_string(batch_q_ids[i], tokenizer)
