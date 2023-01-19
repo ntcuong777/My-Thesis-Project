@@ -36,7 +36,7 @@ class QuestionDecoder(nn.Module):
         self.question_lstm = CustomLSTM(input_size=d_model, hidden_size=lstm_dec_nhidden,
                                         num_layers=lstm_dec_nlayers, dropout=dropout,
                                         bidirectional=False)
-        self.question_self_attention = GatedAttention(lstm_dec_nhidden)
+        # self.question_self_attention = GatedAttention(lstm_dec_nhidden)
 
         self.q_init_hidden_linear = nn.Linear(nzqdim, lstm_dec_nlayers * lstm_dec_nhidden)
         self.q_init_cell_linear = nn.Linear(nzqdim, lstm_dec_nlayers * lstm_dec_nhidden)
@@ -77,8 +77,8 @@ class QuestionDecoder(nn.Module):
         # question dec
         q_embeds = self.embedding(q_ids)
         q_outputs, _ = self.question_lstm(q_embeds, q_lengths.to("cpu"), init_state)
-        causal_q_mask = return_causal_mask_from_position_mask(q_mask)
-        q_outputs = self.question_self_attention(q_outputs, causal_q_mask)
+        # causal_q_mask = return_causal_mask_from_position_mask(q_mask)
+        # q_outputs = self.question_self_attention(q_outputs, causal_q_mask)
 
         logits, q_last_outputs = self.get_question_logits_from_out_hidden_states(
             c_ids, c_mask, q_ids, q_mask, q_outputs, c_a_outputs)
@@ -152,7 +152,7 @@ class QuestionDecoder(nn.Module):
         q_embeddings = self.embedding(input_ids=q_ids, token_type_ids=token_type_ids, position_ids=position_ids)
 
         state = self._build_zq_init_state(zq)
-        prev_q_outputs = None
+        # prev_q_outputs = None
 
         # unroll
         all_q_ids = list()
@@ -160,13 +160,13 @@ class QuestionDecoder(nn.Module):
         for _ in range(self.max_q_len - 1):
             position_ids = position_ids + 1
             q_outputs, state = self.question_lstm(q_embeddings, q_lengths.to("cpu"), state)
-            if prev_q_outputs is not None:
-                present_q_outputs = torch.cat([prev_q_outputs, q_outputs], dim=1) # concat along seq_len dimension
-                causal_q_mask = return_causal_mask_from_sentence_embeds(present_q_outputs)
-                # take only the last element of the sentence which corresponds to `q_outputs`, shape = (N, 1, nhidden)
-                q_outputs = self.question_self_attention(present_q_outputs, causal_q_mask)[:, -1, :].unsqueeze(1)
-
-                prev_q_outputs = present_q_outputs # save outputs for future attention
+            # if prev_q_outputs is not None:
+            #     present_q_outputs = torch.cat([prev_q_outputs, q_outputs], dim=1) # concat along seq_len dimension
+            #     causal_q_mask = return_causal_mask_from_sentence_embeds(present_q_outputs)
+            #     # take only the last element of the sentence which corresponds to `q_outputs`, shape = (N, 1, nhidden)
+            #     q_outputs = self.question_self_attention(present_q_outputs, causal_q_mask)[:, -1, :].unsqueeze(1)
+            #
+            #     prev_q_outputs = present_q_outputs # save outputs for future attention
 
             logits, last_q_outputs = self.get_question_logits_from_out_hidden_states(
                 c_ids, c_mask, q_ids, torch.ones_like(q_ids, dtype=torch.float), q_outputs, c_a_outputs)
