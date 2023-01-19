@@ -35,12 +35,12 @@ def main(run_args):
         torch.save(train_data, os.path.join(run_args.dataloader_dir, "train_data.pt"))
         torch.save(eval_data, os.path.join(run_args.dataloader_dir, "eval_data.pt"))
 
-    model = BertQAGConditionalVae(run_args, eval_dataloader=eval_dataloader)
+    model = BertQAGConditionalVae(run_args)
     full_trainer = Trainer.from_argparse_args(run_args)
     ckpt_path = args.checkpoint_file
     if ckpt_path is not None:
-        model.load_from_checkpoint(ckpt_path, args=args, eval_dataloader=eval_dataloader)
-    full_trainer.fit(model, train_dataloaders=train_dataloader)
+        model.load_from_checkpoint(ckpt_path, args=run_args)
+    full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader)
 
 
 if __name__ == "__main__":
@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    torch.autograd.set_detect_anomaly(False)
+    torch.autograd.set_detect_anomaly(args.detect_train_anomaly)
     torch.set_float32_matmul_precision('high')
 
     if args.fast_dev_run:

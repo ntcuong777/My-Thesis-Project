@@ -29,12 +29,11 @@ __logger__ = logging.Logger(__name__)
 
 
 class BertQAGConditionalVae(pl.LightningModule):
-    def __init__(self, args, eval_dataloader=None):
+    def __init__(self, args):
         super().__init__()
         self.save_hyperparameters()
 
         self.program_args = args
-        self.eval_dataloader = eval_dataloader
 
         self.debug = False
         if args.debug:
@@ -376,7 +375,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             self.trainer.save_checkpoint(filename, weights_only=True)
 
         if (self.current_epoch + 1) % self.program_args.eval_frequency == 0 and self.eval_dataloader is not None:
-            self.evaluation(self.eval_dataloaders)
+            self.evaluation(self.trainer.val_dataloaders[0])
+
+    def validation_step(self, batch, batch_idx):
+        pass # nothing here
 
     """ Optimizer """
     def configure_optimizers(self):
