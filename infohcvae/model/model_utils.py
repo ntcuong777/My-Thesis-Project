@@ -23,7 +23,9 @@ def return_causal_mask_from_position_mask(position_attention_mask):
     """
     batch_size, seq_len = position_attention_mask.size()
     pairwise_attention_mask = torch.matmul(position_attention_mask.unsqueeze(2), position_attention_mask.unsqueeze(1))
+    print(pairwise_attention_mask.size())
     causal_mask = torch.tril(pairwise_attention_mask).to(position_attention_mask.device)
+    print(causal_mask.size())
     return causal_mask.view(1, seq_len, seq_len).expand(batch_size, -1, -1)
 
 
