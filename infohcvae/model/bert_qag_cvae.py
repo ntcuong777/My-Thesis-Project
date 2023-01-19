@@ -330,12 +330,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         all_text_examples = val_dataloader.dataset.all_text_examples
         all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
 
-        posterior_metrics, prior_metrics, bleu = eval_vae(
+        posterior_metrics, bleu = eval_vae(
             self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
         posterior_f1 = posterior_metrics["f1"]
         posterior_em = posterior_metrics["exact_match"]
-        prior_f1 = prior_metrics["f1"]
-        prior_em = prior_metrics["exact_match"]
         bleu = bleu * 100
 
         if posterior_em > self.best_em:
@@ -360,7 +358,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
             import json
             json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
-                       "latest_pri_em": prior_em, "latest_pri_f1": prior_f1,
                        "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
 
         log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
