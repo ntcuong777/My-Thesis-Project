@@ -374,7 +374,7 @@ class BertQAGConditionalVae(pl.LightningModule):
                 self.program_args.save_by_epoch_dir, "model-epoch-{:02d}".format(self.current_epoch + 1))
             self.trainer.save_checkpoint(filename, weights_only=True)
 
-        if (self.current_epoch + 1) % self.program_args.eval_frequency == 0 and self.eval_dataloader is not None:
+        if (self.current_epoch + 1) % self.program_args.eval_frequency == 0:
             self.evaluation(self.trainer.val_dataloaders[0])
 
     def validation_step(self, batch, batch_idx):
