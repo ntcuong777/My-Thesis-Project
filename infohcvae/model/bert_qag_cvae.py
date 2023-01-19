@@ -119,7 +119,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         qa_discriminator = nn.Bilinear(d_model, decoder_q_nhidden, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
-        self.answer_span_infomax = AnswerJensenShannonInfoMax(2 * decoder_a_nhidden)
 
         self.best_em = self.best_f1 = self.best_bleu = 0.0
 
@@ -253,11 +252,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
-        # loss_ac_info = torch.tensor(0.0)
-        loss_ac_info = self.lambda_qa_info * self.answer_span_infomax(
-            a_dec_outputs, a_mask, start_mask, end_mask, c_mask)
 
-        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_ac_info + loss_mmd
+        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_mmd
 
         current_losses = {
             "total_loss": total_loss,
@@ -268,7 +264,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             "loss_za_mmd": loss_za_mmd,
             "loss_kl": loss_kl,
             "loss_qa_info": loss_qa_info,
-            "loss_ac_info": loss_ac_info,
         }
         return current_losses
 
