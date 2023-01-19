@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    torch.autograd.set_detect_anomaly(args.detect_train_anomaly)
+    torch.autograd.set_detect_anomaly(False)
     torch.set_float32_matmul_precision('high')
 
     if args.fast_dev_run:
