@@ -53,8 +53,8 @@ class AnswerDecoder(nn.Module):
         end_logits = self.end_linear(dec_outputs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
-        masked_start_logits = start_logits.masked_fill(start_end_mask, -1e9)
-        masked_end_logits = end_logits.masked_fill(start_end_mask, -1e9)
+        masked_start_logits = start_logits.masked_fill(start_end_mask, -3e4)
+        masked_end_logits = end_logits.masked_fill(start_end_mask, -3e4)
 
         if return_embeds is not None and return_embeds:
             return masked_start_logits, masked_end_logits, dec_outputs

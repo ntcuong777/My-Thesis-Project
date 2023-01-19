@@ -13,7 +13,7 @@ class ScaledDotProductAttention(nn.Module):
         dk = query.size()[-1] # query hidden_size
         scores = query.matmul(key.transpose(-2, -1)) / math.sqrt(dk) # scores = (N, query_len, kv_len)
         if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
+            scores = scores.masked_fill(mask == 0, -3e4)
         attention = F.softmax(scores, dim=-1)
         return attention.matmul(value) # (N, query_len, kv_hidden)
 
