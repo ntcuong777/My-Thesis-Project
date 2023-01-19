@@ -11,10 +11,16 @@ class GatedAttention(nn.Module):
         self.gate = nn.Linear(2 * hidden_size, hidden_size, bias=False)
 
     def forward(self, hidden_states, attention_mask):
-        mask = torch.matmul(attention_mask.unsqueeze(2), attention_mask.unsqueeze(1))
+        extended_attention_mask = attention_mask
+        if len(attention_mask.size()) == 2: # mask shape = (N, seq_len) => expand to attention matrix mask
+            extended_attention_mask = torch.matmul(attention_mask.unsqueeze(2), attention_mask.unsqueeze(1))
+        else:
+            assert len(attention_mask.size()) == 3, \
+                "Wrong number of dimension of `attention_mask`, " + \
+                "the shape should either be (N, seq_len) or (N, seq_len, seq_len) where N is the batch size"
 
         # gated attention mechanism
-        attned_states = self.context_attention(hidden_states, hidden_states, mask)
+        attned_states = self.context_attention(hidden_states, hidden_states, extended_attention_mask)
         hs_concat = torch.cat([hidden_states, attned_states], dim=2)
         hs_fused = self.fusion(hs_concat).tanh()
         hs_gate = self.gate(hs_concat).sigmoid()

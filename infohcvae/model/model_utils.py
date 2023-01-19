@@ -6,6 +6,27 @@ import numpy as np
 from math import pi, sqrt, exp
 
 
+def return_causal_mask_from_sentence_embeds(sentence_embeds):
+    """Generate the mask that only uses history data.
+    :param sentence_embeds: Input tensor, shape = (N, seq_len, hidden_size).
+    :return: The mask.
+    """
+    batch_size, seq_len, _ = sentence_embeds.size()
+    causal_mask = torch.tril(torch.ones(seq_len, seq_len)).to(sentence_embeds.device)
+    return causal_mask.view(1, seq_len, seq_len).expand(batch_size, -1, -1)
+
+
+def return_causal_mask_from_position_mask(position_attention_mask):
+    """Generate the mask that only uses history data.
+    :param position_attention_mask: Input mask indicating which position should be attended to, shape = (N, seq_len).
+    :return: The mask.
+    """
+    batch_size, seq_len = position_attention_mask.size()
+    pairwise_attention_mask = torch.matmul(position_attention_mask.unsqueeze(2), position_attention_mask.unsqueeze(1))
+    causal_mask = torch.tril(pairwise_attention_mask).to(position_attention_mask.device)
+    return causal_mask.view(1, seq_len, seq_len).expand(batch_size, -1, -1)
+
+
 def freeze_neural_model(network: nn.Module):
     for param in network.parameters():
         param.requires_grad = False
