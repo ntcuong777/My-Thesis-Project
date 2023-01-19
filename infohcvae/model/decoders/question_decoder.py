@@ -108,7 +108,7 @@ class QuestionDecoder(nn.Module):
         context_ids = c_ids.unsqueeze(1).repeat(
             1, max_q_len, 1).view(bq, -1).contiguous()
         attn_logits = attn_logits.view(bq, -1).contiguous()
-        copy_logits = torch.zeros(bq, self.vocab_size).to(context_ids.device) - 1e9
+        copy_logits = torch.zeros(bq, self.vocab_size).to(context_ids.device) - 3e4
         copy_logits, _ = scatter_max(attn_logits, context_ids, out=copy_logits)
         copy_logits = copy_logits.masked_fill(copy_logits == -3e4, 0)
         copy_logits = copy_logits.view(batch_size, max_q_len, -1).contiguous()
