@@ -35,12 +35,12 @@ def main(run_args):
         torch.save(train_data, os.path.join(run_args.dataloader_dir, "train_data.pt"))
         torch.save(eval_data, os.path.join(run_args.dataloader_dir, "eval_data.pt"))
 
-    model = BertQAGConditionalVae(run_args)
+    model = BertQAGConditionalVae(run_args, eval_dataloader=eval_dataloader)
     full_trainer = Trainer.from_argparse_args(run_args)
     ckpt_path = args.checkpoint_file
     if ckpt_path is not None:
-        model.load_from_checkpoint(ckpt_path, args=args)
-    full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader)
+        model.load_from_checkpoint(ckpt_path, args=args, eval_dataloader=eval_dataloader)
+    full_trainer.fit(model, train_dataloaders=train_dataloader)
 
 
 if __name__ == "__main__":

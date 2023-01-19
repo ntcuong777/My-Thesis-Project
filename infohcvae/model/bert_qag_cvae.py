@@ -316,22 +316,12 @@ class BertQAGConditionalVae(pl.LightningModule):
     """ Validation-related methods """
     def generate_qa_from_posterior(self, c_ids, q_ids, c_a_mask):
         with torch.no_grad():
-            c_mask = return_attention_mask(c_ids, self.pad_token_id)
-            c_lengths = return_inputs_length(c_mask)
-            c_hidden_states = self.bert_encoder(input_ids=c_ids, attention_mask=c_mask)[0]
-            c_a_hidden_states = self.bert_encoder(
-                input_ids=c_ids, attention_mask=c_mask, token_type_ids=c_a_mask)[0]
-            q_mask = return_attention_mask(q_ids, self.pad_token_id)
-            q_lengths = return_inputs_length(q_mask)
-            q_hidden_states = self.bert_encoder(input_ids=q_ids, attention_mask=q_mask)[0]
-
-            zq, _, _, za, _ = self.posterior_encoder(
-                c_hidden_states, c_a_hidden_states, q_hidden_states, c_mask, q_mask, c_lengths, q_lengths)
+            zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
             """ Generation """
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
-                self._generate_answer(c_hidden_states, c_mask, c_lengths, za)
-            question_ids = self._generate_question(c_ids, c_a_hidden_states, c_mask, c_lengths, zq)
+                self._generate_answer(c_ids, za)
+            question_ids = self._generate_question(c_ids, c_a_mask, zq)
 
         return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 
