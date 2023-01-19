@@ -62,7 +62,7 @@ def eval_vae(args, model: pl.LightningModule, eval_loader, eval_text_samples, ev
     example_index = -1
 
     for batch in tqdm(eval_loader, desc="Eval iter", leave=False, position=4):
-        q_ids, c_ids, c_a_mask, _, _, _, _ = batch
+        _, q_ids, c_ids, c_a_mask, _, _, _, _ = batch
         batch_size = c_ids.size(0)
         batch_q_ids = q_ids.cpu().tolist()
 
