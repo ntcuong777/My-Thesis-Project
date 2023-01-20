@@ -67,12 +67,12 @@ def main(args):
 
     args.workers = int(args.workers)
 
-    args.dev_features_file = "../data/pickle-file/dev_features.pkl"
-    args.dev_examples_file = "../data/pickle-file/dev_examples.pkl"
-    args.dev_json_file = "../data/squad/my_dev.json"
-    args.test_features_file = "../data/pickle-file/test_features.pkl"
-    args.test_examples_file = "../data/pickle-file/test_examples.pkl"
-    args.test_json_file = "../data/squad/my_test.json"
+    args.dev_features_file = "../../data/pickle-file/dev_features.pkl"
+    args.dev_examples_file = "../../data/pickle-file/dev_examples.pkl"
+    args.dev_json_file = "../../data/squad/my_dev.json"
+    args.test_features_file = "../../data/pickle-file/test_features.pkl"
+    args.test_examples_file = "../../data/pickle-file/test_examples.pkl"
+    args.test_json_file = "../../data/squad/my_test.json"
 
     args.distributed = True
 
