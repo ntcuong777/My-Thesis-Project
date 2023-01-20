@@ -86,7 +86,7 @@ def main(gen_args):
         #     features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
         #                                                  max_seq_length=gen_args.max_c_len,
         #                                                  max_query_length=0, doc_stride=128,
-        #                                                  is_training=True, gen_ratio=gen_args.gen_ratio)
+        #                                                  is_training=True)
 
         features = features[:int(len(features) * gen_args.ratio)]
         all_c_ids = torch.tensor([f.c_ids for f in features], dtype=torch.long)
