@@ -320,11 +320,7 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
                 all_doc_tokens, tok_start_position, tok_end_position, tokenizer,
                 example.orig_answer_text)
 
-        if cls_token is not None:
-            # The -3 accounts for [CLS], [SEP] and [SEP]
-            max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
-        else:
-            max_tokens_for_doc = max_seq_length - len(query_tokens) - 2
+        max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
 
         # We can have documents that are longer than the maximum sequence length.
         # To deal with this we do a sliding window approach, where we take chunks
