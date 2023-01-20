@@ -291,6 +291,7 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
     cls_token = tokenizer.cls_token
     sep_token = tokenizer.sep_token
     pad_token = tokenizer.pad_token
+    pad_token_id = tokenizer.pad_token_id
 
     features = []
     for example in tqdm(examples, total=len(examples)):
@@ -392,7 +393,7 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
 
             # Zero padding
             while len(c_ids) < max_seq_length:
-                c_ids.append(pad_token)
+                c_ids.append(pad_token_id)
 
             features.append(
                 InputFeatures(

@@ -3,7 +3,7 @@ import math
 import h5py
 
 import torch
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, BertTokenizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
@@ -87,7 +87,7 @@ def main(gen_args):
                                                          is_training=True)
 
         features = features[:int(len(features) * gen_args.ratio)]
-        all_c_ids = torch.tensor([f.c_ids for f in features][:int(gen_args.data_ratio * len(features))], dtype=torch.long)
+        all_c_ids = torch.tensor([f.c_ids for f in features], dtype=torch.long)
         data = TensorDataset(all_c_ids)
         data_loader = DataLoader(data, shuffle=False, batch_size=gen_args.batch_size)
         print("Dataset length = " + str(len(data_loader.dataset)))
@@ -112,15 +112,11 @@ def main(gen_args):
         if gen_args.out_qa_json is not None:
             qa_text = dict({"data": []})
 
-        num_steps_to_run = math.ceil(gen_args.percent_of_runs * len(data_loader))
+        num_steps_to_run = math.ceil((gen_args.gen_ratio * len(data_loader.dataset)) / gen_args.batch_size)
         print("Num steps to run: {:d}".format(num_steps_to_run))
         step = 0
         qa_idx = 0
         for batch in tqdm(data_loader, total=len(data_loader)):
-            step += 1
-            if step < gen_args.resume_steps:
-                continue
-
             if num_steps_to_run == 0:
                 break
 
@@ -202,9 +198,6 @@ if __name__ == "__main__":
 
     parser.add_argument("--seed", default=3163, type=int)
     parser.add_argument("--base_model", default='bert-base-uncased', type=str)
-    parser.add_argument("--resume_steps", default=1, type=int, help="step to resume")
-    parser.add_argument("--percent_of_runs", default=1.0, type=float,
-                        help="how many percent of steps to run at one execution")
     parser.add_argument("--max_c_len", default=384, type=int, help="max context length")
     parser.add_argument("--max_q_len", default=0, type=int, help="max query length")
 
@@ -216,7 +209,7 @@ if __name__ == "__main__":
     parser.add_argument("--out_qa_json", default="./data/generated_qas.json", type=str)
     parser.add_argument("--dataloader_dir", default="./save/dataloader", type=str)
 
-    parser.add_argument("--data_ratio", default=1.0, type=float,
+    parser.add_argument("--gen_ratio", default=1.0, type=float,
                         help="how many percentage of the number of paragraphs are considered for generation")
     parser.add_argument("--ratio", default=1.0, type=float)
     parser.add_argument("--k", default=10, type=int, help="the number of QA pairs for each paragraph")
