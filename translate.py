@@ -75,12 +75,14 @@ def main(gen_args):
         # Add shuffling functionality if wanting to use a small percentage of data correctly
         if gen_args.squad:
             examples = read_squad_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
-            features = convert_examples_to_harv_features(examples, tokenizer=tokenizer, max_seq_length=gen_args.max_c_len,
+            features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
+                                                         max_seq_length=gen_args.max_c_len,
                                                          max_query_length=gen_args.max_q_len, doc_stride=128,
                                                          is_training=True)
         else:
             examples = read_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
-            features = convert_examples_to_harv_features(examples, tokenizer=tokenizer, max_seq_length=gen_args.max_c_len,
+            features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
+                                                         max_seq_length=gen_args.max_c_len,
                                                          max_query_length=gen_args.max_q_len, doc_stride=128,
                                                          is_training=True)
 
@@ -132,30 +134,56 @@ def main(gen_args):
             c_texts = [gen_args.tokenizer.decode(c_ids[idx]) for idx in range(c_ids.size(0))]
 
             # sample latent variable K times
-            for _ in range(gen_args.k):
-                with torch.no_grad():
-                    batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(c_ids)
+            with torch.no_grad():
+                # c_ids = (N, seq_len)
+                batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(
+                    c_ids.unsqueeze(1).repeat(1, gen_args.k, 1).view(gen_args.batch_size * gen_args.k, -1))
+                # batch_q_ids = batch_q_ids.view(gen_args.batch_size, gen_args.k, -1) # (N, k, seq_len)
+                # batch_start = batch_start.view(gen_args.batch_size, gen_args.k, -1) # (N, k)
+                # batch_end = batch_end.view(gen_args.batch_size, gen_args.k, -1) # (N, k)
 
-                    if gen_args.output_text and gen_args.out_qa_json is not None:  # out QA text to json
-                        for idx in range(batch_q_ids.size(0)):
-                            q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
-                            q_text = gen_args.tokenizer.decode(q_ids)
-                            ans_text = gen_args.tokenizer.decode(c_ids[idx, start_pos:end_pos])
-                            qa_text["data"].append({"context": c_texts[idx], "question": q_text, "answer": ans_text})
+                if gen_args.output_text and gen_args.out_qa_json is not None:  # out QA text to json
+                    for idx in range(batch_q_ids.size(0)):
+                        q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
+                        q_text = gen_args.tokenizer.decode(q_ids)
+                        ans_text = gen_args.tokenizer.decode(c_ids[idx, start_pos:end_pos])
+                        qa_text["data"].append({"context": c_texts[idx], "question": q_text, "answer": ans_text})
 
-                    all_input_ids, all_seg_ids, \
-                        all_input_mask, all_start, all_end = post_process(
-                            batch_q_ids, batch_start, batch_end, c_ids, pad_token_id, total_max_len=gen_args.total_max_len)
+                all_input_ids, all_seg_ids, \
+                    all_input_mask, all_start, all_end = post_process(
+                        batch_q_ids, batch_start, batch_end, c_ids, pad_token_id, total_max_len=gen_args.total_max_len)
 
-                for i in range(c_ids.size(0)):
+                for i in range(c_ids.size(0) * gen_args.k):
                     input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
                     input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
                     segment_ids_set[qa_idx, :] = all_seg_ids[i].cpu()
                     start_positions_set[qa_idx] = all_start[i].cpu()
                     end_positions_set[qa_idx] = all_end[i].cpu()
                     qa_idx += 1
+            # for _ in range(gen_args.k):
+            #     with torch.no_grad():
+            #         batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(c_ids)
+            #
+            #         if gen_args.output_text and gen_args.out_qa_json is not None:  # out QA text to json
+            #             for idx in range(batch_q_ids.size(0)):
+            #                 q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
+            #                 q_text = gen_args.tokenizer.decode(q_ids)
+            #                 ans_text = gen_args.tokenizer.decode(c_ids[idx, start_pos:end_pos])
+            #                 qa_text["data"].append({"context": c_texts[idx], "question": q_text, "answer": ans_text})
+            #
+            #         all_input_ids, all_seg_ids, \
+            #             all_input_mask, all_start, all_end = post_process(
+            #                 batch_q_ids, batch_start, batch_end, c_ids, pad_token_id, total_max_len=gen_args.total_max_len)
+            #
+            #     for i in range(c_ids.size(0)):
+            #         input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
+            #         input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
+            #         segment_ids_set[qa_idx, :] = all_seg_ids[i].cpu()
+            #         start_positions_set[qa_idx] = all_start[i].cpu()
+            #         end_positions_set[qa_idx] = all_end[i].cpu()
+            #         qa_idx += 1
 
-    ## For outputting text
+    # For outputting text
     if gen_args.output_text:
         import json
         dir_name = os.path.dirname(gen_args.out_qa_json)
