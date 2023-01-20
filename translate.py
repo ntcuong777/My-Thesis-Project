@@ -63,7 +63,7 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
 def main(gen_args):
     tokenizer = AutoTokenizer.from_pretrained(gen_args.base_model)
     gen_args.tokenizer = tokenizer
-    pad_token_id = tokenizer.pad_token
+    pad_token_id = tokenizer.pad_token_id
 
     device = torch.cuda.current_device()
     vae = BertQAGConditionalVae.load_from_checkpoint(gen_args.checkpoint)
@@ -114,7 +114,6 @@ def main(gen_args):
 
         num_steps_to_run = math.ceil((gen_args.gen_ratio * len(data_loader.dataset)) / gen_args.batch_size)
         print("Num steps to run: {:d}".format(num_steps_to_run))
-        step = 0
         qa_idx = 0
         for batch in tqdm(data_loader, total=len(data_loader)):
             if num_steps_to_run == 0:
