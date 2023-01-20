@@ -40,9 +40,6 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
         c = c_ids[i, :c_length]  # exclude pad tokens
 
         # input ids
-        print(total_max_len)
-        print(q_length)
-        print(c_length)
         pads = torch.zeros((total_max_len - q_length - c_length), device=q_ids.device, dtype=torch.long)
         input_ids = torch.cat([q, c, pads], dim=0)
         all_input_ids.append(input_ids)
@@ -100,15 +97,19 @@ def main(gen_args):
         print("Dataset length = " + str(len(data_loader.dataset)))
 
     with h5py.File(gen_args.output_file, "a") as fdata:
-        input_ids_set = fdata.create_dataset("qas/input_ids", (len(data_loader.dataset) * 10, gen_args.total_max_len),
-                                             chunks=(100, gen_args.total_max_len))
-        input_masks_set = fdata.create_dataset("qas/input_masks", (len(data_loader.dataset) * 10, gen_args.total_max_len),
-                                               chunks=(100, gen_args.total_max_len))
-        segment_ids_set = fdata.create_dataset("qas/segment_ids", (len(data_loader.dataset) * 10, gen_args.total_max_len),
-                                               chunks=(100, gen_args.total_max_len))
-        start_positions_set = fdata.create_dataset("qas/start_positions", (len(data_loader.dataset) * 10,),
-                                                   chunks=(1000,))
-        end_positions_set = fdata.create_dataset("qas/end_positions", (len(data_loader.dataset) * 10,), chunks=(1000,))
+        input_ids_set = fdata.create_dataset(
+            "qas/input_ids", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
+            chunks=(100, gen_args.total_max_len))
+        input_masks_set = fdata.create_dataset(
+            "qas/input_masks", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
+            chunks=(100, gen_args.total_max_len))
+        segment_ids_set = fdata.create_dataset(
+            "qas/segment_ids", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
+            chunks=(100, gen_args.total_max_len))
+        start_positions_set = fdata.create_dataset(
+            "qas/start_positions", (len(data_loader.dataset) * gen_args.k,), chunks=(1000,))
+        end_positions_set = fdata.create_dataset(
+            "qas/end_positions", (len(data_loader.dataset) * gen_args.k,), chunks=(1000,))
 
         # new_features = []
         qa_text = None
