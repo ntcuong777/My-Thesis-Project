@@ -40,7 +40,7 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
         c = c_ids[i, :c_length]  # exclude pad tokens
 
         if c_length > 384:
-            c_ids = c_ids[i, :384]
+            c = c_ids[i, :384]
 
         # input ids
         pads = torch.zeros((total_max_len - q_length - c_length), device=q_ids.device, dtype=torch.long)
