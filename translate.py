@@ -123,7 +123,7 @@ def main(gen_args):
 
             c_ids = batch[0]
             c_len = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
-            max_c_len = torch.max(c_len)
+            max_c_len = torch.max(c_len).item()
             c_ids = c_ids[:, :max_c_len].to(device)
 
             c_texts = [gen_args.tokenizer.decode(c_ids[idx]) for idx in range(c_ids.size(0))]
