@@ -9,8 +9,10 @@ from tqdm import tqdm
 import os
 from infohcvae.model.bert_qag_cvae import BertQAGConditionalVae
 from infohcvae.model.model_utils import return_attention_mask
-from infohcvae.squad_utils import (convert_examples_to_harv_features,
-                                   read_examples, read_squad_examples)
+from infohcvae.squad_utils import (
+    convert_examples_to_harv_features, read_examples,
+    read_squad_examples, convert_examples_to_features_answer_id,
+)
 
 
 def return_seq_lengths(mask):
@@ -75,16 +77,15 @@ def main(gen_args):
         # Add shuffling functionality if wanting to use a small percentage of data correctly
         if gen_args.squad:
             examples = read_squad_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
-            features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
-                                                         max_seq_length=gen_args.max_c_len,
-                                                         max_query_length=0, doc_stride=128,
-                                                         is_training=True, gen_ratio=gen_args.gen_ratio)
-        else:
-            examples = read_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
-            features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
-                                                         max_seq_length=gen_args.max_c_len,
-                                                         max_query_length=0, doc_stride=128,
-                                                         is_training=True, gen_ratio=gen_args.gen_ratio)
+            features = convert_examples_to_features_answer_id(
+                examples, tokenizer=tokenizer, max_context_length=gen_args.max_c_len,
+                max_query_length=10, doc_stride=128, is_training=True, gen_ratio=gen_args.gen_ratio)
+        # else:
+        #     examples = read_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
+        #     features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
+        #                                                  max_seq_length=gen_args.max_c_len,
+        #                                                  max_query_length=0, doc_stride=128,
+        #                                                  is_training=True, gen_ratio=gen_args.gen_ratio)
 
         features = features[:int(len(features) * gen_args.ratio)]
         all_c_ids = torch.tensor([f.c_ids for f in features], dtype=torch.long)

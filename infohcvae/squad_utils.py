@@ -411,7 +411,7 @@ def convert_examples_to_harv_features(examples, tokenizer, max_seq_length,
 
 
 def convert_examples_to_features_answer_id(examples, tokenizer, max_context_length,
-                                           doc_stride, max_query_length, is_training):
+                                           doc_stride, max_query_length, is_training, gen_ratio=1.0):
     """Loads a data file into a list of `InputBatch`s.
        In addition to the original InputFeature class, it contains
        c_ids: ids for context
@@ -427,7 +427,12 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
     pad_token = tokenizer.pad_token
 
     features = []
+    data_length = math.ceil(len(examples) * gen_ratio)
     for (example_index, example) in tqdm(enumerate(examples), total=len(examples)):
+        if data_length == 0:
+            break
+        data_length = data_length - 1
+
         query_tokens = tokenizer.tokenize(example.question_text)
 
         if len(query_tokens) > max_query_length:
@@ -573,6 +578,8 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
 
             q_ids = tokenizer.convert_tokens_to_ids(q_tokens)
             c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
+
+            assert len(c_ids) == max_context_length
 
             context_segment_ids = [0] * len(c_ids)
             for answer_idx in range(noq_start_position, noq_end_position + 1):
