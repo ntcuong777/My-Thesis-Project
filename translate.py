@@ -34,8 +34,8 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
     all_input_ids = []
     all_seg_ids = []
     for i in range(batch_size):
-        q_length = q_lengths[i]
-        c_length = c_lengths[i]
+        q_length = int(q_lengths[i].item())
+        c_length = int(c_lengths[i].item())
         q = q_ids[i, :q_length]  # exclude pad tokens
         c = c_ids[i, :c_length]  # exclude pad tokens
 
