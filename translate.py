@@ -3,7 +3,7 @@ import math
 import h5py
 
 import torch
-from transformers import AutoTokenizer, BertTokenizer
+from transformers import AutoTokenizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 import os
@@ -123,8 +123,7 @@ def main(gen_args):
 
             c_ids = batch[0]
             c_len = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
-            max_c_len = torch.max(c_len).item()
-            print(max_c_len)
+            max_c_len = int(torch.max(c_len).item())
             c_ids = c_ids[:, :max_c_len].to(device)
 
             c_texts = [gen_args.tokenizer.decode(c_ids[idx]) for idx in range(c_ids.size(0))]
