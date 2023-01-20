@@ -17,7 +17,7 @@ def return_seq_lengths(mask):
     return torch.sum(mask, dim=1)
 
 
-def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, total_max_len=512):
+def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, total_max_len=448):
     """
        concatenate question and context for BERT QA model:
        [CLS] Question [SEP] Context [SEP]
@@ -39,14 +39,10 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
         q = q_ids[i, :q_length]  # exclude pad tokens
         c = c_ids[i, :c_length]  # exclude pad tokens
 
-        if c_length > 384:
-            c = c_ids[i, :384]
-            c_length = 384
-        if q_length > 64:
-            q = q_ids[i, :64]
-            q_length = 64
-
         # input ids
+        print(total_max_len)
+        print(q_length)
+        print(c_length)
         pads = torch.zeros((total_max_len - q_length - c_length), device=q_ids.device, dtype=torch.long)
         input_ids = torch.cat([q, c, pads], dim=0)
         all_input_ids.append(input_ids)
@@ -85,13 +81,13 @@ def main(gen_args):
             features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
                                                          max_seq_length=gen_args.max_c_len,
                                                          max_query_length=0, doc_stride=128,
-                                                         is_training=True)
+                                                         is_training=True, gen_ratio=gen_args.gen_ratio)
         else:
             examples = read_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
             features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
                                                          max_seq_length=gen_args.max_c_len,
                                                          max_query_length=0, doc_stride=128,
-                                                         is_training=True)
+                                                         is_training=True, gen_ratio=gen_args.gen_ratio)
 
         features = features[:int(len(features) * gen_args.ratio)]
         all_c_ids = torch.tensor([f.c_ids for f in features], dtype=torch.long)
@@ -103,24 +99,23 @@ def main(gen_args):
         data_loader = torch.load(os.path.join(gen_args.dataloader_dir, "gen_loader.pt"))
         print("Dataset length = " + str(len(data_loader.dataset)))
 
-    num_items_to_gen = int(len(data_loader.dataset) * gen_args.gen_ratio)
     with h5py.File(gen_args.output_file, "a") as fdata:
-        input_ids_set = fdata.create_dataset("qas/input_ids", (num_items_to_gen * 10, gen_args.total_max_len),
+        input_ids_set = fdata.create_dataset("qas/input_ids", (len(data_loader.dataset) * 10, gen_args.total_max_len),
                                              chunks=(100, gen_args.total_max_len))
-        input_masks_set = fdata.create_dataset("qas/input_masks", (num_items_to_gen * 10, gen_args.total_max_len),
+        input_masks_set = fdata.create_dataset("qas/input_masks", (len(data_loader.dataset) * 10, gen_args.total_max_len),
                                                chunks=(100, gen_args.total_max_len))
-        segment_ids_set = fdata.create_dataset("qas/segment_ids", (num_items_to_gen * 10, gen_args.total_max_len),
+        segment_ids_set = fdata.create_dataset("qas/segment_ids", (len(data_loader.dataset) * 10, gen_args.total_max_len),
                                                chunks=(100, gen_args.total_max_len))
-        start_positions_set = fdata.create_dataset("qas/start_positions", (num_items_to_gen * 10,),
+        start_positions_set = fdata.create_dataset("qas/start_positions", (len(data_loader.dataset) * 10,),
                                                    chunks=(1000,))
-        end_positions_set = fdata.create_dataset("qas/end_positions", (num_items_to_gen * 10,), chunks=(1000,))
+        end_positions_set = fdata.create_dataset("qas/end_positions", (len(data_loader.dataset) * 10,), chunks=(1000,))
 
         # new_features = []
         qa_text = None
         if gen_args.out_qa_json is not None:
             qa_text = dict({"data": []})
 
-        num_steps_to_run = math.ceil(num_items_to_gen / gen_args.batch_size)
+        num_steps_to_run = len(data_loader.dataset)
         print("Num steps to run: {:d}".format(num_steps_to_run))
         qa_idx = 0
         for batch in tqdm(data_loader, total=len(data_loader)):
