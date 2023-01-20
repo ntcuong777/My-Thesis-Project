@@ -76,10 +76,11 @@ def main(gen_args):
     if not gen_args.load_saved_dataloader:
         # Add shuffling functionality if wanting to use a small percentage of data correctly
         if gen_args.squad:
-            examples = read_squad_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
+            examples = read_squad_examples(gen_args.data_file, is_training=True, debug=gen_args.debug,
+                                           ratio=gen_args.gen_ratio)
             features = convert_examples_to_features_answer_id(
                 examples, tokenizer=tokenizer, max_context_length=gen_args.max_c_len,
-                max_query_length=10, doc_stride=128, is_training=True, gen_ratio=gen_args.gen_ratio)
+                max_query_length=10, doc_stride=128, is_training=True)
         # else:
         #     examples = read_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
         #     features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
