@@ -142,7 +142,8 @@ def main(gen_args):
                         q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
                         q_text = gen_args.tokenizer.decode(q_ids)
                         ans_text = gen_args.tokenizer.decode(repeated_c_ids[idx, start_pos:end_pos])
-                        qa_text["data"].append({"context": c_texts[idx], "question": q_text, "answer": ans_text})
+                        qa_text["data"].append({"context": c_texts[idx // gen_args.k],
+                                                "question": q_text, "answer": ans_text})
 
                 all_input_ids, all_seg_ids, \
                     all_input_mask, all_start, all_end = post_process(
