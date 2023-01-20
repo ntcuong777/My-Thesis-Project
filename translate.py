@@ -77,13 +77,13 @@ def main(gen_args):
             examples = read_squad_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
             features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
                                                          max_seq_length=gen_args.max_c_len,
-                                                         max_query_length=gen_args.max_q_len, doc_stride=128,
+                                                         max_query_length=0, doc_stride=128,
                                                          is_training=True)
         else:
             examples = read_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
             features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
                                                          max_seq_length=gen_args.max_c_len,
-                                                         max_query_length=gen_args.max_q_len, doc_stride=128,
+                                                         max_query_length=0, doc_stride=128,
                                                          is_training=True)
 
         features = features[:int(len(features) * gen_args.ratio)]
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", default=3163, type=int)
     parser.add_argument("--base_model", default='bert-base-uncased', type=str)
     parser.add_argument("--max_c_len", default=384, type=int, help="max context length")
-    parser.add_argument("--max_q_len", default=0, type=int, help="max query length")
+    parser.add_argument("--max_q_len", default=64, type=int, help="max query length")
 
     parser.add_argument("--batch_size", default=64, type=int, help="batch_size")
     parser.add_argument("--data_file", default="./data/squad/train-v1.1.json", type=str)
