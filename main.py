@@ -38,9 +38,7 @@ def main(run_args):
     model = BertQAGConditionalVae(run_args)
     full_trainer = Trainer.from_argparse_args(run_args)
     ckpt_path = args.checkpoint_file
-    if ckpt_path is not None:
-        model.load_from_checkpoint(ckpt_path, args=run_args)
-    full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader)
+    full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader, ckpt_path=ckpt_path)
 
 
 if __name__ == "__main__":
