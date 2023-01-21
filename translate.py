@@ -77,6 +77,7 @@ def main(gen_args):
     data_loader = None
     if not gen_args.load_saved_dataloader:
         # Add shuffling functionality if wanting to use a small percentage of data correctly
+        features = []
         if gen_args.squad:
             examples = read_squad_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
             features = convert_examples_to_features_answer_id_for_generation(
