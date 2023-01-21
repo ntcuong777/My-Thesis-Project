@@ -641,6 +641,113 @@ def convert_examples_to_features_answer_id(examples, tokenizer, max_context_leng
     return features
 
 
+def convert_examples_to_features_answer_id_for_generation(
+        examples, tokenizer, max_context_length, doc_stride, gen_ratio=1.0):
+    """Loads a data file into a list of `InputBatch`s.
+       In addition to the original InputFeature class, it contains
+       c_ids: ids for context
+       tag ids: indicate the answer span of context,
+       noq_start_position: start position of answer in context without concatenation of question
+       noq_end_position: end position of answer in context without concatenation of question
+    """
+
+    unique_id = 1000000000
+
+    cls_token = tokenizer.cls_token
+    sep_token = tokenizer.sep_token
+    pad_token = tokenizer.pad_token
+
+    features = []
+    data_length = math.ceil(len(examples) * gen_ratio)
+    for (example_index, example) in tqdm(enumerate(examples), total=len(examples)):
+        if data_length == 0:
+            break
+        data_length = data_length - 1
+
+        query_tokens = tokenizer.tokenize(example.question_text)
+
+        tok_to_orig_index = []
+        orig_to_tok_index = []
+        all_doc_tokens = []
+        for (i, token) in enumerate(example.doc_tokens):
+            orig_to_tok_index.append(len(all_doc_tokens))
+            sub_tokens = tokenizer.tokenize(token)
+            for sub_token in sub_tokens:
+                tok_to_orig_index.append(i)
+                all_doc_tokens.append(sub_token)
+
+
+        # The -3 accounts for [CLS] and [SEP]
+        max_tokens_for_context = max_context_length - 2 #max_context_length - max_query_length - 3
+
+        # We can have documents that are longer than the maximum sequence length.
+        # To deal with this we do a sliding window approach, where we take chunks
+        # of the up to our max length with a stride of `doc_stride`.
+        _DocSpan = collections.namedtuple(  # pylint: disable=invalid-name
+            "DocSpan", ["start", "length"])
+        doc_spans = []
+        start_offset = 0
+        while start_offset < len(all_doc_tokens):
+            length = len(all_doc_tokens) - start_offset
+            if length > max_tokens_for_context:
+                length = max_tokens_for_context
+            doc_spans.append(_DocSpan(start=start_offset, length=length))
+            if start_offset + length == len(all_doc_tokens):
+                break
+            start_offset += min(length, doc_stride)
+
+        for (doc_span_index, doc_span) in enumerate(doc_spans):
+            input_tokens = []
+            token_to_orig_map = {}
+            token_is_max_context = {}
+
+            context_tokens = list()
+            context_tokens.append(cls_token)
+            for i in range(doc_span.length):
+                split_token_index = doc_span.start + i
+                token_to_orig_map[len(input_tokens)] = tok_to_orig_index[split_token_index]
+
+                is_max_context = _check_is_max_context(doc_spans, doc_span_index,
+                                                       split_token_index)
+                token_is_max_context[len(input_tokens)] = is_max_context
+                context_tokens.append(all_doc_tokens[split_token_index])
+            context_tokens.append(sep_token)
+
+            while len(context_tokens) < max_context_length:
+                context_tokens.append(pad_token)
+
+            c_ids = tokenizer.convert_tokens_to_ids(context_tokens)
+
+            assert len(c_ids) == max_context_length
+
+            features.append(
+                InputFeatures(
+                    unique_id=None,
+                    example_index=None,
+                    doc_span_index=None,
+                    tokens=None,
+                    token_to_orig_map=None,
+                    token_is_max_context=None,
+                    input_ids=None,
+                    input_mask=None,
+                    c_ids=c_ids,
+                    context_tokens=None,
+                    q_ids=None,
+                    q_tokens=None,
+                    answer_text=None,
+                    tag_ids=None,
+                    input_tag_ids=None,
+                    segment_ids=None,
+                    noq_start_position=None,
+                    noq_end_position=None,
+                    start_position=None,
+                    end_position=None,
+                    is_impossible=None))
+            unique_id += 1
+
+    return features
+
+
 def read_examples(input_file, debug=False, is_training=False):
     # Read data
     unproc_data = []

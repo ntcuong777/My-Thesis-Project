@@ -1,8 +1,11 @@
 import argparse
 import pickle
 import h5py
+import random
 
 import torch
+import numpy as np
+import pytorch_lightning as pl
 from transformers import AutoTokenizer
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
@@ -10,8 +13,7 @@ import os
 from infohcvae.model.bert_qag_cvae import BertQAGConditionalVae
 from infohcvae.model.model_utils import return_attention_mask
 from infohcvae.squad_utils import (
-    convert_examples_to_harv_features, read_examples,
-    read_squad_examples, convert_examples_to_features_answer_id,
+    read_squad_examples, convert_examples_to_features_answer_id_for_generation,
 )
 
 
@@ -77,9 +79,8 @@ def main(gen_args):
         # Add shuffling functionality if wanting to use a small percentage of data correctly
         if gen_args.squad:
             examples = read_squad_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
-            features = convert_examples_to_features_answer_id(
-                examples, tokenizer=tokenizer, max_context_length=gen_args.max_c_len,
-                max_query_length=10, doc_stride=128, is_training=True)
+            features = convert_examples_to_features_answer_id_for_generation(
+                examples, tokenizer=tokenizer, max_context_length=gen_args.max_c_len, doc_stride=128)
             full_data = {
                 "example": examples,
                 "features": features
@@ -93,8 +94,11 @@ def main(gen_args):
         #                                                  max_query_length=0, doc_stride=128,
         #                                                  is_training=True)
 
-        features = features[:int(len(features) * gen_args.ratio)]
-        all_c_ids = torch.tensor([f.c_ids for f in features], dtype=torch.long)
+        perm = np.arange(0, len(features))
+        np.random.shuffle(perm)
+        perm = perm.tolist()[:int(len(features) * gen_args.ratio)]
+        features_tmp = [features[i] for i in perm]
+        all_c_ids = torch.tensor([f.c_ids for f in features_tmp], dtype=torch.long)
         data = TensorDataset(all_c_ids)
         data_loader = DataLoader(data, shuffle=False, batch_size=gen_args.batch_size)
         print("Dataset length = " + str(len(data_loader.dataset)))
@@ -227,6 +231,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     args.total_max_len = args.max_c_len + args.max_q_len
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    pl.seed_everything(args.seed)
 
     # set dataloader dir
     if not args.load_saved_dataloader:
