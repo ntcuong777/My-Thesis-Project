@@ -147,7 +147,7 @@ def main(gen_args):
             # sample latent variable K times
             with torch.no_grad():
                 # c_ids = (N, seq_len)
-                repeated_c_ids = c_ids.unsqueeze(1).repeat(1, gen_args.k, 1).view(gen_args.batch_size * gen_args.k, -1)
+                repeated_c_ids = c_ids.unsqueeze(1).repeat(1, gen_args.k, 1).view(c_ids.size(0) * gen_args.k, -1)
                 batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(repeated_c_ids)
                 # batch_q_ids = batch_q_ids.view(gen_args.batch_size, gen_args.k, -1) # (N, k, seq_len)
                 # batch_start = batch_start.view(gen_args.batch_size, gen_args.k, -1) # (N, k)
