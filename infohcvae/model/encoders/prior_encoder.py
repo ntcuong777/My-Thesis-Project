@@ -45,7 +45,7 @@ class PriorEncoder(nn.Module):
         cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
-        ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths, c_mask)
+        ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
         ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
