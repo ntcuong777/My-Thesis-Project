@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
-from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.custom.gated_self_attention import GatedAttention
+from infohcvae.model.custom.bilstm_with_attention import BiLstmWithAttention
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
     return_attention_mask, return_inputs_length
@@ -24,11 +23,10 @@ class PriorEncoder(nn.Module):
         self.nzadim = nzadim
         self.nza_values = nza_values
 
-        self.context_encoder = CustomLSTM(input_size=d_model, hidden_size=lstm_enc_nhidden,
-                                          num_layers=lstm_enc_nlayers, dropout=dropout,
-                                          bidirectional=True)
-        self.context_self_attention = GatedAttention(hidden_size=lstm_enc_nhidden * 2)
-        self.context_luong_attention = LuongAttention(lstm_enc_nhidden * 2, lstm_enc_nhidden * 2)
+        self.context_question_encoder = BiLstmWithAttention(
+            d_model, lstm_enc_nhidden, lstm_enc_nlayers, dropout=dropout)
+        self.context_answer_encoder = BiLstmWithAttention(
+            d_model, lstm_enc_nhidden, lstm_enc_nlayers, dropout=dropout)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -41,23 +39,18 @@ class PriorEncoder(nn.Module):
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
-        c_hidden_states, c_state = self.context_encoder(c_embeds, c_lengths.to("cpu"))
-        c_hidden_states = self.context_self_attention(c_hidden_states, attention_mask=c_mask)
-        c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # the final forward and reverse hidden states should attend to the whole sentence
-        mask = c_mask.unsqueeze(1)
-        c_h = self.context_luong_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
+        cq_hidden_states, cq_h = self.context_question_encoder(c_embeds, c_lengths, c_mask)
+        ca_hidden_states, ca_h = self.context_answer_encoder(c_embeds, c_lengths, c_mask)
 
-        zq_mu = self.zq_mu_linear(c_h)
-        zq_logvar = self.zq_logvar_linear(c_h)
+        zq_mu = self.zq_mu_linear(cq_h)
+        zq_logvar = self.zq_logvar_linear(cq_h)
         # Sample `zq`
         zq = sample_gaussian(zq_mu, zq_logvar)
 
         mask = c_mask.unsqueeze(1)
-        c_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), c_hidden_states, mask).squeeze(1)
+        c_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
 
-        h = torch.cat([zq, c_attned_by_zq, c_h], dim=-1)
+        h = torch.cat([zq, c_attned_by_zq, ca_h], dim=-1)
         za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)
         # sample `za`
         za = gumbel_softmax(za_logits, hard=True)

@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
-from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.custom.gated_self_attention import GatedAttention
+from infohcvae.model.custom.bilstm_with_attention import BiLstmWithAttention
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
     return_attention_mask, return_inputs_length
@@ -23,17 +22,10 @@ class PosteriorEncoder(nn.Module):
         self.nzadim = nzadim
         self.nza_values = nza_values
 
-        self.question_encoder = CustomLSTM(
-            input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
-            dropout=dropout, bidirectional=True)
-        self.context_encoder = CustomLSTM(
-            input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
-            dropout=dropout, bidirectional=True)
-        self.context_answer_encoder = CustomLSTM(
-            input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
-            dropout=dropout, bidirectional=True)
-        # self.shared_self_attention = GatedAttention(hidden_size=lstm_enc_nhidden * 2)
-        # self.shared_luong_attention = LuongAttention(lstm_enc_nhidden * 2, lstm_enc_nhidden * 2)
+        self.context_question_encoder = BiLstmWithAttention(
+            d_model, lstm_enc_nhidden, lstm_enc_nlayers, dropout=dropout)
+        self.context_answer_encoder = BiLstmWithAttention(
+            d_model, lstm_enc_nhidden, lstm_enc_nlayers, dropout=dropout)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
@@ -52,33 +44,11 @@ class PosteriorEncoder(nn.Module):
 
         # question enc
         q_embeds = self.embedding(q_ids)
-        q_hidden_states, q_state = self.question_encoder(q_embeds, q_lengths.to("cpu"))
-        # q_hidden_states = self.shared_self_attention(q_hidden_states, attention_mask=q_mask)
-        q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # the final forward and reverse hidden states should attend to the whole sentence
-        # mask = q_mask.unsqueeze(1)
-        # q_h = self.shared_luong_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
+        q_hidden_states, q_h = self.context_question_encoder(q_embeds, q_lengths, q_mask)
 
         # context enc
         c_embeds = self.embedding(c_ids)
-        c_hidden_states, c_state = self.context_encoder(c_embeds, c_lengths.to("cpu"))
-        # c_hidden_states = self.shared_self_attention(c_hidden_states, attention_mask=c_mask)
-        c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # the final forward and reverse hidden states should attend to the whole sentence
-        # mask = c_mask.unsqueeze(1)
-        # c_h = self.shared_luong_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
-
-        # context and answer enc
-        c_a_embeds = self.embedding(c_ids, a_mask, None)
-        c_a_hidden_states, c_a_state = self.context_answer_encoder(c_a_embeds, c_lengths.to("cpu"))
-        # c_a_hidden_states = self.shared_self_attention(c_a_hidden_states, attention_mask=c_mask)
-        c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # the final forward and reverse hidden states should attend to the whole sentence
-        # mask = c_mask.unsqueeze(1)
-        # c_a_h = self.shared_luong_attention(c_a_h.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
+        c_hidden_states, c_h = self.context_question_encoder(c_embeds, c_lengths, c_mask)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)
@@ -93,6 +63,10 @@ class PosteriorEncoder(nn.Module):
         zq_logvar = self.zq_logvar_linear(h)
         # Sample `zq`
         zq = sample_gaussian(zq_mu, zq_logvar)
+
+        # context and answer enc
+        c_a_embeds = self.embedding(c_ids, a_mask, None)
+        c_a_hidden_states, c_a_h = self.context_answer_encoder(c_a_embeds, c_lengths, c_mask)
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
