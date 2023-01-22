@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
-from infohcvae.model.custom.bilstm_with_attention import BiLstmWithAttention
+from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
     return_attention_mask, return_inputs_length
@@ -23,10 +23,12 @@ class PriorEncoder(nn.Module):
         self.nzadim = nzadim
         self.nza_values = nza_values
 
-        self.context_question_encoder = BiLstmWithAttention(
-            d_model, lstm_enc_nhidden, lstm_enc_nlayers, dropout=dropout)
-        self.context_answer_encoder = BiLstmWithAttention(
-            d_model, lstm_enc_nhidden, lstm_enc_nlayers, dropout=dropout)
+        self.context_question_encoder = CustomLSTM(
+            input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
+            dropout=dropout, bidirectional=True)
+        self.context_answer_encoder = CustomLSTM(
+            input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
+            dropout=dropout, bidirectional=True)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -39,8 +41,13 @@ class PriorEncoder(nn.Module):
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
-        cq_hidden_states, cq_h = self.context_question_encoder(c_embeds, c_lengths, c_mask)
-        ca_hidden_states, ca_h = self.context_answer_encoder(c_embeds, c_lengths, c_mask)
+        cq_hidden_states, cq_state = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
+        cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+
+        ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths, c_mask)
+        ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
         zq_mu = self.zq_mu_linear(cq_h)
         zq_logvar = self.zq_logvar_linear(cq_h)
