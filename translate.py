@@ -109,26 +109,32 @@ def main(gen_args):
         print("Dataset length = " + str(len(data_loader.dataset)))
 
     with h5py.File(gen_args.output_file, "a") as fdata:
-        input_ids_set = fdata.create_dataset(
-            "qas/input_ids", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
-            chunks=(100, gen_args.total_max_len))
-        input_masks_set = fdata.create_dataset(
-            "qas/input_masks", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
-            chunks=(100, gen_args.total_max_len))
-        segment_ids_set = fdata.create_dataset(
-            "qas/segment_ids", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
-            chunks=(100, gen_args.total_max_len))
-        start_positions_set = fdata.create_dataset(
-            "qas/start_positions", (len(data_loader.dataset) * gen_args.k,), chunks=(1000,))
-        end_positions_set = fdata.create_dataset(
-            "qas/end_positions", (len(data_loader.dataset) * gen_args.k,), chunks=(1000,))
+        # input_ids_set = fdata.create_dataset(
+        #     "qas/input_ids", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
+        #     chunks=(100, gen_args.total_max_len))
+        # input_masks_set = fdata.create_dataset(
+        #     "qas/input_masks", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
+        #     chunks=(100, gen_args.total_max_len))
+        # segment_ids_set = fdata.create_dataset(
+        #     "qas/segment_ids", (len(data_loader.dataset) * gen_args.k, gen_args.total_max_len),
+        #     chunks=(100, gen_args.total_max_len))
+        # start_positions_set = fdata.create_dataset(
+        #     "qas/start_positions", (len(data_loader.dataset) * gen_args.k,), chunks=(1000,))
+        # end_positions_set = fdata.create_dataset(
+        #     "qas/end_positions", (len(data_loader.dataset) * gen_args.k,), chunks=(1000,))
+
+        input_ids_set = fdata["qas/input_ids"]
+        input_masks_set = fdata["qas/input_masks"]
+        segment_ids_set = fdata["qas/segment_ids"]
+        start_positions_set = fdata["qas/start_positions"]
+        end_positions_set = fdata["qas/end_positions"]
 
         # new_features = []
         qa_text = None
         if gen_args.out_qa_json is not None:
             qa_text = dict({"data": []})
 
-        num_steps_to_run = len(data_loader.dataset)
+        num_steps_to_run = len(data_loader)
         print("Num steps to run: {:d}".format(num_steps_to_run))
         qa_idx = 0
         for batch in tqdm(data_loader, total=len(data_loader)):
@@ -136,6 +142,9 @@ def main(gen_args):
                 break
 
             num_steps_to_run = num_steps_to_run - 1
+
+            if num_steps_to_run > 0:
+                continue
 
             c_ids = batch[0]
             c_len = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
