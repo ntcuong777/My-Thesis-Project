@@ -53,7 +53,7 @@ class PriorEncoder(nn.Module):
         # question encoder self attention
         cq_hidden_states = self.cq_self_attention(cq_hidden_states, c_mask)
         mask = c_mask.unsqueeze(1)
-        cq_h = self.cq_final_state_attention(cq_h, cq_hidden_states, mask).squeeze(1)
+        cq_h = self.cq_final_state_attention(cq_h.unsqueeze(1), cq_hidden_states, mask).squeeze(1)
 
         ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
         ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
@@ -61,7 +61,7 @@ class PriorEncoder(nn.Module):
         # context-answer self-attention
         ca_hidden_states = self.ca_self_attention(ca_hidden_states, c_mask)
         mask = c_mask.unsqueeze(1)
-        ca_h = self.ca_final_state_attention(ca_h, ca_hidden_states, mask).squeeze(1)
+        ca_h = self.ca_final_state_attention(ca_h.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(cq_h)
         zq_logvar = self.zq_logvar_linear(cq_h)

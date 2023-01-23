@@ -58,7 +58,7 @@ class PosteriorEncoder(nn.Module):
         # question self attention
         q_hidden_states = self.cq_self_attention(q_hidden_states, q_mask)
         mask = q_mask.unsqueeze(1)
-        q_h = self.cq_final_state_attention(q_h, q_hidden_states, mask).squeeze(1)
+        q_h = self.cq_final_state_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
 
         # context enc
         c_embeds = self.embedding(c_ids)
@@ -68,7 +68,7 @@ class PosteriorEncoder(nn.Module):
         # context self attention
         c_hidden_states = self.cq_self_attention(c_hidden_states, c_mask)
         mask = c_mask.unsqueeze(1)
-        c_h = self.cq_final_state_attention(c_h, c_hidden_states, mask).squeeze(1)
+        c_h = self.cq_final_state_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)
@@ -92,7 +92,7 @@ class PosteriorEncoder(nn.Module):
         # context-answer self-attention
         c_a_hidden_states = self.ca_self_attention(c_a_hidden_states, c_mask)
         mask = c_mask.unsqueeze(1)
-        c_a_h = self.ca_final_state_attention(c_a_h, c_a_hidden_states, mask).squeeze(1)
+        c_a_h = self.ca_final_state_attention(c_a_h.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
