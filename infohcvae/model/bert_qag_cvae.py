@@ -189,8 +189,6 @@ class BertQAGConditionalVae(pl.LightningModule):
     def compute_loss(self, out: Dict, batch: torch.Tensor):
         _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
 
-        c_mask = return_attention_mask(c_ids, self.pad_token_id)
-
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
@@ -198,7 +196,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         start_logits, end_logits, a_dec_outputs = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
-        num_sample_times = 256 // c_ids.size(0) + (0 if 256 % c_ids.size(0) == 0 else 1)
+        num_sample_times = 4096 // c_ids.size(0) + (0 if 4096 % c_ids.size(0) == 0 else 1)
         posterior_zq = torch.cat(
             [posterior_zq,
              sample_gaussian(
