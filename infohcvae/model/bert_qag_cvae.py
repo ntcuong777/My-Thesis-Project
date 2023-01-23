@@ -196,7 +196,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         start_logits, end_logits, a_dec_outputs = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
-        num_sample_times = 1024 // c_ids.size(0) + (0 if 1024 % c_ids.size(0) == 0 else 1)
+        num_sample_times = 512 // c_ids.size(0) + (0 if 512 % c_ids.size(0) == 0 else 1)
         posterior_zq = torch.cat(
             [posterior_zq,
              sample_gaussian(
