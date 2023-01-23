@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
+from infohcvae.model.custom.gated_self_attention import GatedAttention
 from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
@@ -26,9 +27,14 @@ class PriorEncoder(nn.Module):
         self.context_question_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
+        self.cq_self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+
         self.context_answer_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
+        self.ca_self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -44,10 +50,18 @@ class PriorEncoder(nn.Module):
         cq_hidden_states, cq_state = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
         cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # question encoder self attention
+        cq_hidden_states = self.cq_self_attention(cq_hidden_states, c_mask)
+        mask = c_mask.unsqueeze(1)
+        cq_h = self.cq_final_state_attention(cq_h, cq_hidden_states, mask).squeeze(1)
 
         ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
         ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # context-answer self-attention
+        ca_hidden_states = self.ca_self_attention(ca_hidden_states, c_mask)
+        mask = c_mask.unsqueeze(1)
+        ca_h = self.ca_final_state_attention(ca_h, ca_hidden_states, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(cq_h)
         zq_logvar = self.zq_logvar_linear(cq_h)
