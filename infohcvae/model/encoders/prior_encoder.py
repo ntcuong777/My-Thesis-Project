@@ -28,13 +28,13 @@ class PriorEncoder(nn.Module):
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
         self.cq_self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        # self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.context_answer_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
         self.ca_self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        # self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -43,25 +43,32 @@ class PriorEncoder(nn.Module):
         self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values)
 
     def forward(self, c_ids):
+        batch_size, _ = c_ids.size()
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
-        cq_hidden_states, cq_state = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
-        cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        cq_hidden_states, _ = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
+        # cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        # cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # question encoder self attention
         cq_hidden_states = self.cq_self_attention(cq_hidden_states, c_mask)
-        mask = c_mask.unsqueeze(1)
-        cq_h = self.cq_final_state_attention(cq_h.unsqueeze(1), cq_hidden_states, mask).squeeze(1)
+        cq_h_forward = cq_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, -1, 0, :]
+        cq_h_reverse = cq_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, 0, 1, :]
+        cq_h = torch.cat([cq_h_forward, cq_h_reverse], dim=1)
+        # mask = c_mask.unsqueeze(1)
+        # cq_h = self.cq_final_state_attention(cq_h.unsqueeze(1), cq_hidden_states, mask).squeeze(1)
 
-        ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
-        ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        ca_hidden_states, _ = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
+        # ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        # ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # context-answer self-attention
         ca_hidden_states = self.ca_self_attention(ca_hidden_states, c_mask)
-        mask = c_mask.unsqueeze(1)
-        ca_h = self.ca_final_state_attention(ca_h.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
+        ca_h_forward = ca_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, -1, 0, :]
+        ca_h_reverse = ca_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, 0, 1, :]
+        ca_h = torch.cat([ca_h_forward, ca_h_reverse], dim=1)
+        # mask = c_mask.unsqueeze(1)
+        # ca_h = self.ca_final_state_attention(ca_h.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(cq_h)
         zq_logvar = self.zq_logvar_linear(cq_h)
