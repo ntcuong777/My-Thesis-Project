@@ -26,7 +26,7 @@ def main(run_args):
         train_data = torch.load(os.path.join(run_args.dataloader_dir, "train_data.pt"))
         eval_data = torch.load(os.path.join(run_args.dataloader_dir, "eval_data.pt"))
         train_dataloader = DataLoader(train_data, args.batch_size, shuffle=True)
-        eval_dataloader = DataLoader(eval_data, args.batch_size, shuffle=False)
+        eval_dataloader = DataLoader(eval_data, batch_size=64, shuffle=False)
     else:
         train_dataloader, train_data = get_squad_data_loader(
             tokenizer, run_args.train_dir, shuffle=True, is_train_set=True, args=run_args)
