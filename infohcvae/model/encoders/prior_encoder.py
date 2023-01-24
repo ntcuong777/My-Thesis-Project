@@ -64,6 +64,9 @@ class PriorEncoder(nn.Module):
         # context-answer self-attention
         ca_fwd_hs = self.ca_self_attention(ca_fwd_hs, c_mask)
         ca_rev_hs = self.ca_self_attention(ca_rev_hs, c_mask)
+        # re-concat
+        ca_hs = torch.cat(
+            [ca_fwd_hs.unsqueeze(2), ca_rev_hs.unsqueeze(2)], dim=2).view(batch_size, -1, 2 * self.nhidden)
         ca_h = torch.cat([ca_fwd_hs[:, -1, :], ca_rev_hs[:, 0, :]], dim=1)
 
         zq_mu = self.zq_mu_linear(cq_h)
