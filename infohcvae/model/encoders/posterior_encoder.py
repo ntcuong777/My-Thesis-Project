@@ -26,12 +26,12 @@ class PosteriorEncoder(nn.Module):
         self.context_question_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        self.cq_self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        self.cq_self_attention = GatedAttention(lstm_enc_nhidden)
 
         self.context_answer_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        self.ca_self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        self.ca_self_attention = GatedAttention(lstm_enc_nhidden)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
