@@ -27,13 +27,11 @@ class PosteriorEncoder(nn.Module):
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
         self.cq_self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        # self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.context_answer_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
         self.ca_self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        # self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
@@ -53,37 +51,39 @@ class PosteriorEncoder(nn.Module):
 
         # question enc
         q_embeds = self.embedding(q_ids)
-        q_hidden_states, _ = self.context_question_encoder(q_embeds, q_lengths.to("cpu"))
-        # q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        q_hs, _ = self.context_question_encoder(q_embeds, q_lengths.to("cpu"))
+        q_hs = q_hs.view(batch_size, -1, 2, self.nhidden)
+        q_fwd_hs = q_hs[:, :, 0, :]
+        q_rev_hs = q_hs[:, :, 1, :]
         # question self attention
-        q_hidden_states = self.cq_self_attention(q_hidden_states, q_mask)
-        q_h_forward = q_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, -1, 0, :]
-        q_h_reverse = q_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, 0, 1, :]
-        q_h = torch.cat([q_h_forward, q_h_reverse], dim=1)
-        # mask = q_mask.unsqueeze(1)
-        # q_h = self.cq_final_state_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
+        q_fwd_hs = self.cq_self_attention(q_fwd_hs, q_mask)
+        q_rev_hs = self.cq_self_attention(q_rev_hs, q_mask)
+        # re-concat
+        q_hs = torch.cat(
+            [q_fwd_hs.unsqueeze(2), q_rev_hs.unsqueeze(2)], dim=2).view(batch_size, -1, 2 * self.nhidden)
+        q_h = torch.cat([q_fwd_hs[:, -1, :], q_rev_hs[:, 0, :]], dim=1)
 
         # context enc
         c_embeds = self.embedding(c_ids)
-        c_hidden_states, _ = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
-        # c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        c_hs, _ = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
+        c_hs = c_hs.view(batch_size, -1, 2, self.nhidden)
+        c_fwd_hs = c_hs[:, :, 0, :]
+        c_rev_hs = c_hs[:, :, 1, :]
         # context self attention
-        c_hidden_states = self.cq_self_attention(c_hidden_states, c_mask)
-        c_h_forward = c_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, -1, 0, :]
-        c_h_reverse = c_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, 0, 1, :]
-        c_h = torch.cat([c_h_forward, c_h_reverse], dim=1)
-        # mask = c_mask.unsqueeze(1)
-        # c_h = self.cq_final_state_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
+        c_fwd_hs = self.cq_self_attention(c_fwd_hs, c_mask)
+        c_rev_hs = self.cq_self_attention(c_rev_hs, c_mask)
+        # re-concat
+        c_hs = torch.cat(
+            [c_fwd_hs.unsqueeze(2), c_rev_hs.unsqueeze(2)], dim=2).view(batch_size, -1, 2 * self.nhidden)
+        c_h = torch.cat([c_fwd_hs[:, -1, :], c_rev_hs[:, 0, :]], dim=1)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)
-        c_attned_by_q = self.question_attention(q_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
+        c_attned_by_q = self.question_attention(q_h.unsqueeze(1), c_hs, mask).squeeze(1)
 
         # attetion c, q
         mask = q_mask.unsqueeze(1)
-        q_attned_by_c = self.context_attention(c_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
+        q_attned_by_c = self.context_attention(c_h.unsqueeze(1), q_hs, mask).squeeze(1)
 
         h = torch.cat([q_h, q_attned_by_c, c_h, c_attned_by_q], dim=-1)
         zq_mu = self.zq_mu_linear(h)
@@ -93,20 +93,21 @@ class PosteriorEncoder(nn.Module):
 
         # context and answer enc
         c_a_embeds = self.embedding(c_ids, a_mask, None)
-        c_a_hidden_states, _ = self.context_answer_encoder(c_a_embeds, c_lengths.to("cpu"))
-        # c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # context-answer self-attention
-        c_a_hidden_states = self.ca_self_attention(c_a_hidden_states, c_mask)
-        c_a_h_forward = c_a_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, -1, 0, :]
-        c_a_h_reverse = c_a_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, 0, 1, :]
-        c_a_h = torch.cat([c_a_h_forward, c_a_h_reverse], dim=1)
-        # mask = c_mask.unsqueeze(1)
-        # c_a_h = self.ca_final_state_attention(c_a_h.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
+        c_a_hs, _ = self.context_answer_encoder(c_a_embeds, c_lengths.to("cpu"))
+        c_a_hs = c_a_hs.view(batch_size, -1, 2, self.nhidden)
+        c_a_fwd_hs = c_a_hs[:, :, 0, :]
+        c_a_rev_hs = c_a_hs[:, :, 1, :]
+        # context-answer self attention
+        c_a_fwd_hs = self.ca_self_attention(c_a_fwd_hs, c_mask)
+        c_a_rev_hs = self.ca_self_attention(c_a_rev_hs, c_mask)
+        # re-concat
+        c_a_hs = torch.cat(
+            [c_a_fwd_hs.unsqueeze(2), c_a_rev_hs.unsqueeze(2)], dim=2).view(batch_size, -1, 2*self.nhidden)
+        c_a_h = torch.cat([c_a_fwd_hs[:, -1, :], c_a_rev_hs[:, 0, :]], dim=1)
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
-        c_a_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
+        c_a_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), c_a_hs, mask).squeeze(1)
 
         h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
         za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)

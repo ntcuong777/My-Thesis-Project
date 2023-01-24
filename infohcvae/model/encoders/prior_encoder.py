@@ -48,27 +48,23 @@ class PriorEncoder(nn.Module):
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
-        cq_hidden_states, _ = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
-        # cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        cq_hs, _ = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
+        cq_hs = cq_hs.view(batch_size, -1, 2, self.nhidden)
+        cq_fwd_hs = cq_hs[:, :, 0, :]
+        cq_rev_hs = cq_hs[:, :, 1, :]
         # question encoder self attention
-        cq_hidden_states = self.cq_self_attention(cq_hidden_states, c_mask)
-        cq_h_forward = cq_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, -1, 0, :]
-        cq_h_reverse = cq_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, 0, 1, :]
-        cq_h = torch.cat([cq_h_forward, cq_h_reverse], dim=1)
-        # mask = c_mask.unsqueeze(1)
-        # cq_h = self.cq_final_state_attention(cq_h.unsqueeze(1), cq_hidden_states, mask).squeeze(1)
+        cq_fwd_hs = self.cq_self_attention(cq_fwd_hs, c_mask)
+        cq_rev_hs = self.cq_self_attention(cq_rev_hs, c_mask)
+        cq_h = torch.cat([cq_fwd_hs[:, -1, :], cq_rev_hs[:, 0, :]], dim=1)
 
-        ca_hidden_states, _ = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
-        # ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        # ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        ca_hs, _ = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
+        ca_hs = ca_hs.view(batch_size, -1, 2, self.nhidden)
+        ca_fwd_hs = ca_hs[:, :, 0, :]
+        ca_rev_hs = ca_hs[:, :, 1, :]
         # context-answer self-attention
-        ca_hidden_states = self.ca_self_attention(ca_hidden_states, c_mask)
-        ca_h_forward = ca_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, -1, 0, :]
-        ca_h_reverse = ca_hidden_states.view(batch_size, -1, 2, self.nhidden)[:, 0, 1, :]
-        ca_h = torch.cat([ca_h_forward, ca_h_reverse], dim=1)
-        # mask = c_mask.unsqueeze(1)
-        # ca_h = self.ca_final_state_attention(ca_h.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
+        ca_fwd_hs = self.ca_self_attention(ca_fwd_hs, c_mask)
+        ca_rev_hs = self.ca_self_attention(ca_rev_hs, c_mask)
+        ca_h = torch.cat([ca_fwd_hs[:, -1, :], ca_rev_hs[:, 0, :]], dim=1)
 
         zq_mu = self.zq_mu_linear(cq_h)
         zq_logvar = self.zq_logvar_linear(cq_h)
@@ -76,7 +72,7 @@ class PriorEncoder(nn.Module):
         zq = sample_gaussian(zq_mu, zq_logvar)
 
         mask = c_mask.unsqueeze(1)
-        c_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
+        c_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), ca_hs, mask).squeeze(1)
 
         h = torch.cat([zq, c_attned_by_zq, ca_h], dim=-1)
         za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)
