@@ -27,14 +27,14 @@ class PriorEncoder(nn.Module):
         self.context_question_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        self.cq_self_attention = GatedAttention(lstm_enc_nhidden)
-        # self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        # self.cq_self_attention = GatedAttention(lstm_enc_nhidden)
+        self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.context_answer_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        self.ca_self_attention = GatedAttention(lstm_enc_nhidden)
-        # self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        # self.ca_self_attention = GatedAttention(lstm_enc_nhidden)
+        self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -48,26 +48,19 @@ class PriorEncoder(nn.Module):
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
-        cq_hs, _ = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
-        cq_hs = cq_hs.view(batch_size, -1, 2, self.nhidden)
-        cq_fwd_hs = cq_hs[:, :, 0, :]
-        cq_rev_hs = cq_hs[:, :, 1, :]
-        # question encoder self attention
-        cq_fwd_hs = self.cq_self_attention(cq_fwd_hs, c_mask)
-        cq_rev_hs = self.cq_self_attention(cq_rev_hs, c_mask)
-        cq_h = torch.cat([cq_fwd_hs[:, -1, :], cq_rev_hs[:, 0, :]], dim=1)
+        cq_hs, cq_state = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
+        cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # attention to other context tokens
+        mask = c_mask.unsqueeze(1)
+        cq_h = self.cq_final_state_attention(cq_h.unsqueeze(1), cq_hs, mask).squeeze(1)
 
-        ca_hs, _ = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
-        ca_hs = ca_hs.view(batch_size, -1, 2, self.nhidden)
-        ca_fwd_hs = ca_hs[:, :, 0, :]
-        ca_rev_hs = ca_hs[:, :, 1, :]
-        # context-answer self-attention
-        ca_fwd_hs = self.ca_self_attention(ca_fwd_hs, c_mask)
-        ca_rev_hs = self.ca_self_attention(ca_rev_hs, c_mask)
-        # re-concat
-        ca_hs = torch.cat(
-            [ca_fwd_hs.unsqueeze(2), ca_rev_hs.unsqueeze(2)], dim=2).view(batch_size, -1, 2 * self.nhidden)
-        ca_h = torch.cat([ca_fwd_hs[:, -1, :], ca_rev_hs[:, 0, :]], dim=1)
+        ca_hs, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
+        ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # attention to other context tokens
+        mask = c_mask.unsqueeze(1)
+        ca_h = self.ca_final_state_attention(ca_h.unsqueeze(1), ca_hs, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(cq_h)
         zq_logvar = self.zq_logvar_linear(cq_h)
