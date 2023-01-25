@@ -145,10 +145,6 @@ def post_process(
 
 
 def main(gen_args):
-    pretrained_qa_model = \
-        AutoModelForQuestionAnswering.from_pretrained("bert-large-uncased-whole-word-masking-finetuned-squad")
-    qa_model_tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased-whole-word-masking-finetuned-squad")
-
     tokenizer = AutoTokenizer.from_pretrained(gen_args.base_model)
     gen_args.tokenizer = tokenizer
     pad_token_id = tokenizer.pad_token_id
@@ -157,6 +153,11 @@ def main(gen_args):
     vae = BertQAGConditionalVae.load_from_checkpoint(gen_args.checkpoint)
     vae.eval()
     vae = vae.to(device)
+
+    pretrained_qa_model = \
+        AutoModelForQuestionAnswering.from_pretrained("bert-large-uncased-whole-word-masking-finetuned-squad")
+    pretrained_qa_model.to(device)
+    qa_model_tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased-whole-word-masking-finetuned-squad")
 
     data_loader = None
     if not gen_args.load_saved_dataloader:
