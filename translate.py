@@ -1,15 +1,17 @@
 import argparse
+import os
 import pickle
-import h5py
 import random
 
-import torch
+import h5py
 import numpy as np
 import pytorch_lightning as pl
-from transformers import AutoTokenizer
+import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
-import os
+from transformers import AutoTokenizer, AutoModelForQuestionAnswering
+
 from infohcvae.model.bert_qag_cvae import BertQAGConditionalVae
 from infohcvae.model.model_utils import return_attention_mask
 from infohcvae.squad_utils import (
@@ -21,7 +23,62 @@ def return_seq_lengths(mask):
     return torch.sum(mask, dim=1)
 
 
-def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, total_max_len=448):
+def get_start_end_positions_from_logits(
+        attention_mask: torch.Tensor, start_logits: torch.Tensor, end_logits: torch.Tensor):
+    mask = torch.matmul(attention_mask.unsqueeze(2).float(), attention_mask.unsqueeze(1).float())
+    mask = torch.triu(mask) == 0
+    score = (F.log_softmax(start_logits, dim=1).unsqueeze(2)
+             + F.log_softmax(end_logits, dim=1).unsqueeze(1))
+    score = score.masked_fill(mask, -10000.0)
+    score, start_positions = score.max(dim=1)
+    score, end_positions = score.max(dim=1)
+    start_positions = torch.gather(start_positions, 1, end_positions.view(-1, 1)).squeeze(1)
+
+    return start_positions, end_positions
+
+
+def compute_f1(prediction, truth):
+    def normalize_text(s):
+        """Removing articles and punctuation, and standardizing whitespace are all typical text processing steps."""
+        import string, re
+
+        def remove_articles(text):
+            regex = re.compile(r"\b(a|an|the)\b", re.UNICODE)
+            return re.sub(regex, " ", text)
+
+        def white_space_fix(text):
+            return " ".join(text.split())
+
+        def remove_punc(text):
+            exclude = set(string.punctuation)
+            return "".join(ch for ch in text if ch not in exclude)
+
+        def lower(text):
+            return text.lower()
+
+        return white_space_fix(remove_articles(remove_punc(lower(s))))
+
+    pred_tokens = normalize_text(prediction).split()
+    truth_tokens = normalize_text(truth).split()
+
+    # if either the prediction or the truth is no-answer then f1 = 1 if they agree, 0 otherwise
+    if len(pred_tokens) == 0 or len(truth_tokens) == 0:
+        return int(pred_tokens == truth_tokens)
+
+    common_tokens = set(pred_tokens) & set(truth_tokens)
+
+    # if there are no common tokens then f1 = 0
+    if len(common_tokens) == 0:
+        return 0
+
+    prec = len(common_tokens) / len(pred_tokens)
+    rec = len(common_tokens) / len(truth_tokens)
+
+    return 2 * (prec * rec) / (prec + rec)
+
+
+def post_process(
+        qa_model_tokenizer, qa_model, q_ids, start_positions, end_positions, c_ids, pad_token_id, total_max_len=448):
     """
        concatenate question and context for BERT QA model:
        [CLS] Question [SEP] Context [SEP]
@@ -33,7 +90,8 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
     end_positions = end_positions - 1
 
     q_lengths = return_seq_lengths(return_attention_mask(q_ids, pad_token_id))
-    c_lengths = return_seq_lengths(return_attention_mask(c_ids, pad_token_id))
+    c_mask = return_attention_mask(c_ids, pad_token_id)
+    c_lengths = return_seq_lengths(c_mask)
 
     all_input_ids = []
     all_seg_ids = []
@@ -57,6 +115,28 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
         start_positions[i] = start_positions[i] + q_length
         end_positions[i] = end_positions[i] + q_length
 
+        # Filter the QA pair with a pretrained QA model
+        with torch.no_grad():
+            input_mask = return_attention_mask(input_ids.unsqueeze(0))
+            outputs = qa_model(
+                input_ids=input_ids.unsqueeze(0), token_type_ids=seg_ids.unsqueeze(0), attention_mask=input_mask)
+            start_logits = outputs.start_logits
+            end_logits = outputs.end_logits
+            filtered_start_pos, filtered_end_pos = get_start_end_positions_from_logits(
+                input_mask, start_logits, end_logits)
+            answer_start_index = filtered_start_pos[0]
+            answer_end_index = filtered_end_pos[0]
+            predict_answer_tokens = input_ids[answer_start_index : answer_end_index + 1]
+            qa_model_text_answer = qa_model_tokenizer.decode(predict_answer_tokens)
+
+            generated_answer_tokens = input_ids[start_positions[i] : end_positions[i] + 1]
+            generated_answer_text = qa_model_tokenizer.decode(generated_answer_tokens)
+
+            f1_score = compute_f1(qa_model_text_answer, generated_answer_text)
+            if f1_score * 100 > 40.0:
+                start_positions[i] = answer_start_index
+                end_positions[i] = answer_end_index
+
     all_input_ids = torch.stack(all_input_ids, dim=0)
     all_seg_ids = torch.stack(all_seg_ids, dim=0)
     all_input_mask = (all_input_ids != 0).byte()
@@ -65,6 +145,10 @@ def post_process(q_ids, start_positions, end_positions, c_ids, pad_token_id, tot
 
 
 def main(gen_args):
+    pretrained_qa_model = \
+        AutoModelForQuestionAnswering.from_pretrained("bert-large-uncased-whole-word-masking-finetuned-squad")
+    qa_model_tokenizer = AutoTokenizer.from_pretrained("bert-large-uncased-whole-word-masking-finetuned-squad")
+
     tokenizer = AutoTokenizer.from_pretrained(gen_args.base_model)
     gen_args.tokenizer = tokenizer
     pad_token_id = tokenizer.pad_token_id
@@ -169,7 +253,7 @@ def main(gen_args):
 
                 all_input_ids, all_seg_ids, \
                     all_input_mask, all_start, all_end = post_process(
-                        batch_q_ids, batch_start, batch_end, repeated_c_ids,
+                        qa_model_tokenizer, pretrained_qa_model, batch_q_ids, batch_start, batch_end, repeated_c_ids,
                         pad_token_id, total_max_len=gen_args.total_max_len)
 
                 for i in range(repeated_c_ids.size(0)):
@@ -179,28 +263,6 @@ def main(gen_args):
                     start_positions_set[qa_idx] = all_start[i].cpu()
                     end_positions_set[qa_idx] = all_end[i].cpu()
                     qa_idx += 1
-            # for _ in range(gen_args.k):
-            #     with torch.no_grad():
-            #         batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(c_ids)
-            #
-            #         if gen_args.output_text and gen_args.out_qa_json is not None:  # out QA text to json
-            #             for idx in range(batch_q_ids.size(0)):
-            #                 q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
-            #                 q_text = gen_args.tokenizer.decode(q_ids)
-            #                 ans_text = gen_args.tokenizer.decode(c_ids[idx, start_pos:end_pos])
-            #                 qa_text["data"].append({"context": c_texts[idx], "question": q_text, "answer": ans_text})
-            #
-            #         all_input_ids, all_seg_ids, \
-            #             all_input_mask, all_start, all_end = post_process(
-            #                 batch_q_ids, batch_start, batch_end, c_ids, pad_token_id, total_max_len=gen_args.total_max_len)
-            #
-            #     for i in range(c_ids.size(0)):
-            #         input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
-            #         input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
-            #         segment_ids_set[qa_idx, :] = all_seg_ids[i].cpu()
-            #         start_positions_set[qa_idx] = all_start[i].cpu()
-            #         end_positions_set[qa_idx] = all_end[i].cpu()
-            #         qa_idx += 1
 
     # For outputting text
     if gen_args.output_text:
