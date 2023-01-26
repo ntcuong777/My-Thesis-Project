@@ -133,7 +133,7 @@ def post_process(
             generated_answer_text = qa_model_tokenizer.decode(generated_answer_tokens)
 
             f1_score = compute_f1(qa_model_text_answer, generated_answer_text)
-            if f1_score * 100 > 40.0:
+            if f1_score * 100 < 40.0:
                 start_positions[i] = answer_start_index
                 end_positions[i] = answer_end_index
 
