@@ -271,7 +271,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         current_losses = self.compute_loss(out, batch)
 
-        if batch_idx % 1000 == 0:
+        if batch_idx % 100 == 0:
             # Log to file
             log_str = ""
             for k, v in current_losses.items():
