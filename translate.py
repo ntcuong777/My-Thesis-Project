@@ -132,7 +132,7 @@ def post_process(
             generated_answer_tokens = input_ids[start_positions[i] : end_positions[i] + 1]
             generated_answer_text = qa_model_tokenizer.decode(generated_answer_tokens)
 
-            f1_score = compute_f1(qa_model_text_answer, generated_answer_text)
+            f1_score = compute_f1(generated_answer_text, qa_model_text_answer)
             if f1_score * 100 < 40.0:
                 start_positions[i] = answer_start_index
                 end_positions[i] = answer_end_index
