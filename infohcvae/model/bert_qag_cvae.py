@@ -363,9 +363,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             f.write(log_str + "\n\n")
 
     def training_epoch_end(self, outputs):
-        if self.current_epoch + 1 == 20:
-            self.lambda_mmd_a = 1000 # increase weights to fit prior
-
         if (self.current_epoch + 1) % self.program_args.save_frequency == 0:
             filename = os.path.join(
                 self.program_args.save_by_epoch_dir, "model-epoch-{:02d}.ckpt".format(self.current_epoch + 1))
