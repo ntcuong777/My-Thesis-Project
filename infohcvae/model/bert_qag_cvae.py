@@ -53,6 +53,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.nzadim = nzadim = args.nzadim
         self.nza_values = nza_values = args.nza_values
 
+        self.w_bce = args.w_bce
         self.alpha_kl_q = args.alpha_kl_q
         self.alpha_kl_a = args.alpha_kl_a
         self.lambda_mmd_q = args.lambda_mmd_q
@@ -88,17 +89,18 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.eos_id = eos_id = self.tokenizer.sep_token_id
 
         """ Define components """
+        use_attention = not args.train_original
         self.posterior_encoder = PosteriorEncoder(embedding, d_model, encoder_nhidden, encoder_nlayers,
-                                                  nzqdim, nzadim, nza_values,
-                                                  dropout=encoder_dropout, pad_token_id=self.pad_token_id)
+                                                  nzqdim, nzadim, nza_values, dropout=encoder_dropout,
+                                                  pad_token_id=self.pad_token_id, use_attention=use_attention)
 
         self.prior_encoder = PriorEncoder(embedding, d_model, encoder_nhidden, encoder_nlayers,
-                                          nzqdim, nzadim, nza_values,
-                                          dropout=encoder_dropout, pad_token_id=self.pad_token_id)
+                                          nzqdim, nzadim, nza_values, dropout=encoder_dropout,
+                                          pad_token_id=self.pad_token_id, use_attention=use_attention)
 
-        self.answer_decoder = AnswerDecoder(bert_model, d_model, nzadim, nza_values,
-                                            decoder_a_nhidden, decoder_a_nlayers,
-                                            dropout=decoder_a_dropout, pad_token_id=self.pad_token_id)
+        self.answer_decoder = AnswerDecoder(bert_model, d_model, nzadim, nza_values, decoder_a_nhidden,
+                                            decoder_a_nlayers, dropout=decoder_a_dropout,
+                                            pad_token_id=self.pad_token_id, use_attention=use_attention)
 
         self.question_decoder = QuestionDecoder(
             embedding, bert_model, nzqdim, d_model, decoder_q_nhidden, decoder_q_nlayers,
@@ -144,6 +146,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzqdim", type=int, default=50)
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
+        parser.add_argument("--w_bce", type=float, default=1.5)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
         parser.add_argument("--lambda_mmd_q", type=float, default=200)
@@ -224,8 +227,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # Compute losses
         # q rec loss
-        loss_q_rec = 1.5 * self.q_rec_criterion(
-            q_logits[:, :-1, :].transpose(1, 2).contiguous(), q_ids[:, 1:]) # increase weight from 1 -> 1.5
+        loss_q_rec = self.w_bce * self.q_rec_criterion(
+            q_logits[:, :-1, :].transpose(1, 2).contiguous(), q_ids[:, 1:])
 
         # a rec loss
         max_c_len = c_ids.size(1)
@@ -233,7 +236,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         no_q_end_positions.clamp_(0, max_c_len)
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        loss_a_rec = 1.5 * 0.5 * (loss_start_a_rec + loss_end_a_rec) # increase weight from 1 -> 1.5
+        loss_a_rec = self.w_bce * 0.5 * (loss_start_a_rec + loss_end_a_rec)
 
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)

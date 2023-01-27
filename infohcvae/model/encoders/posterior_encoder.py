@@ -11,7 +11,8 @@ from infohcvae.model.model_utils import (
 
 class PosteriorEncoder(nn.Module):
     def __init__(self, embedding, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
-                 nzqdim, nzadim, nza_values, dropout=0.0, pad_token_id=0):
+                 nzqdim, nzadim, nza_values, dropout=0.0, pad_token_id=0,
+                 use_attention=False):
         super(PosteriorEncoder, self).__init__()
 
         self.embedding = embedding
@@ -27,13 +28,17 @@ class PosteriorEncoder(nn.Module):
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
         # self.cq_self_attention = GatedAttention(lstm_enc_nhidden)
-        self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        self.cq_final_state_attention = None
+        if use_attention:
+            self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.context_answer_encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
         # self.ca_self_attention = GatedAttention(lstm_enc_nhidden)
-        self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        self.ca_final_state_attention = None
+        if use_attention:
+            self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
@@ -56,18 +61,20 @@ class PosteriorEncoder(nn.Module):
         q_hs, q_state = self.context_question_encoder(q_embeds, q_lengths.to("cpu"))
         q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # attention to other question tokens
-        mask = q_mask.unsqueeze(1)
-        q_h = self.cq_final_state_attention(q_h.unsqueeze(1), q_hs, mask).squeeze(1)
+        if self.cq_final_state_attention is not None:
+            # attention to other question tokens
+            mask = q_mask.unsqueeze(1)
+            q_h = self.cq_final_state_attention(q_h.unsqueeze(1), q_hs, mask).squeeze(1)
 
         # context enc
         c_embeds = self.embedding(c_ids)
         c_hs, c_state = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # attention to other context tokens
-        mask = c_mask.unsqueeze(1)
-        c_h = self.cq_final_state_attention(c_h.unsqueeze(1), c_hs, mask).squeeze(1)
+        if self.cq_final_state_attention is not None:
+            # attention to other context tokens
+            mask = c_mask.unsqueeze(1)
+            c_h = self.cq_final_state_attention(c_h.unsqueeze(1), c_hs, mask).squeeze(1)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)
@@ -88,9 +95,10 @@ class PosteriorEncoder(nn.Module):
         c_a_hs, c_a_state = self.context_answer_encoder(c_a_embeds, c_lengths.to("cpu"))
         c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # attention to other context tokens
-        mask = c_mask.unsqueeze(1)
-        c_a_h = self.cq_final_state_attention(c_a_h.unsqueeze(1), c_a_hs, mask).squeeze(1)
+        if self.ca_final_state_attention is not None:
+            # attention to other context tokens
+            mask = c_mask.unsqueeze(1)
+            c_a_h = self.ca_final_state_attention(c_a_h.unsqueeze(1), c_a_hs, mask).squeeze(1)
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
