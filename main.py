@@ -51,7 +51,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_q_len", default=64, type=int, help="max query length")
     parser.add_argument("--load_saved_dataloader", dest="load_saved_dataloader",
                         action="store_true", default=False)
-    parser.add_argument("--train_original", dest="load_saved_dataloader",
+    parser.add_argument("--train_original", dest="train_original",
                         action="store_true", default=False, help="Whether to train the original Info-HCVAE")
 
     parser.add_argument("--model_dir", default="./save/vae-checkpoint", type=str)
