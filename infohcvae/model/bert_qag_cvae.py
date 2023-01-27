@@ -333,21 +333,15 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         if posterior_em > self.best_em:
             self.best_em = posterior_em
-            filename = os.path.join(
-                self.program_args.best_model_dir,
-                "model-{epoch:02d}-best_em.ckpt".format(epoch=self.current_epoch + 1, em=self.best_em))
+            filename = os.path.join(self.program_args.best_model_dir, "model-best_em.ckpt")
             self.trainer.save_checkpoint(filename)
         if posterior_f1 > self.best_f1:
             self.best_f1 = posterior_f1
-            filename = os.path.join(
-                self.program_args.best_model_dir,
-                "model-{epoch:02d}-best_f1.ckpt".format(epoch=self.current_epoch + 1, f1=self.best_f1))
+            filename = os.path.join(self.program_args.best_model_dir, "model-best_f1.ckpt")
             self.trainer.save_checkpoint(filename)
         if bleu > self.best_bleu:
             self.best_bleu = bleu
-            filename = os.path.join(
-                self.program_args.best_model_dir,
-                "model-{epoch:02d}-best_bleu.ckpt".format(epoch=self.current_epoch + 1, bleu=self.best_bleu))
+            filename = os.path.join(self.program_args.best_model_dir, "model-best_bleu.ckpt")
             self.trainer.save_checkpoint(filename)
 
         with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
