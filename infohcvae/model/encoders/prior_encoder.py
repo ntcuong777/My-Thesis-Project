@@ -24,17 +24,17 @@ class PriorEncoder(nn.Module):
         self.nzadim = nzadim
         self.nza_values = nza_values
 
-        self.context_question_encoder = CustomLSTM(
+        self.encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        self.cq_self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        self.cq_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        self.self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        self.final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
-        self.context_answer_encoder = CustomLSTM(
-            input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
-            dropout=dropout, bidirectional=True)
-        self.ca_self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        # self.context_answer_encoder = CustomLSTM(
+        #     input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
+        #     dropout=dropout, bidirectional=True)
+        # self.ca_self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        # self.ca_final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -47,31 +47,31 @@ class PriorEncoder(nn.Module):
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
-        cq_hidden_states, cq_state = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
-        cq_h = cq_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        cq_h = cq_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # question encoder self attention
-        cq_hidden_states = self.cq_self_attention(cq_hidden_states, c_mask)
+        c_hs, c_state = self.encoder(c_embeds, c_lengths.to("cpu"))
+        c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # encoder self attention
+        c_hs = self.self_attention(c_hs, c_mask)
         mask = c_mask.unsqueeze(1)
-        cq_h = self.cq_final_state_attention(cq_h.unsqueeze(1), cq_hidden_states, mask).squeeze(1)
+        c_h = self.cq_final_state_attention(c_h.unsqueeze(1), c_hs, mask).squeeze(1)
 
-        ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
-        ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # context-answer self-attention
-        ca_hidden_states = self.ca_self_attention(ca_hidden_states, c_mask)
-        mask = c_mask.unsqueeze(1)
-        ca_h = self.ca_final_state_attention(ca_h.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
+        # ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
+        # ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        # ca_h = ca_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # # context-answer self-attention
+        # ca_hidden_states = self.ca_self_attention(ca_hidden_states, c_mask)
+        # mask = c_mask.unsqueeze(1)
+        # ca_h = self.ca_final_state_attention(ca_h.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
 
-        zq_mu = self.zq_mu_linear(cq_h)
-        zq_logvar = self.zq_logvar_linear(cq_h)
+        zq_mu = self.zq_mu_linear(c_h)
+        zq_logvar = self.zq_logvar_linear(c_h)
         # Sample `zq`
         zq = sample_gaussian(zq_mu, zq_logvar)
 
         mask = c_mask.unsqueeze(1)
-        c_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), ca_hidden_states, mask).squeeze(1)
+        c_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), c_hs, mask).squeeze(1)
 
-        h = torch.cat([zq, c_attned_by_zq, ca_h], dim=-1)
+        h = torch.cat([zq, c_attned_by_zq, c_h], dim=-1)
         za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)
         # sample `za`
         za = gumbel_softmax(za_logits, hard=True)
