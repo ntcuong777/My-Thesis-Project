@@ -3,4 +3,4 @@
 tmp_1=64
 tmp_2=$1
 accum=$((tmp_1 / tmp_2))
-python main.py --accumulate_grad_batches="$accum" --checkpoint_file="$3" --num_workers="$2" --accelerator=gpu --devices=auto --load_saved_dataloader --batch_size="$1" --save_frequency=5 --eval_frequency=5 --max_epochs=100 --log_every_n_steps=50 --default_root_dir=./save/logs
+python main.py --accumulate_grad_batches="$accum" --checkpoint_file="$3" --num_workers="$2" --accelerator=gpu --devices=auto --load_saved_dataloader --batch_size="$1" --save_frequency=5 --eval_frequency=5 --max_epochs=30 --log_every_n_steps=30 --default_root_dir=./save/logs
