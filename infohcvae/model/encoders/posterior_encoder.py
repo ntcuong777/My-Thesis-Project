@@ -62,7 +62,7 @@ class PosteriorEncoder(nn.Module):
 
         # context enc
         c_embeds = self.embedding(c_ids)
-        c_hs, c_state = self.encoder(c_embeds, c_lengths.to("cpu"))
+        c_hs, c_state = self.context_question_encoder(c_embeds, c_lengths.to("cpu"))
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # context self attention
