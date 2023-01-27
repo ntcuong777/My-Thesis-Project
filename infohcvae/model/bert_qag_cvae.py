@@ -146,11 +146,11 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzqdim", type=int, default=50)
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
-        parser.add_argument("--w_bce", type=float, default=1.5)
+        parser.add_argument("--w_bce", type=float, default=1)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
         parser.add_argument("--lambda_mmd_q", type=float, default=200)
-        parser.add_argument("--lambda_mmd_a", type=float, default=1000)
+        parser.add_argument("--lambda_mmd_a", type=float, default=400)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
