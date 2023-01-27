@@ -89,18 +89,17 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.eos_id = eos_id = self.tokenizer.sep_token_id
 
         """ Define components """
-        use_attention = not args.train_original
         self.posterior_encoder = PosteriorEncoder(embedding, d_model, encoder_nhidden, encoder_nlayers,
                                                   nzqdim, nzadim, nza_values, dropout=encoder_dropout,
-                                                  pad_token_id=self.pad_token_id, use_attention=use_attention)
+                                                  pad_token_id=self.pad_token_id, use_attention=True)
 
         self.prior_encoder = PriorEncoder(embedding, d_model, encoder_nhidden, encoder_nlayers,
                                           nzqdim, nzadim, nza_values, dropout=encoder_dropout,
-                                          pad_token_id=self.pad_token_id, use_attention=use_attention)
+                                          pad_token_id=self.pad_token_id, use_attention=True)
 
         self.answer_decoder = AnswerDecoder(bert_model, d_model, nzadim, nza_values, decoder_a_nhidden,
                                             decoder_a_nlayers, dropout=decoder_a_dropout,
-                                            pad_token_id=self.pad_token_id, use_attention=use_attention)
+                                            pad_token_id=self.pad_token_id, use_attention=True)
 
         self.question_decoder = QuestionDecoder(
             embedding, bert_model, nzqdim, d_model, decoder_q_nhidden, decoder_q_nlayers,

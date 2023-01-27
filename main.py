@@ -51,17 +51,13 @@ if __name__ == "__main__":
     parser.add_argument("--max_q_len", default=64, type=int, help="max query length")
     parser.add_argument("--load_saved_dataloader", dest="load_saved_dataloader",
                         action="store_true", default=False)
-    parser.add_argument("--train_original", dest="train_original",
-                        action="store_true", default=False, help="Whether to train the original Info-HCVAE")
 
     parser.add_argument("--model_dir", default="./save/vae-checkpoint", type=str)
-    # parser.add_argument("--bart_decoder_finetune_epochs", default=3, type=int) # deprecated
     parser.add_argument("--dataloader_dir", default="./save/dataloader", type=str)
     parser.add_argument("--checkpoint_file", default=None, type=str,
                         help="Path to the .pt file, None if checkpoint should not be loaded")
     parser.add_argument("--batch_size", default=16, type=int, help="batch size")
     parser.add_argument("--num_workers", default=2, type=int, help="num workers")
-    # parser.add_argument("--minibatch_size", default=16, type=int, help="mini-batch size")
     parser.add_argument("--loss_log_file", default="./train_loss_info.log", type=str)
     parser.add_argument("--eval_metrics_log_file", default="./metrics_log.log", type=str)
     parser.add_argument("--save_frequency", default=5, type=int, help="save frequency by epoch")
