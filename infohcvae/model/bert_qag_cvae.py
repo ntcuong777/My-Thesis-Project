@@ -246,9 +246,11 @@ class BertQAGConditionalVae(pl.LightningModule):
                 posterior_za_logits, prior_za_logits)
             loss_kl = loss_zq_kl + loss_za_kl
 
-        loss_zq_mmd = self.lambda_mmd_q * self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
-        loss_za_mmd = self.lambda_mmd_a * self.gumbel_mmd_criterion(posterior_z=posterior_za, prior_z=prior_za)
-        loss_mmd = loss_zq_mmd + loss_za_mmd
+        loss_mmd, loss_zq_mmd, loss_za_mmd = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
+        if self.lambda_mmd_q > 0.0 or self.lambda_mmd_a > 0.0:
+            loss_zq_mmd = self.lambda_mmd_q * self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
+            loss_za_mmd = self.lambda_mmd_a * self.gumbel_mmd_criterion(posterior_z=posterior_za, prior_z=prior_za)
+            loss_mmd = loss_zq_mmd + loss_za_mmd
 
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
