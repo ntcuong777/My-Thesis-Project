@@ -149,7 +149,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
         parser.add_argument("--lambda_mmd_q", type=float, default=200)
-        parser.add_argument("--lambda_mmd_a", type=float, default=200)
+        parser.add_argument("--lambda_mmd_a", type=float, default=400)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
@@ -361,9 +361,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             f.write(log_str + "\n\n")
 
     def training_epoch_end(self, outputs):
-        if self.current_epoch + 1 == 20:
-            self.lambda_mmd_a = 1000 # increase weights to fit prior
-
         if (self.current_epoch + 1) % self.program_args.save_frequency == 0:
             filename = os.path.join(
                 self.program_args.save_by_epoch_dir, "model-epoch-{:02d}.ckpt".format(self.current_epoch + 1))
