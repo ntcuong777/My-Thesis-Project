@@ -147,7 +147,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
         parser.add_argument("--lambda_mmd_q", type=float, default=200)
-        parser.add_argument("--lambda_mmd_a", type=float, default=200)
+        parser.add_argument("--lambda_mmd_a", type=float, default=1000)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
@@ -224,8 +224,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # Compute losses
         # q rec loss
-        loss_q_rec = self.q_rec_criterion(q_logits[:, :-1, :].transpose(1, 2).contiguous(),
-                                          q_ids[:, 1:])
+        loss_q_rec = 1.5 * self.q_rec_criterion(
+            q_logits[:, :-1, :].transpose(1, 2).contiguous(), q_ids[:, 1:]) # increase weight from 1 -> 1.5
 
         # a rec loss
         max_c_len = c_ids.size(1)
@@ -233,7 +233,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         no_q_end_positions.clamp_(0, max_c_len)
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        loss_a_rec = 0.5 * (loss_start_a_rec + loss_end_a_rec)
+        loss_a_rec = 1.5 * 0.5 * (loss_start_a_rec + loss_end_a_rec) # increase weight from 1 -> 1.5
 
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
