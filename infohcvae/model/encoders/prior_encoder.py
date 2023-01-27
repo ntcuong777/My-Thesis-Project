@@ -53,7 +53,7 @@ class PriorEncoder(nn.Module):
         # encoder self attention
         c_hs = self.self_attention(c_hs, c_mask)
         mask = c_mask.unsqueeze(1)
-        c_h = self.final_state_attention(c_h.unsqueeze(1), c_hs, mask).squeeze(1)
+        c_h = self.cq_final_state_attention(c_h.unsqueeze(1), c_hs, mask).squeeze(1)
 
         # ca_hidden_states, ca_state = self.context_answer_encoder(c_embeds, c_lengths.to("cpu"))
         # ca_h = ca_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
