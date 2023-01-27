@@ -10,8 +10,7 @@ from infohcvae.model.model_utils import (
 
 class AnswerDecoder(nn.Module):
     def __init__(self, embedding, d_model, nzadim, nza_values,
-                 lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0, pad_token_id=0,
-                 use_attention=False):
+                 lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0, pad_token_id=0):
         super(AnswerDecoder, self).__init__()
 
         self.embedding = embedding
@@ -25,9 +24,7 @@ class AnswerDecoder(nn.Module):
         self.answer_decoder = CustomLSTM(input_size=4 * d_model, hidden_size=lstm_dec_nhidden,
                                          num_layers=lstm_dec_nlayers, dropout=dropout,
                                          bidirectional=True)
-        self.self_attention = None
-        if use_attention:
-            self.self_attention = GatedAttention(2 * lstm_dec_nhidden)
+        self.self_attention = GatedAttention(2 * lstm_dec_nhidden)
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
@@ -50,8 +47,7 @@ class AnswerDecoder(nn.Module):
                                 torch.abs(c_embeds - init_state)],
                                dim=-1)
         dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths.to("cpu"))
-        if self.self_attention is not None:
-            dec_outputs = self.self_attention(dec_outputs, c_mask)
+        dec_outputs = self.self_attention(dec_outputs, c_mask)
 
         start_logits = self.start_linear(dec_outputs).squeeze(-1)
         end_logits = self.end_linear(dec_outputs).squeeze(-1)
