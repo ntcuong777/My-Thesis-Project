@@ -63,7 +63,7 @@ def get_squad_data_loader(tokenizer, file, shuffle, is_train_set, args):
                              all_preprocessed_examples=None if is_train_set else features,
                              to_device=args.device)
     batch_size = args.batch_size if is_train_set else 64 # validation set batch_size=64 by default
-    data_loader = DataLoader(all_data, batch_size, num_workers=args.num_workers, shuffle=shuffle)
+    data_loader = DataLoader(all_data, batch_size, shuffle=shuffle)
 
     return data_loader, all_data
 
