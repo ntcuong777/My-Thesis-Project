@@ -12,7 +12,7 @@ from infohcvae.model.model_utils import (
 class PriorEncoder(nn.Module):
     def __init__(self, embedding, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
                  nzqdim, nzadim, nza_values, dropout=0, pad_token_id=0,
-                 use_attention=False):
+                 use_attention=True):
         super(PriorEncoder, self).__init__()
 
         self.embedding = embedding
