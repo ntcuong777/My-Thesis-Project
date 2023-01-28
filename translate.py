@@ -78,11 +78,14 @@ def compute_f1(prediction, truth):
 
 
 def post_process(
-        qa_model_tokenizer, qa_model, q_ids, start_positions, end_positions, c_ids, pad_token_id, total_max_len=448):
+        qa_model_tokenizer, qa_model, q_ids, start_positions, end_positions,
+        c_ids, pad_token_id, total_max_len=448, mode="replace"):
     """
        concatenate question and context for BERT QA model:
        [CLS] Question [SEP] Context [SEP]
     """
+    assert mode in ["replace", "remove"]
+
     batch_size = q_ids.size(0)
     # exclude CLS token in c_ids
     c_ids = c_ids[:, 1:]
@@ -104,18 +107,17 @@ def post_process(
         # input ids
         pads = torch.zeros((total_max_len - q_length - c_length), device=q_ids.device, dtype=torch.long)
         input_ids = torch.cat([q, c, pads], dim=0)
-        all_input_ids.append(input_ids)
 
         # segment ids
         zeros = torch.zeros_like(q)
         ones = torch.ones_like(c)
         seg_ids = torch.cat([zeros, ones, pads], dim=0)
-        all_seg_ids.append(seg_ids)
 
         start_positions[i] = start_positions[i] + q_length
         end_positions[i] = end_positions[i] + q_length
 
         # Filter the QA pair with a pretrained QA model
+        use_this_qa = True
         with torch.no_grad():
             input_mask = return_attention_mask(input_ids.unsqueeze(0))
             outputs = qa_model(
@@ -134,8 +136,15 @@ def post_process(
 
             f1_score = compute_f1(generated_answer_text, qa_model_text_answer)
             if f1_score * 100 < 40.0:
-                start_positions[i] = answer_start_index
-                end_positions[i] = answer_end_index
+                if mode == "replace":
+                    start_positions[i] = answer_start_index
+                    end_positions[i] = answer_end_index
+                else:
+                    use_this_qa = False # do not use this noisy example
+
+        if use_this_qa: # only add if this QA pair is used
+            all_input_ids.append(input_ids)
+            all_seg_ids.append(seg_ids)
 
     all_input_ids = torch.stack(all_input_ids, dim=0)
     all_seg_ids = torch.stack(all_seg_ids, dim=0)
@@ -173,7 +182,9 @@ def main(gen_args):
             }
             with open('full_processed_data.pickle', 'wb') as handle:
                 pickle.dump(full_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        # else:
+        else:
+            raise NotImplementedError("Using non-SQuAD data is not supported")
+
         #     examples = read_examples(gen_args.data_file, is_training=True, debug=gen_args.debug)
         #     features = convert_examples_to_harv_features(examples, tokenizer=tokenizer,
         #                                                  max_seq_length=gen_args.max_c_len,
@@ -255,15 +266,20 @@ def main(gen_args):
                 all_input_ids, all_seg_ids, \
                     all_input_mask, all_start, all_end = post_process(
                         qa_model_tokenizer, pretrained_qa_model, batch_q_ids, batch_start, batch_end, repeated_c_ids,
-                        pad_token_id, total_max_len=gen_args.total_max_len)
+                        pad_token_id, total_max_len=gen_args.total_max_len, mode=args.qa_filter_mode)
 
-                for i in range(repeated_c_ids.size(0)):
+                for i in range(all_input_ids.size(0)):
                     input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
                     input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
                     segment_ids_set[qa_idx, :] = all_seg_ids[i].cpu()
                     start_positions_set[qa_idx] = all_start[i].cpu()
                     end_positions_set[qa_idx] = all_end[i].cpu()
                     qa_idx += 1
+
+        # mark positions set to -1 to not use unused positions in dataset
+        for i in range(qa_idx, len(data_loader.dataset) * gen_args.k):
+            start_positions_set[i] = -1
+            end_positions_set[i] = -1
 
     # For outputting text
     if gen_args.output_text:
@@ -286,6 +302,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_model", default='bert-base-uncased', type=str)
     parser.add_argument("--max_c_len", default=384, type=int, help="max context length")
     parser.add_argument("--max_q_len", default=64, type=int, help="max query length")
+    parser.add_argument("--qa_filter_mode", default="remove", type=str, choices=["replace", "remove"])
 
     parser.add_argument("--batch_size", default=64, type=int, help="batch_size")
     parser.add_argument("--data_file", default="./data/squad/train-v1.1.json", type=str)
