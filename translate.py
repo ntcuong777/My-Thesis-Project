@@ -84,7 +84,7 @@ def post_process(
        concatenate question and context for BERT QA model:
        [CLS] Question [SEP] Context [SEP]
     """
-    assert mode in ["replace", "remove"]
+    assert mode in ["replace", "remove", "no_filter"]
 
     batch_size = q_ids.size(0)
     # exclude CLS token in c_ids
@@ -118,29 +118,30 @@ def post_process(
 
         # Filter the QA pair with a pretrained QA model
         use_this_qa = True
-        with torch.no_grad():
-            input_mask = return_attention_mask(input_ids.unsqueeze(0))
-            outputs = qa_model(
-                input_ids=input_ids.unsqueeze(0), token_type_ids=seg_ids.unsqueeze(0), attention_mask=input_mask)
-            start_logits = outputs.start_logits
-            end_logits = outputs.end_logits
-            filtered_start_pos, filtered_end_pos = get_start_end_positions_from_logits(
-                input_mask, start_logits, end_logits)
-            answer_start_index = filtered_start_pos[0]
-            answer_end_index = filtered_end_pos[0]
-            predict_answer_tokens = input_ids[answer_start_index : answer_end_index + 1]
-            qa_model_text_answer = qa_model_tokenizer.decode(predict_answer_tokens)
+        if not (mode == "no_filter"):
+            with torch.no_grad():
+                input_mask = return_attention_mask(input_ids.unsqueeze(0))
+                outputs = qa_model(
+                    input_ids=input_ids.unsqueeze(0), token_type_ids=seg_ids.unsqueeze(0), attention_mask=input_mask)
+                start_logits = outputs.start_logits
+                end_logits = outputs.end_logits
+                filtered_start_pos, filtered_end_pos = get_start_end_positions_from_logits(
+                    input_mask, start_logits, end_logits)
+                answer_start_index = filtered_start_pos[0]
+                answer_end_index = filtered_end_pos[0]
+                predict_answer_tokens = input_ids[answer_start_index : answer_end_index + 1]
+                qa_model_text_answer = qa_model_tokenizer.decode(predict_answer_tokens)
 
-            generated_answer_tokens = input_ids[start_positions[i] : end_positions[i] + 1]
-            generated_answer_text = qa_model_tokenizer.decode(generated_answer_tokens)
+                generated_answer_tokens = input_ids[start_positions[i] : end_positions[i] + 1]
+                generated_answer_text = qa_model_tokenizer.decode(generated_answer_tokens)
 
-            f1_score = compute_f1(generated_answer_text, qa_model_text_answer)
-            if f1_score * 100 < 40.0:
-                if mode == "replace":
-                    start_positions[i] = answer_start_index
-                    end_positions[i] = answer_end_index
-                else:
-                    use_this_qa = False # do not use this noisy example
+                f1_score = compute_f1(generated_answer_text, qa_model_text_answer)
+                if f1_score * 100 < 40.0:
+                    if mode == "replace":
+                        start_positions[i] = answer_start_index
+                        end_positions[i] = answer_end_index
+                    else: # mode == "remove"
+                        use_this_qa = False # do not use this noisy example
 
         if use_this_qa: # only add if this QA pair is used
             all_input_ids.append(input_ids)
@@ -302,7 +303,7 @@ if __name__ == "__main__":
     parser.add_argument("--base_model", default='bert-base-uncased', type=str)
     parser.add_argument("--max_c_len", default=384, type=int, help="max context length")
     parser.add_argument("--max_q_len", default=64, type=int, help="max query length")
-    parser.add_argument("--qa_filter_mode", default="remove", type=str, choices=["replace", "remove"])
+    parser.add_argument("--qa_filter_mode", default="replace", type=str, choices=["replace", "remove", "no_filter"])
 
     parser.add_argument("--batch_size", default=64, type=int, help="batch_size")
     parser.add_argument("--data_file", default="./data/squad/train-v1.1.json", type=str)
