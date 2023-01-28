@@ -50,6 +50,9 @@ class HarvestingQADatasetH5(Dataset):
         self.start_positions = self.fdata["qas/start_positions"]
         self.end_positions = self.fdata["qas/end_positions"]
         self.total_size = self.start_positions.len()
+        # get the real size of dataset
+        while self.start_positions[self.total_size - 1] == -1:
+            self.total_size = self.total_size - 1
 
     def __getitem__(self, idx):
         input_ids = torch.tensor(self.input_ids[idx, :], dtype=torch.long)
