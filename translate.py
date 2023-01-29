@@ -98,6 +98,8 @@ def post_process(
 
     all_input_ids = []
     all_seg_ids = []
+    all_starts = []
+    all_ends = []
     for i in range(batch_size):
         q_length = int(q_lengths[i].item())
         c_length = int(c_lengths[i].item())
@@ -146,12 +148,16 @@ def post_process(
         if use_this_qa: # only add if this QA pair is used
             all_input_ids.append(input_ids)
             all_seg_ids.append(seg_ids)
+            all_starts.append(start_positions[i])
+            all_ends.append(end_positions[i])
 
     all_input_ids = torch.stack(all_input_ids, dim=0)
     all_seg_ids = torch.stack(all_seg_ids, dim=0)
     all_input_mask = (all_input_ids != 0).byte()
+    all_starts = torch.tensor(all_starts)
+    all_ends = torch.tensor(all_ends)
 
-    return all_input_ids, all_seg_ids, all_input_mask, start_positions, end_positions
+    return all_input_ids, all_seg_ids, all_input_mask, all_starts, all_ends
 
 
 def main(gen_args):
