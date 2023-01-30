@@ -159,6 +159,7 @@ class Trainer(object):
 
             msg = ""
             running_loss, epoch_loss = 0, 0
+            num_samples = 0
             # pretrain with unsupervised dataset
             for step, batch in enumerate(self.pretrain_loader, start=1):
                 if step <= self.args.resume_steps:
@@ -205,6 +206,9 @@ class Trainer(object):
                     torch.save(self.model.state_dict(), os.path.join(self.args.model_save_path, "bert-qa-step-{:07d}-epoch-{:02d}.pt".format(step, epoch)))
 
                 if self.args.debug:
+                    break
+                num_samples += input_ids.size(0)
+                if num_samples >= self.args.num_samples:
                     break
 
             # print log & save model
