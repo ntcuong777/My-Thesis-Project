@@ -276,6 +276,7 @@ def main(gen_args):
 
                     num_runs = min(gen_args.k - num_qas, all_input_ids.size(0))
                     print(num_runs)
+                    print(all_input_ids.size(0))
                     for i in range(num_runs):
                         input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
                         input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
