@@ -3,12 +3,10 @@ import torch
 import torch.nn as nn
 from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.custom.luong_attention import LuongAttention
-from infohcvae.model.custom.gated_self_attention import GatedAttention
-from infohcvae.model.custom.custom_context_encoder import CustomContextEncoderForQG
+from infohcvae.model.custom.custom_context_encoder import CustomContextEncoder
 from torch_scatter import scatter_max
 from infohcvae.model.model_utils import (
-    return_inputs_length, return_attention_mask,
-    return_causal_mask_from_sentence_embeds, return_causal_mask_from_position_mask
+    return_inputs_length, return_attention_mask
 )
 
 
@@ -29,7 +27,7 @@ class QuestionDecoder(nn.Module):
         # this max_len include sos eos
         self.max_q_len = max_q_len
 
-        self.context_encoder = CustomContextEncoderForQG(
+        self.context_encoder = CustomContextEncoder(
             context_embedding, d_model, lstm_dec_nhidden // 2, lstm_dec_nlayers,
             dropout=dropout, pad_token_id=pad_token_id)
 
