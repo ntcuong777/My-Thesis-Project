@@ -26,8 +26,8 @@ class PosteriorEncoder(nn.Module):
         self.encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        self.self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        self.final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
+        # self.self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        # self.final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
@@ -50,9 +50,9 @@ class PosteriorEncoder(nn.Module):
         q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # question self attention
-        q_hidden_states = self.self_attention(q_hidden_states, q_mask)
-        mask = q_mask.unsqueeze(1)
-        q_h = self.final_state_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
+        # q_hidden_states = self.self_attention(q_hidden_states, q_mask)
+        # mask = q_mask.unsqueeze(1)
+        # q_h = self.final_state_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
 
         # context enc
         c_embeds = self.embedding(c_ids)
@@ -60,9 +60,9 @@ class PosteriorEncoder(nn.Module):
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # context self attention
-        c_hidden_states = self.self_attention(c_hidden_states, c_mask)
-        mask = c_mask.unsqueeze(1)
-        c_h = self.final_state_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
+        # c_hidden_states = self.self_attention(c_hidden_states, c_mask)
+        # mask = c_mask.unsqueeze(1)
+        # c_h = self.final_state_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)
@@ -84,9 +84,9 @@ class PosteriorEncoder(nn.Module):
         c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         # context-answer self-attention
-        c_a_hidden_states = self.self_attention(c_a_hidden_states, c_mask)
-        mask = c_mask.unsqueeze(1)
-        c_a_h = self.final_state_attention(c_a_h.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
+        # c_a_hidden_states = self.self_attention(c_a_hidden_states, c_mask)
+        # mask = c_mask.unsqueeze(1)
+        # c_a_h = self.final_state_attention(c_a_h.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
