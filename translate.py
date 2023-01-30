@@ -256,9 +256,9 @@ def main(gen_args):
             # sample latent variable K times
             num_qas = 0
             with torch.no_grad():
-                # c_ids = (N, seq_len)
-                repeated_c_ids = c_ids.unsqueeze(1).repeat(1, gen_args.k, 1).view(c_ids.size(0) * gen_args.k, -1)
                 while num_qas < gen_args.k:
+                    # c_ids = (N, seq_len)
+                    repeated_c_ids = c_ids.unsqueeze(1).repeat(1, gen_args.k, 1).view(c_ids.size(0) * gen_args.k, -1)
                     batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(repeated_c_ids)
 
                     if gen_args.output_text and gen_args.out_qa_json is not None:  # out QA text to json
@@ -275,7 +275,6 @@ def main(gen_args):
                             pad_token_id, total_max_len=gen_args.total_max_len, mode=args.qa_filter_mode)
 
                     num_runs = min(gen_args.k - num_qas, all_input_ids.size(0))
-                    print(num_runs)
                     for i in range(num_runs):
                         input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
                         input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
@@ -285,7 +284,6 @@ def main(gen_args):
                         qa_idx += 1
 
                     num_qas += num_runs
-                    print(num_qas)
 
     # For outputting text
     if gen_args.output_text:
