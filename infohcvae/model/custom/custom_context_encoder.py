@@ -19,7 +19,7 @@ class CustomContextEncoder(nn.Module):
                                        bidirectional=True)
         self.context_attention = GatedAttention(2 * lstm_dec_nhidden)
 
-    def forward(self, c_ids, c_a_mask):
+    def forward(self, c_ids, c_a_mask=None):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
