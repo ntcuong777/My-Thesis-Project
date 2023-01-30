@@ -15,7 +15,7 @@ class AnswerDecoder(nn.Module):
         super(AnswerDecoder, self).__init__()
 
         self.embedding = CustomContextEncoder(
-            embedding, d_model, lstm_dec_nhidden // 2, lstm_dec_nlayers,
+            embedding, d_model, d_model // 2, lstm_dec_nlayers,
             dropout=dropout, pad_token_id=pad_token_id)
 
         self.pad_token_id = pad_token_id
