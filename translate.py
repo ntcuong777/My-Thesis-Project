@@ -254,39 +254,36 @@ def main(gen_args):
             c_texts = [gen_args.tokenizer.decode(c_ids[idx]) for idx in range(c_ids.size(0))]
 
             # sample latent variable K times
+            num_qas = 0
             with torch.no_grad():
-                # c_ids = (N, seq_len)
-                repeated_c_ids = c_ids.unsqueeze(1).repeat(1, gen_args.k, 1).view(c_ids.size(0) * gen_args.k, -1)
-                batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(repeated_c_ids)
-                # batch_q_ids = batch_q_ids.view(gen_args.batch_size, gen_args.k, -1) # (N, k, seq_len)
-                # batch_start = batch_start.view(gen_args.batch_size, gen_args.k, -1) # (N, k)
-                # batch_end = batch_end.view(gen_args.batch_size, gen_args.k, -1) # (N, k)
+                while num_qas < gen_args.k:
+                    # c_ids = (N, seq_len)
+                    repeated_c_ids = c_ids.unsqueeze(1).repeat(1, gen_args.k, 1).view(c_ids.size(0) * gen_args.k, -1)
+                    batch_q_ids, batch_start, batch_end = vae.generate_qa_from_prior(repeated_c_ids)
 
-                if gen_args.output_text and gen_args.out_qa_json is not None:  # out QA text to json
-                    for idx in range(batch_q_ids.size(0)):
-                        q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
-                        q_text = gen_args.tokenizer.decode(q_ids)
-                        ans_text = gen_args.tokenizer.decode(repeated_c_ids[idx, start_pos:end_pos])
-                        qa_text["data"].append({"context": c_texts[idx // gen_args.k],
-                                                "question": q_text, "answer": ans_text})
+                    if gen_args.output_text and gen_args.out_qa_json is not None:  # out QA text to json
+                        for idx in range(batch_q_ids.size(0)):
+                            q_ids, start_pos, end_pos = batch_q_ids[idx], batch_start[idx], batch_end[idx]
+                            q_text = gen_args.tokenizer.decode(q_ids)
+                            ans_text = gen_args.tokenizer.decode(repeated_c_ids[idx, start_pos:end_pos])
+                            qa_text["data"].append({"context": c_texts[idx // gen_args.k],
+                                                    "question": q_text, "answer": ans_text})
 
-                all_input_ids, all_seg_ids, \
-                    all_input_mask, all_start, all_end = post_process(
-                        qa_model_tokenizer, pretrained_qa_model, batch_q_ids, batch_start, batch_end, repeated_c_ids,
-                        pad_token_id, total_max_len=gen_args.total_max_len, mode=args.qa_filter_mode)
+                    all_input_ids, all_seg_ids, \
+                        all_input_mask, all_start, all_end = post_process(
+                            qa_model_tokenizer, pretrained_qa_model, batch_q_ids, batch_start, batch_end, repeated_c_ids,
+                            pad_token_id, total_max_len=gen_args.total_max_len, mode=args.qa_filter_mode)
 
-                for i in range(all_input_ids.size(0)):
-                    input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
-                    input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
-                    segment_ids_set[qa_idx, :] = all_seg_ids[i].cpu()
-                    start_positions_set[qa_idx] = all_start[i].cpu()
-                    end_positions_set[qa_idx] = all_end[i].cpu()
-                    qa_idx += 1
+                    num_runs = min(gen_args.k - num_qas, all_input_ids.size(0))
+                    for i in range(num_runs):
+                        input_ids_set[qa_idx, :] = all_input_ids[i].cpu()
+                        input_masks_set[qa_idx, :] = all_input_mask[i].cpu()
+                        segment_ids_set[qa_idx, :] = all_seg_ids[i].cpu()
+                        start_positions_set[qa_idx] = all_start[i].cpu()
+                        end_positions_set[qa_idx] = all_end[i].cpu()
+                        qa_idx += 1
 
-        # mark positions set to -1 to not use unused positions in dataset
-        for i in range(qa_idx, len(data_loader.dataset) * gen_args.k):
-            start_positions_set[i] = -1
-            end_positions_set[i] = -1
+                    num_qas += num_runs
 
     # For outputting text
     if gen_args.output_text:
