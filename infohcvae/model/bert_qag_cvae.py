@@ -148,7 +148,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--w_bce", type=float, default=1)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=0)
-        parser.add_argument("--lambda_mmd_q", type=float, default=100)
+        parser.add_argument("--lambda_mmd_q", type=float, default=500)
         parser.add_argument("--lambda_mmd_a", type=float, default=500)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
@@ -273,7 +273,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         current_losses = self.compute_loss(out, batch)
 
-        if batch_idx % 100 == 0:
+        if batch_idx % 1 == 0:
             # Log to file
             log_str = ""
             for k, v in current_losses.items():
