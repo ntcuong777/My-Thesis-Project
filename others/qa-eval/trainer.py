@@ -208,7 +208,7 @@ class Trainer(object):
                 if self.args.debug:
                     break
                 num_samples += input_ids.size(0)
-                if num_samples >= self.args.num_samples:
+                if 0 <= self.args.num_samples <= num_samples:
                     break
 
             # print log & save model
