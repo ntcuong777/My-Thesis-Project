@@ -136,7 +136,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--encoder_bert_nlayers", type=int, default=0)
         parser.add_argument("--encoder_nhidden", type=int, default=300)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)
-        parser.add_argument("--decoder_a_nlayers", type=int, default=1)
+        parser.add_argument("--decoder_a_nlayers", type=int, default=2)
         parser.add_argument("--decoder_a_nhidden", type=int, default=300)
         parser.add_argument("--decoder_a_dropout", type=float, default=0.2)
         parser.add_argument("--decoder_q_nlayers", type=int, default=2)
