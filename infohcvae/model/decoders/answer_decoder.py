@@ -29,8 +29,8 @@ class AnswerDecoder(nn.Module):
                                          bidirectional=True)
         self.self_attention = GatedAttention(2 * lstm_dec_nhidden)
 
-        self.start_linear = nn.Linear(4 * lstm_dec_nhidden, 1)
-        self.end_linear = nn.Linear(4 * lstm_dec_nhidden, 1)
+        self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
+        self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
 
     def _build_za_init_state(self, za, max_c_len):
         z_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)
@@ -50,8 +50,7 @@ class AnswerDecoder(nn.Module):
                                 torch.abs(c_embeds - init_state)],
                                dim=-1)
         dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths.to("cpu"))
-        ans_attned_to_ans = self.self_attention(dec_outputs, c_mask)
-        dec_outputs = torch.cat((dec_outputs, ans_attned_to_ans), dim=-1)
+        dec_outputs = self.self_attention(dec_outputs, c_mask)
 
         start_logits = self.start_linear(dec_outputs).squeeze(-1)
         end_logits = self.end_linear(dec_outputs).squeeze(-1)
