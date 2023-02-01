@@ -14,9 +14,7 @@ class AnswerDecoder(nn.Module):
                  lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0, pad_token_id=0):
         super(AnswerDecoder, self).__init__()
 
-        self.context_encoder = CustomContextEncoder(
-            embedding, d_model, d_model // 2, lstm_dec_nlayers,
-            dropout=dropout, pad_token_id=pad_token_id)
+        self.context_encoder = embedding
 
         self.pad_token_id = pad_token_id
 
@@ -43,7 +41,7 @@ class AnswerDecoder(nn.Module):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
-        c_embeds = self.context_encoder(c_ids)
+        c_embeds = self.context_encoder(c_ids, c_mask)
         init_state = self._build_za_init_state(za, max_c_len)
         dec_inputs = torch.cat([c_embeds, init_state,
                                 c_embeds * init_state,
