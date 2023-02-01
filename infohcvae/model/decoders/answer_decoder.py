@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from infohcvae.model.custom.custom_lstm import CustomLSTM
-from infohcvae.model.custom.custom_context_encoder import CustomContextEncoder
 from infohcvae.model.custom.gated_self_attention import GatedAttention
 from infohcvae.model.model_utils import (
     return_attention_mask, return_inputs_length
