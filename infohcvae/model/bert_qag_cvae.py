@@ -240,7 +240,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info
 
-        self.manual_backward(total_ae_loss)
+        self.manual_backward(total_ae_loss, retain_graph=True)
         ae_opt.step()
 
         ##########################
