@@ -198,6 +198,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         # Optimizers #
         ##############
         ae_opt, d_opt = self.optimizers()
+        ae_opt.zero_grad()
+        d_opt.zero_grad()
 
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
@@ -238,7 +240,6 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info
 
-        ae_opt.zero_grad()
         self.manual_backward(total_ae_loss)
         ae_opt.step()
 
@@ -255,7 +256,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
         D_loss = D_q_loss + D_a_loss
 
-        d_opt.zero_grad()
         self.manual_backward(D_loss)
         d_opt.step()
 
