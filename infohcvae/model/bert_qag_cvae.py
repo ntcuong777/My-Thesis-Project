@@ -265,7 +265,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
-                "loss_disc": D_loss,
+                "total_loss": D_loss,
                 "loss_a_disc": D_a_loss,
                 "loss_q_disc": D_q_loss,
             }
@@ -285,6 +285,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             with open(self.loss_log_file, "a") as f:
                 f.write(log_str + "\n\n")
         self.log_dict(current_losses, prog_bar=False)
+        return current_losses["total_loss"]
 
     """ Generation-related methods """
     def _generate_answer(self, c_ids, za):
