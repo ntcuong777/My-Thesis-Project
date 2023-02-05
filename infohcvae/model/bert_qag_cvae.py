@@ -107,8 +107,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             sos_id, eos_id, vocab_size, dropout=decoder_q_dropout, max_q_len=self.max_q_len,
             pad_token_id=self.pad_token_id)
 
-        self.q_discriminator = DiscriminatorNet(d_model, nzqdim)
-        self.a_discriminator = DiscriminatorNet(d_model, nzadim * nza_values)
+        self.q_discriminator = DiscriminatorNet(self.encoder_nhidden, nzqdim)
+        self.a_discriminator = DiscriminatorNet(self.encoder_nhidden, nzadim * nza_values)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -144,7 +144,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--decoder_q_nhidden", type=int, default=900)
         parser.add_argument("--decoder_q_dropout", type=float, default=0.3)
         parser.add_argument("--nzqdim", type=int, default=50)
-        parser.add_argument("--nzadim", type=int, default=5)
+        parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
