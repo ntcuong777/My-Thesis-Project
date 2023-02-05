@@ -17,4 +17,4 @@ class DiscriminatorNet(nn.Module):
         )
 
     def forward(self, c_hs, sampled_z):
-        return self.discriminator(torch.cat([c_hs, sampled_z]))
+        return self.discriminator(torch.cat([c_hs, sampled_z], dim=-1))
