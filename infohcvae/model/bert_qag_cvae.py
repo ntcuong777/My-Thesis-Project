@@ -11,8 +11,7 @@ import pytorch_lightning as pl
 from transformers import BertConfig, BertTokenizer
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
-    freeze_neural_model, return_attention_mask,
-    return_inputs_length,
+    freeze_neural_model,
 )
 from infohcvae.model.losses import (
     GaussianKLLoss, CategoricalKLLoss,
@@ -20,18 +19,20 @@ from infohcvae.model.losses import (
 )
 from infohcvae.model.custom.custom_bert_model import CustomBertModel
 from infohcvae.model.custom.custom_bert_embeddings import CustomBertEmbedding
+from infohcvae.model.custom.discriminator import DiscriminatorNet
 from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder
 from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
 from infohcvae.model.infomax import JensenShannonInfoMax, AnswerJensenShannonInfoMax
 from evaluation.training_eval import eval_vae
 
 __logger__ = logging.Logger(__name__)
-
+__EPS__ = 1e-15
 
 class BertQAGConditionalVae(pl.LightningModule):
     def __init__(self, args):
         super().__init__()
         self.save_hyperparameters()
+        self.automatic_optimization = False # manual optimization
 
         self.program_args = args
 
@@ -56,8 +57,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.w_bce = args.w_bce
         self.alpha_kl_q = args.alpha_kl_q
         self.alpha_kl_a = args.alpha_kl_a
-        self.lambda_mmd_q = args.lambda_mmd_q
-        self.lambda_mmd_a = args.lambda_mmd_a
+        self.lambda_wae_q = args.lambda_wae_q
+        self.lambda_wae_a = args.lambda_wae_a
         self.lambda_qa_info = args.lambda_qa_info
 
 
@@ -106,14 +107,14 @@ class BertQAGConditionalVae(pl.LightningModule):
             sos_id, eos_id, vocab_size, dropout=decoder_q_dropout, max_q_len=self.max_q_len,
             pad_token_id=self.pad_token_id)
 
+        self.q_discriminator = DiscriminatorNet(d_model, nzqdim)
+        self.a_discriminator = DiscriminatorNet(d_model, nzadim * nza_values)
+
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
         self.gaussian_kl_criterion = GaussianKLLoss()
         self.categorical_kl_criterion = CategoricalKLLoss()
-
-        self.cont_mmd_criterion = ContinuousKernelMMDLoss()
-        self.gumbel_mmd_criterion = CategoricalMMDLoss()
 
         # Define QA infomax model
         preprocessor = None # nn.Sigmoid()
@@ -136,20 +137,20 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--encoder_bert_nlayers", type=int, default=0)
         parser.add_argument("--encoder_nhidden", type=int, default=300)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)
-        parser.add_argument("--decoder_a_nlayers", type=int, default=2)
+        parser.add_argument("--decoder_a_nlayers", type=int, default=1)
         parser.add_argument("--decoder_a_nhidden", type=int, default=300)
         parser.add_argument("--decoder_a_dropout", type=float, default=0.2)
         parser.add_argument("--decoder_q_nlayers", type=int, default=2)
         parser.add_argument("--decoder_q_nhidden", type=int, default=900)
         parser.add_argument("--decoder_q_dropout", type=float, default=0.3)
         parser.add_argument("--nzqdim", type=int, default=50)
-        parser.add_argument("--nzadim", type=int, default=20)
+        parser.add_argument("--nzadim", type=int, default=5)
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
-        parser.add_argument("--alpha_kl_q", type=float, default=0.01)
-        parser.add_argument("--alpha_kl_a", type=float, default=0.01)
-        parser.add_argument("--lambda_mmd_q", type=float, default=10)
-        parser.add_argument("--lambda_mmd_a", type=float, default=10)
+        parser.add_argument("--alpha_kl_q", type=float, default=0)
+        parser.add_argument("--alpha_kl_a", type=float, default=0)
+        parser.add_argument("--lambda_wae_q", type=float, default=10)
+        parser.add_argument("--lambda_wae_a", type=float, default=10)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
@@ -166,10 +167,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         assert self.training, "forward() only use for training mode"
 
         posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
-            posterior_za, posterior_za_logits = self.posterior_encoder(c_ids, q_ids, c_a_mask)
+            posterior_za, posterior_za_logits, posterior_c_h = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
         prior_zq, prior_zq_mu, prior_zq_logvar, \
-            prior_za, prior_za_logits = self.prior_encoder(c_ids)
+            prior_za, prior_za_logits, prior_c_h = self.prior_encoder(c_ids)
 
         # answer decoding
         start_logits, end_logits, a_dec_outputs =\
@@ -183,6 +184,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_logits),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
+            "posterior_c_h": posterior_c_h,
+            "prior_c_h": prior_c_h,
             "answer_out": (start_logits, end_logits, a_dec_outputs),
             "question_out": (lm_logits,) + mean_embeds
         })
@@ -191,39 +194,23 @@ class BertQAGConditionalVae(pl.LightningModule):
     def compute_loss(self, out: Dict, batch: torch.Tensor):
         _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
 
+        ##############
+        # Optimizers #
+        ##############
+        ae_opt, d_opt = self.optimizers()
+
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
+        posterior_c_h = out["posterior_c_h"]
+        prior_c_h = out["prior_c_h"]
         start_logits, end_logits, a_dec_outputs = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
-        num_sample_times = 512 // c_ids.size(0) + (0 if 512 % c_ids.size(0) == 0 else 1)
-        posterior_zq = torch.cat(
-            [posterior_zq,
-             sample_gaussian(
-                 posterior_zq_mu.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim),
-                 posterior_zq_logvar.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim))],
-            dim=0)  # concat in batch dimension
-        prior_zq = torch.cat(
-            [prior_zq,
-             sample_gaussian(
-                 prior_zq_mu.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim),
-                 prior_zq_logvar.unsqueeze(1).repeat(1, num_sample_times - 1, 1).view(-1, self.nzqdim))],
-            dim=0)  # concat in batch dimension
-        posterior_za = torch.cat(
-            [posterior_za,
-             gumbel_softmax(
-                 posterior_za_logits.unsqueeze(1).repeat(1, num_sample_times - 1, 1, 1)
-                 .view(-1, self.nzadim, self.nza_values))],
-            dim=0)  # concat in batch dimension
-        prior_za = torch.cat(
-            [prior_za,
-             gumbel_softmax(
-                 prior_za_logits.unsqueeze(1).repeat(1, num_sample_times - 1, 1, 1)
-                 .view(-1, self.nzadim, self.nza_values))],
-            dim=0)  # concat in batch dimension
-
+        ###############
+        # Optimize AE #
+        ###############
         # Compute losses
         # q rec loss
         loss_q_rec = self.w_bce * self.q_rec_criterion(
@@ -246,23 +233,40 @@ class BertQAGConditionalVae(pl.LightningModule):
                 posterior_za_logits, prior_za_logits)
             loss_kl = loss_zq_kl + loss_za_kl
 
-        loss_zq_mmd = self.lambda_mmd_q * self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
-        loss_za_mmd = self.lambda_mmd_a * self.gumbel_mmd_criterion(posterior_z=posterior_za, prior_z=prior_za)
-        loss_mmd = loss_zq_mmd + loss_za_mmd
-
         # QA info loss
         loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
 
-        total_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_mmd
+        total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info
+
+        ae_opt.zero_grad()
+        self.manual_backward(total_ae_loss)
+        ae_opt.step()
+
+        ##########################
+        # Optimize Discriminator #
+        ##########################
+        D_q_real = self.q_discriminator(prior_c_h, prior_zq)
+        D_a_real = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
+
+        D_q_fake = self.q_discriminator(posterior_c_h, posterior_zq)
+        D_a_fake = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
+
+        D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__) + torch.log(1 - D_q_fake + __EPS__)))
+        D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
+        D_loss = D_q_loss + D_a_loss
+
+        d_opt.zero_grad()
+        self.manual_backward(D_loss)
+        d_opt.step()
 
         current_losses = {
-            "total_loss": total_loss,
+            "total_loss": total_ae_loss,
             "loss_q_rec": loss_q_rec,
             "loss_a_rec": loss_a_rec,
-            "loss_mmd": loss_mmd,
-            "loss_zq_mmd": loss_zq_mmd,
-            "loss_za_mmd": loss_za_mmd,
             "loss_kl": loss_kl,
+            "loss_disc": D_loss,
+            "loss_a_disc": D_a_loss,
+            "loss_q_disc": D_q_loss,
             "loss_qa_info": loss_qa_info,
         }
         return current_losses
@@ -281,8 +285,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             with open(self.loss_log_file, "a") as f:
                 f.write(log_str + "\n\n")
         self.log_dict(current_losses, prog_bar=False)
-
-        return current_losses["total_loss"]
 
     """ Generation-related methods """
     def _generate_answer(self, c_ids, za):
@@ -320,7 +322,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 
     """ Validation-related methods """
-
     def evaluation(self, val_dataloader):
         all_text_examples = val_dataloader.dataset.all_text_examples
         all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
@@ -368,14 +369,31 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     """ Optimizer """
     def configure_optimizers(self):
-        params = filter(lambda p: p.requires_grad, self.parameters())
+        params_ae = list(self.posterior_encoder.parameters()) + list(self.answer_decoder.parameters()) \
+            + list(self.question_decoder.parameters())
+        params_ae = filter(lambda p: p.requires_grad, params_ae)
 
+        params_disc_low_lr = list(filter(lambda p: p.requires_grad, self.posterior_encoder.parameters()))
+        params_disc_high_lr = list(self.prior_encoder.parameters()) + list(self.q_discriminator.parameters()) \
+            + list(self.a_discriminator.parameters())
+        params_disc_high_lr = filter(lambda p: p.requires_grad, params_disc_high_lr)
+
+        # 1st optimizer is optimizer for AE, 2nd is for discriminator
+        low_lr = self.lr / 10
         if self.optimizer_algorithm == "sgd":
-            optimizer = optim.SGD(params, lr=self.lr, momentum=0.9, nesterov=False)
+            optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
+                          optim.SGD([{"params": params_disc_low_lr, "lr": low_lr},
+                                     {"params": params_disc_high_lr}], lr=self.lr, momentum=0.9, nesterov=False)]
         elif self.optimizer_algorithm == "adam":
-            optimizer = optim.Adam(params, lr=self.lr)
+            optimizers = [optim.Adam(params_ae, lr=self.lr),
+                          optim.Adam([{"params": params_disc_low_lr, "lr": low_lr},
+                                     {"params": params_disc_high_lr}], lr=self.lr)]
         elif self.optimizer_algorithm == "adamw":
-            optimizer = optim.AdamW(params, lr=self.lr)
+            optimizers = [optim.AdamW(params_ae, lr=self.lr),
+                          optim.AdamW([{"params": params_disc_low_lr, "lr": low_lr},
+                                      {"params": params_disc_high_lr}], lr=self.lr)]
         else:
-            optimizer = additional_optim.SWATS(params, lr=self.lr, nesterov=False)
-        return optimizer
+            optimizers = [additional_optim.SWATS(params_ae, lr=self.lr, nesterov=False),
+                          additional_optim.SWATS([{"params": params_disc_low_lr, "lr": low_lr},
+                                                  {"params": params_disc_high_lr}], lr=self.lr, nesterov=False)]
+        return optimizers, []

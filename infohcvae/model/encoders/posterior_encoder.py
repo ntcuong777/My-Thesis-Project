@@ -97,4 +97,4 @@ class PosteriorEncoder(nn.Module):
         # Sample `za`
         za = gumbel_softmax(za_logits, hard=True)
 
-        return zq, zq_mu, zq_logvar, za, za_logits
+        return zq, zq_mu, zq_logvar, za, za_logits, c_h
