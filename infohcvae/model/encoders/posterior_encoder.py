@@ -37,7 +37,7 @@ class PosteriorEncoder(nn.Module):
         self.zq_logvar_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
         self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values)
 
-    def forward(self, c_ids, q_ids, a_mask):
+    def forward(self, c_ids, q_ids, a_mask, return_hs=None):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
@@ -97,4 +97,6 @@ class PosteriorEncoder(nn.Module):
         # Sample `za`
         za = gumbel_softmax(za_logits, hard=True)
 
-        return zq, zq_mu, zq_logvar, za, za_logits, c_h
+        if return_hs is not None and return_hs:
+            return zq, zq_mu, zq_logvar, za, za_logits, c_h
+        return zq, zq_mu, zq_logvar, za, za_logits

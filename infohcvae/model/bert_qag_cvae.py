@@ -146,8 +146,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
-        parser.add_argument("--alpha_kl_q", type=float, default=0)
-        parser.add_argument("--alpha_kl_a", type=float, default=0)
+        parser.add_argument("--alpha_kl_q", type=float, default=1)
+        parser.add_argument("--alpha_kl_a", type=float, default=1)
         parser.add_argument("--lambda_wae_q", type=float, default=10)
         parser.add_argument("--lambda_wae_a", type=float, default=10)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
@@ -167,10 +167,11 @@ class BertQAGConditionalVae(pl.LightningModule):
         assert self.training, "forward() only use for training mode"
 
         posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
-            posterior_za, posterior_za_logits, posterior_c_h = self.posterior_encoder(c_ids, q_ids, c_a_mask)
+            posterior_za, posterior_za_logits, posterior_c_h = self.posterior_encoder(
+                c_ids, q_ids, c_a_mask, return_hs=True)
 
         prior_zq, prior_zq_mu, prior_zq_logvar, \
-            prior_za, prior_za_logits, prior_c_h = self.prior_encoder(c_ids)
+            prior_za, prior_za_logits, prior_c_h = self.prior_encoder(c_ids, return_hs=True)
 
         start_logits, end_logits = None, None
         lm_logits, mean_embeds = None, (None, None)
