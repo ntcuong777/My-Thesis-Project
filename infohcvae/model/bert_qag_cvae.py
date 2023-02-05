@@ -163,6 +163,7 @@ class BertQAGConditionalVae(pl.LightningModule):
     def forward(
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
+            run_decoder: bool = True
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
@@ -172,12 +173,15 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_zq, prior_zq_mu, prior_zq_logvar, \
             prior_za, prior_za_logits, prior_c_h = self.prior_encoder(c_ids)
 
-        # answer decoding
-        start_logits, end_logits, a_dec_outputs =\
-            self.answer_decoder(c_ids, posterior_za, return_embeds=True)
-        # question decoding
-        lm_logits, mean_embeds = self.question_decoder(
-            c_ids, q_ids, c_a_mask, posterior_zq, return_qa_mean_embeds=True)
+        start_logits, end_logits = None, None
+        lm_logits, mean_embeds = None, (None, None)
+        if run_decoder:
+            # answer decoding
+            start_logits, end_logits =\
+                self.answer_decoder(c_ids, posterior_za)
+            # question decoding
+            lm_logits, mean_embeds = self.question_decoder(
+                c_ids, q_ids, c_a_mask, posterior_zq, return_qa_mean_embeds=True)
 
         out = dict({
             "posterior_za_out": (posterior_za, posterior_za_logits),
@@ -186,20 +190,20 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
             "posterior_c_h": posterior_c_h,
             "prior_c_h": prior_c_h,
-            "answer_out": (start_logits, end_logits, a_dec_outputs),
+            "answer_out": (start_logits, end_logits),
             "question_out": (lm_logits,) + mean_embeds
         })
         return out
 
-    def compute_loss(self, out: Dict, batch: torch.Tensor):
+    def compute_loss(self, out: Dict, batch: torch.Tensor, optimizer_idx):
         _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
 
         ##############
         # Optimizers #
         ##############
-        ae_opt, d_opt = self.optimizers()
-        ae_opt.zero_grad()
-        d_opt.zero_grad()
+        # ae_opt, d_opt = self.optimizers()
+        # ae_opt.zero_grad()
+        # d_opt.zero_grad()
 
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
@@ -207,75 +211,72 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
         posterior_c_h = out["posterior_c_h"]
         prior_c_h = out["prior_c_h"]
-        start_logits, end_logits, a_dec_outputs = out["answer_out"]
+        start_logits, end_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
-        ###############
-        # Optimize AE #
-        ###############
-        # Compute losses
-        # q rec loss
-        loss_q_rec = self.w_bce * self.q_rec_criterion(
-            q_logits[:, :-1, :].transpose(1, 2).contiguous(), q_ids[:, 1:])
+        if optimizer_idx == 0:
+            ###############
+            # Optimize AE #
+            ###############
+            # Compute losses
+            # q rec loss
+            loss_q_rec = self.w_bce * self.q_rec_criterion(
+                q_logits[:, :-1, :].transpose(1, 2).contiguous(), q_ids[:, 1:])
 
-        # a rec loss
-        max_c_len = c_ids.size(1)
-        no_q_start_positions.clamp_(0, max_c_len)
-        no_q_end_positions.clamp_(0, max_c_len)
-        loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
-        loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        loss_a_rec = self.w_bce * 0.5 * (loss_start_a_rec + loss_end_a_rec)
+            # a rec loss
+            max_c_len = c_ids.size(1)
+            no_q_start_positions.clamp_(0, max_c_len)
+            no_q_end_positions.clamp_(0, max_c_len)
+            loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
+            loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
+            loss_a_rec = self.w_bce * 0.5 * (loss_start_a_rec + loss_end_a_rec)
 
-        # kl loss
-        loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
-        if self.alpha_kl_a > 0.001 or self.alpha_kl_q > 0.001:  # eps = 1e-3
-            loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
-                posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
-            loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(
-                posterior_za_logits, prior_za_logits)
-            loss_kl = loss_zq_kl + loss_za_kl
+            # kl loss
+            loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
+            if self.alpha_kl_a > 0.001 or self.alpha_kl_q > 0.001:  # eps = 1e-3
+                loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
+                    posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
+                loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(
+                    posterior_za_logits, prior_za_logits)
+                loss_kl = loss_zq_kl + loss_za_kl
 
-        # QA info loss
-        loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
+            # QA info loss
+            loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
 
-        total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info
+            total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info
+            current_losses = {
+                "total_loss": total_ae_loss,
+                "loss_q_rec": loss_q_rec,
+                "loss_a_rec": loss_a_rec,
+                "loss_kl": loss_kl,
+                "loss_qa_info": loss_qa_info,
+            }
+        else:
+            ##########################
+            # Optimize Discriminator #
+            ##########################
+            D_q_real = self.q_discriminator(prior_c_h, prior_zq)
+            D_a_real = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
 
-        self.manual_backward(total_ae_loss, retain_graph=True)
-        ae_opt.step()
+            D_q_fake = self.q_discriminator(posterior_c_h, posterior_zq)
+            D_a_fake = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
 
-        ##########################
-        # Optimize Discriminator #
-        ##########################
-        D_q_real = self.q_discriminator(prior_c_h, prior_zq)
-        D_a_real = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
+            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__) + torch.log(1 - D_q_fake + __EPS__)))
+            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
+            D_loss = D_q_loss + D_a_loss
 
-        D_q_fake = self.q_discriminator(posterior_c_h, posterior_zq)
-        D_a_fake = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
-
-        D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__) + torch.log(1 - D_q_fake + __EPS__)))
-        D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
-        D_loss = D_q_loss + D_a_loss
-
-        self.manual_backward(D_loss)
-        d_opt.step()
-
-        current_losses = {
-            "total_loss": total_ae_loss,
-            "loss_q_rec": loss_q_rec,
-            "loss_a_rec": loss_a_rec,
-            "loss_kl": loss_kl,
-            "loss_disc": D_loss,
-            "loss_a_disc": D_a_loss,
-            "loss_q_disc": D_q_loss,
-            "loss_qa_info": loss_qa_info,
-        }
+            current_losses = {
+                "loss_disc": D_loss,
+                "loss_a_disc": D_a_loss,
+                "loss_q_disc": D_q_loss,
+            }
         return current_losses
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx, optimizer_idx):
         _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
-        out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask)
+        out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_decoder=(optimizer_idx == 0))
 
-        current_losses = self.compute_loss(out, batch)
+        current_losses = self.compute_loss(out, batch, optimizer_idx)
 
         if batch_idx % 50 == 0:
             # Log to file
