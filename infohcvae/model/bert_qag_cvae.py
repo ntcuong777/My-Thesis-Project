@@ -373,27 +373,22 @@ class BertQAGConditionalVae(pl.LightningModule):
             + list(self.question_decoder.parameters())
         params_ae = filter(lambda p: p.requires_grad, params_ae)
 
-        params_disc_low_lr = list(filter(lambda p: p.requires_grad, self.posterior_encoder.parameters()))
-        params_disc_high_lr = list(self.prior_encoder.parameters()) + list(self.q_discriminator.parameters()) \
-            + list(self.a_discriminator.parameters())
-        params_disc_high_lr = filter(lambda p: p.requires_grad, params_disc_high_lr)
+        params_disc = list(self.posterior_encoder.parameters()) + list(self.prior_encoder.parameters()) \
+                              + list(self.q_discriminator.parameters()) + list(self.a_discriminator.parameters())
+        params_disc = filter(lambda p: p.requires_grad, params_disc)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
-        low_lr = self.lr / 10
+        disc_lr = 3e-4
         if self.optimizer_algorithm == "sgd":
             optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
-                          optim.SGD([{"params": params_disc_low_lr, "lr": low_lr},
-                                     {"params": params_disc_high_lr}], lr=self.lr, momentum=0.9, nesterov=False)]
+                          optim.SGD(params_disc, lr=disc_lr, momentum=0.9, nesterov=False)]
         elif self.optimizer_algorithm == "adam":
             optimizers = [optim.Adam(params_ae, lr=self.lr),
-                          optim.Adam([{"params": params_disc_low_lr, "lr": low_lr},
-                                     {"params": params_disc_high_lr}], lr=self.lr)]
+                          optim.Adam(params_disc, lr=disc_lr)]
         elif self.optimizer_algorithm == "adamw":
             optimizers = [optim.AdamW(params_ae, lr=self.lr),
-                          optim.AdamW([{"params": params_disc_low_lr, "lr": low_lr},
-                                      {"params": params_disc_high_lr}], lr=self.lr)]
+                          optim.AdamW(params_disc, lr=disc_lr)]
         else:
             optimizers = [additional_optim.SWATS(params_ae, lr=self.lr, nesterov=False),
-                          additional_optim.SWATS([{"params": params_disc_low_lr, "lr": low_lr},
-                                                  {"params": params_disc_high_lr}], lr=self.lr, nesterov=False)]
+                          additional_optim.SWATS(params_disc, lr=disc_lr, nesterov=False)]
         return optimizers, []
