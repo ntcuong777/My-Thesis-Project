@@ -32,7 +32,6 @@ class BertQAGConditionalVae(pl.LightningModule):
     def __init__(self, args):
         super().__init__()
         self.save_hyperparameters()
-        self.automatic_optimization = False # manual optimization
 
         self.program_args = args
 
