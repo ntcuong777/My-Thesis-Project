@@ -297,7 +297,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         current_losses = self.compute_loss(out, batch, optimizer_idx)
 
-        if batch_idx % 50 == 0:
+        if batch_idx % 25 == 0:
             # Log to file
             log_str = ""
             for k, v in current_losses.items():
@@ -408,8 +408,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
-        disc_lr = self.lr
-        gen_lr = self.lr
+        disc_lr = self.lr / 10
+        gen_lr = self.lr / 10
         if self.optimizer_algorithm == "sgd":
             optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
                           optim.SGD(params_disc, lr=disc_lr, momentum=0.9, nesterov=False),
