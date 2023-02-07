@@ -261,8 +261,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_q_fake = self.q_discriminator(posterior_c_h, posterior_zq)
             D_a_fake = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
 
-            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__) + torch.log(1 - D_q_fake + __EPS__)))
-            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
+            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
+            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real) + torch.log(1 - D_a_fake)))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
@@ -274,16 +274,14 @@ class BertQAGConditionalVae(pl.LightningModule):
             ######################
             # Optimize Generator #
             ######################
-            # D_q_fake = self.q_discriminator(prior_c_h, prior_zq)
-            # D_a_fake = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
+            D_q_fake = self.q_discriminator(prior_c_h, prior_zq)
+            D_a_fake = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
 
             D_q_real = self.q_discriminator(posterior_c_h, posterior_zq)
             D_a_real = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
 
-            # D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__) + torch.log(1 - D_q_fake + __EPS__)))
-            # D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
-            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__)))
-            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__)))
+            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
+            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real) + torch.log(1 - D_a_fake)))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
