@@ -146,8 +146,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
-        parser.add_argument("--alpha_kl_q", type=float, default=0.1)
-        parser.add_argument("--alpha_kl_a", type=float, default=0.1)
+        parser.add_argument("--alpha_kl_q", type=float, default=0.01)
+        parser.add_argument("--alpha_kl_a", type=float, default=0.01)
         parser.add_argument("--lambda_wae_q", type=float, default=1)
         parser.add_argument("--lambda_wae_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
@@ -274,14 +274,16 @@ class BertQAGConditionalVae(pl.LightningModule):
             ######################
             # Optimize Generator #
             ######################
-            D_q_fake = self.q_discriminator(prior_c_h, prior_zq)
-            D_a_fake = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
+            # D_q_fake = self.q_discriminator(prior_c_h, prior_zq)
+            # D_a_fake = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
 
             D_q_real = self.q_discriminator(posterior_c_h, posterior_zq)
             D_a_real = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
 
-            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__) + torch.log(1 - D_q_fake + __EPS__)))
-            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
+            # D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__) + torch.log(1 - D_q_fake + __EPS__)))
+            # D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__) + torch.log(1 - D_a_fake + __EPS__)))
+            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real + __EPS__)))
+            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real + __EPS__)))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
@@ -404,12 +406,12 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_disc = list(list(self.q_discriminator.parameters()) + list(self.a_discriminator.parameters()))
         params_disc = filter(lambda p: p.requires_grad, params_disc)
 
-        params_gen = list(self.posterior_encoder.parameters()) + list(self.prior_encoder.parameters())
+        params_gen = list(self.posterior_encoder.parameters()) # + list(self.prior_encoder.parameters())
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
-        disc_lr = self.lr / 10
-        gen_lr = self.lr / 10
+        disc_lr = 1e-4
+        gen_lr = 3e-4
         if self.optimizer_algorithm == "sgd":
             optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
                           optim.SGD(params_disc, lr=disc_lr, momentum=0.9, nesterov=False),
