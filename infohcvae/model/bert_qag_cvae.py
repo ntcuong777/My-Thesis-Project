@@ -152,7 +152,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--lambda_wae_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
-        parser.add_argument("--lr", default=1e-3, type=float, help="lr")
+        parser.add_argument("--lr", default=2e-4, type=float, help="lr")
         parser.add_argument("--optimizer", default="adam", choices=["sgd", "adam", "swats", "adamw"], type=str,
                             help="optimizer to use, [\"adam\", \"sgd\", \"swats\", \"adamw\"] are supported")
 
@@ -408,8 +408,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
-        disc_lr = 2e-4
-        gen_lr = 2e-4
+        disc_lr = 5e-5
+        gen_lr = 5e-5
         if self.optimizer_algorithm == "sgd":
             optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
                           optim.SGD(params_disc, lr=disc_lr, momentum=0.9, nesterov=False),
