@@ -412,7 +412,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_disc = list(list(self.q_discriminator.parameters()) + list(self.a_discriminator.parameters()))
         params_disc = filter(lambda p: p.requires_grad, params_disc)
 
-        params_gen = list(self.posterior_encoder.parameters()) # + list(self.prior_encoder.parameters())
+        params_gen = list(self.posterior_encoder.parameters()) + list(self.prior_encoder.parameters())
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
