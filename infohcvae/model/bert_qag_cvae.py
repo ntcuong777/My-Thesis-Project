@@ -152,7 +152,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--lambda_wae_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
-        parser.add_argument("--lr", default=2e-4, type=float, help="lr")
+        parser.add_argument("--lr", default=1e-4, type=float, help="lr")
         parser.add_argument("--optimizer", default="adam", choices=["sgd", "adam", "swats", "adamw"], type=str,
                             help="optimizer to use, [\"adam\", \"sgd\", \"swats\", \"adamw\"] are supported")
 
@@ -415,15 +415,15 @@ class BertQAGConditionalVae(pl.LightningModule):
                           optim.SGD(params_disc, lr=disc_lr, momentum=0.9, nesterov=False),
                           optim.SGD(params_gen, lr=gen_lr, momentum=0.9, nesterov=False)]
         elif self.optimizer_algorithm == "adam":
-            optimizers = [optim.Adam(params_ae, lr=self.lr),
+            optimizers = [optim.Adam(params_ae, lr=self.lr, betas=(0.5, 0.999)),
                           optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
                           optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         elif self.optimizer_algorithm == "adamw":
-            optimizers = [optim.AdamW(params_ae, lr=self.lr),
+            optimizers = [optim.AdamW(params_ae, lr=self.lr, betas=(0.5, 0.999)),
                           optim.AdamW(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
                           optim.AdamW(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         else:
-            optimizers = [additional_optim.SWATS(params_ae, lr=self.lr, nesterov=False),
+            optimizers = [additional_optim.SWATS(params_ae, lr=self.lr, nesterov=False, betas=(0.5, 0.999)),
                           additional_optim.SWATS(params_disc, lr=disc_lr, nesterov=False, betas=(0.5, 0.999)),
                           additional_optim.SWATS(params_gen, lr=gen_lr, nesterov=False, betas=(0.5, 0.999))]
         return optimizers, []
