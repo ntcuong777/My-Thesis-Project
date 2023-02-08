@@ -416,22 +416,22 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
-        disc_lr = 5e-5
+        disc_lr = 1e-5
         gen_lr = 5e-5
         if self.optimizer_algorithm == "sgd":
             optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
-                          optim.SGD(params_disc, lr=disc_lr, momentum=0.9, nesterov=False),
-                          optim.SGD(params_gen, lr=gen_lr, momentum=0.9, nesterov=False)]
+                          optim.RMSprop(params_disc, lr=disc_lr),
+                          optim.RMSprop(params_gen, lr=gen_lr)]
         elif self.optimizer_algorithm == "adam":
-            optimizers = [optim.Adam(params_ae, lr=self.lr, betas=(0.5, 0.999)),
-                          optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
-                          optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
+            optimizers = [optim.Adam(params_ae, lr=self.lr),
+                          optim.RMSprop(params_disc, lr=disc_lr),
+                          optim.RMSprop(params_gen, lr=gen_lr)]
         elif self.optimizer_algorithm == "adamw":
-            optimizers = [optim.AdamW(params_ae, lr=self.lr, betas=(0.5, 0.999)),
-                          optim.AdamW(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
-                          optim.AdamW(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
+            optimizers = [optim.AdamW(params_ae, lr=self.lr),
+                          optim.RMSprop(params_disc, lr=disc_lr),
+                          optim.RMSprop(params_gen, lr=gen_lr)]
         else:
-            optimizers = [additional_optim.SWATS(params_ae, lr=self.lr, nesterov=False, betas=(0.5, 0.999)),
-                          additional_optim.SWATS(params_disc, lr=disc_lr, nesterov=False, betas=(0.5, 0.999)),
-                          additional_optim.SWATS(params_gen, lr=gen_lr, nesterov=False, betas=(0.5, 0.999))]
+            optimizers = [additional_optim.SWATS(params_ae, lr=self.lr, nesterov=False),
+                          optim.RMSprop(params_disc, lr=disc_lr),
+                          optim.RMSprop(params_gen, lr=gen_lr)]
         return optimizers, []
