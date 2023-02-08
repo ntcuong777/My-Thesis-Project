@@ -256,9 +256,13 @@ class BertQAGConditionalVae(pl.LightningModule):
             # Optimize Discriminator #
             ##########################
             D_q_real = self.q_discriminator(prior_c_h, prior_zq)
+
+            prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_real = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
 
             D_q_fake = self.q_discriminator(posterior_c_h, posterior_zq)
+
+            posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
 
             D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
@@ -275,9 +279,13 @@ class BertQAGConditionalVae(pl.LightningModule):
             # Optimize Generator #
             ######################
             D_q_fake = self.q_discriminator(prior_c_h, prior_zq)
+
+            prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
 
             D_q_real = self.q_discriminator(posterior_c_h, posterior_zq)
+
+            posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_real = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
 
             D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
