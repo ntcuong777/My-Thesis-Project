@@ -146,8 +146,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
-        parser.add_argument("--alpha_kl_q", type=float, default=0.01)
-        parser.add_argument("--alpha_kl_a", type=float, default=0.01)
+        parser.add_argument("--alpha_kl_q", type=float, default=0.1)
+        parser.add_argument("--alpha_kl_a", type=float, default=0.1)
         parser.add_argument("--lambda_wae_q", type=float, default=1)
         parser.add_argument("--lambda_wae_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
@@ -416,22 +416,22 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
-        disc_lr = 1e-5
-        gen_lr = 5e-5
+        disc_lr = 1e-4
+        gen_lr = 2e-4
         if self.optimizer_algorithm == "sgd":
             optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
-                          optim.RMSprop(params_disc, lr=disc_lr),
-                          optim.RMSprop(params_gen, lr=gen_lr)]
+                          optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
+                          optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         elif self.optimizer_algorithm == "adam":
             optimizers = [optim.Adam(params_ae, lr=self.lr),
-                          optim.RMSprop(params_disc, lr=disc_lr),
-                          optim.RMSprop(params_gen, lr=gen_lr)]
+                          optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
+                          optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         elif self.optimizer_algorithm == "adamw":
             optimizers = [optim.AdamW(params_ae, lr=self.lr),
-                          optim.RMSprop(params_disc, lr=disc_lr),
-                          optim.RMSprop(params_gen, lr=gen_lr)]
+                          optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
+                          optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         else:
             optimizers = [additional_optim.SWATS(params_ae, lr=self.lr, nesterov=False),
-                          optim.RMSprop(params_disc, lr=disc_lr),
-                          optim.RMSprop(params_gen, lr=gen_lr)]
+                          optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
+                          optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         return optimizers, []
