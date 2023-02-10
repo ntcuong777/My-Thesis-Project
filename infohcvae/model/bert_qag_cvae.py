@@ -152,7 +152,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--lambda_wae_a", type=float, default=10)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
-        parser.add_argument("--lr", default=1e-3, type=float, help="lr")
+        parser.add_argument("--lr", default=3e-3, type=float, help="lr")
         parser.add_argument("--optimizer", default="adam", choices=["sgd", "adam", "swats", "adamw"], type=str,
                             help="optimizer to use, [\"adam\", \"sgd\", \"swats\", \"adamw\"] are supported")
 
