@@ -5,13 +5,13 @@ from typing import Dict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch_optimizer as additional_optim
 import torch.optim as optim
 import pytorch_lightning as pl
 from transformers import BertConfig, BertTokenizer
 from infohcvae.model.model_utils import (
-    gumbel_softmax, sample_gaussian,
-    freeze_neural_model,
+    gumbel_softmax, freeze_neural_model,
 )
 from infohcvae.model.losses import (
     GaussianKLLoss, CategoricalKLLoss,
@@ -27,6 +27,7 @@ from evaluation.training_eval import eval_vae
 
 __logger__ = logging.Logger(__name__)
 __EPS__ = 1e-15
+
 
 class BertQAGConditionalVae(pl.LightningModule):
     def __init__(self, args):
@@ -60,12 +61,10 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.lambda_wae_a = args.lambda_wae_a
         self.lambda_qa_info = args.lambda_qa_info
 
-
         """ Initialize model """
         base_model = args.base_model
         config = BertConfig.from_pretrained(base_model)
 
-        self.encoder_bert_nlayers = encoder_bert_nlayers = args.encoder_bert_nlayers
         self.encoder_nlayers = encoder_nlayers = args.encoder_nlayers
         self.encoder_nhidden = encoder_nhidden = args.encoder_nhidden
         self.encoder_dropout = encoder_dropout = args.encoder_dropout
@@ -106,8 +105,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             sos_id, eos_id, vocab_size, dropout=decoder_q_dropout, max_q_len=self.max_q_len,
             pad_token_id=self.pad_token_id)
 
-        self.q_discriminator = DiscriminatorNet(self.encoder_nhidden * 2, nzqdim)
-        self.a_discriminator = DiscriminatorNet(self.encoder_nhidden * 2, nzadim * nza_values + nzqdim)
+        self.q_discriminator = DiscriminatorNet(self.max_c_len, nzqdim)
+        self.a_discriminator = DiscriminatorNet(self.max_c_len, nzadim * nza_values + nzqdim)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -116,7 +115,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.categorical_kl_criterion = CategoricalKLLoss()
 
         # Define QA infomax model
-        preprocessor = None # nn.Sigmoid()
+        preprocessor = None  # nn.Sigmoid()
         qa_discriminator = nn.Bilinear(d_model, decoder_q_nhidden, 1)
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
@@ -133,7 +132,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
         parser.add_argument("--base_model", default="bert-base-uncased", type=str)
         parser.add_argument("--encoder_nlayers", type=int, default=1)
-        parser.add_argument("--encoder_bert_nlayers", type=int, default=0)
         parser.add_argument("--encoder_nhidden", type=int, default=300)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)
         parser.add_argument("--decoder_a_nlayers", type=int, default=1)
@@ -159,6 +157,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return parent_parser
 
     """ Training-related methods """
+
     def forward(
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
@@ -167,17 +166,17 @@ class BertQAGConditionalVae(pl.LightningModule):
         assert self.training, "forward() only use for training mode"
 
         posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
-            posterior_za, posterior_za_logits, posterior_c_h = self.posterior_encoder(
-                c_ids, q_ids, c_a_mask, return_hs=True)
+            posterior_za, posterior_za_logits = self.posterior_encoder(
+            c_ids, q_ids, c_a_mask)
 
         prior_zq, prior_zq_mu, prior_zq_logvar, \
-            prior_za, prior_za_logits, prior_c_h = self.prior_encoder(c_ids, return_hs=True)
+            prior_za, prior_za_logits = self.prior_encoder(c_ids)
 
         start_logits, end_logits = None, None
         lm_logits, mean_embeds = None, (None, None)
         if run_decoder:
             # answer decoding
-            start_logits, end_logits =\
+            start_logits, end_logits = \
                 self.answer_decoder(c_ids, posterior_za)
             # question decoding
             lm_logits, mean_embeds = self.question_decoder(
@@ -188,8 +187,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_logits),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
-            "posterior_c_h": posterior_c_h,
-            "prior_c_h": prior_c_h,
             "answer_out": (start_logits, end_logits),
             "question_out": (lm_logits,) + mean_embeds
         })
@@ -198,19 +195,10 @@ class BertQAGConditionalVae(pl.LightningModule):
     def compute_loss(self, out: Dict, batch: torch.Tensor, optimizer_idx):
         _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
 
-        ##############
-        # Optimizers #
-        ##############
-        # ae_opt, d_opt = self.optimizers()
-        # ae_opt.zero_grad()
-        # d_opt.zero_grad()
-
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
-        posterior_c_h = out["posterior_c_h"]
-        prior_c_h = out["prior_c_h"]
         start_logits, end_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
@@ -255,20 +243,29 @@ class BertQAGConditionalVae(pl.LightningModule):
             ##########################
             # Optimize Discriminator #
             ##########################
-            D_q_real = self.q_discriminator(prior_c_h, prior_zq)
+            ones = torch.ones(c_ids.size(0), 1)
+            zeros = torch.zeros(c_ids.size(0), 1)
+
+            D_q_real = self.q_discriminator(c_ids.float(), prior_zq)
 
             prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_real = self.a_discriminator(
-                prior_c_h, torch.cat([prior_zq, prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                c_ids.float(),
+                torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_fake = self.q_discriminator(posterior_c_h, posterior_zq)
+            D_q_fake = self.q_discriminator(c_ids.float(), posterior_zq)
 
             posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(
-                posterior_c_h, torch.cat([posterior_zq, posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                c_ids.float(),
+                torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
-            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real) + torch.log(1 - D_a_fake)))
+            D_q_loss = -1 * self.lambda_wae_q * \
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones)
+                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros)))
+            D_a_loss = -1 * self.lambda_wae_a * \
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones)
+                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros)))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
@@ -280,20 +277,29 @@ class BertQAGConditionalVae(pl.LightningModule):
             ######################
             # Optimize Generator #
             ######################
-            D_q_fake = self.q_discriminator(prior_c_h, prior_zq)
+            ones = torch.ones(c_ids.size(0), 1)
+            zeros = torch.zeros(c_ids.size(0), 1)
+
+            D_q_fake = self.q_discriminator(c_ids.float(), prior_zq)
 
             prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(
-                prior_c_h, torch.cat([prior_zq, prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                c_ids.float(),
+                torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_real = self.q_discriminator(posterior_c_h, posterior_zq)
+            D_q_real = self.q_discriminator(c_ids.float(), posterior_zq)
 
             posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_real = self.a_discriminator(
-                posterior_c_h, torch.cat([posterior_zq, posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                c_ids.float(),
+                torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
-            D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real) + torch.log(1 - D_a_fake)))
+            D_q_loss = -1 * self.lambda_wae_q * \
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones)
+                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros)))
+            D_a_loss = -1 * self.lambda_wae_a * \
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones)
+                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros)))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
@@ -327,6 +333,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             return current_losses["total_gen_loss"]
 
     """ Generation-related methods """
+
     def _generate_answer(self, c_ids, za):
         return_start_logits, return_end_logits = self.answer_decoder(c_ids, za)
 
@@ -350,6 +357,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             return q_ids, gen_c_a_start_positions, gen_c_a_end_positions
 
     """ Validation-related methods """
+
     def generate_qa_from_posterior(self, c_ids, q_ids, c_a_mask):
         with torch.no_grad():
             zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
@@ -362,6 +370,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
 
     """ Validation-related methods """
+
     def evaluation(self, val_dataloader):
         all_text_examples = val_dataloader.dataset.all_text_examples
         all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
@@ -405,12 +414,13 @@ class BertQAGConditionalVae(pl.LightningModule):
             self.evaluation(self.trainer.val_dataloaders[0])
 
     def validation_step(self, batch, batch_idx):
-        pass # nothing here
+        pass  # nothing here
 
     """ Optimizer """
+
     def configure_optimizers(self):
         params_ae = list(self.posterior_encoder.parameters()) + list(self.answer_decoder.parameters()) \
-            + list(self.question_decoder.parameters())
+                    + list(self.question_decoder.parameters())
         params_ae = filter(lambda p: p.requires_grad, params_ae)
 
         params_disc = list(list(self.q_discriminator.parameters()) + list(self.a_discriminator.parameters()))

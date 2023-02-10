@@ -12,8 +12,16 @@ class DiscriminatorNet(nn.Module):
             nn.Linear(d_model * 2, d_model * 2),
             nn.BatchNorm1d(d_model * 2, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(0.2),
-            nn.Linear(d_model * 2, 1),
-            nn.Sigmoid()
+            nn.Linear(d_model * 2, d_model * 2),
+            nn.BatchNorm1d(d_model * 2, eps=1e-05, momentum=0.1),
+            nn.LeakyReLU(0.2),
+            nn.Linear(d_model * 2, d_model * 2),
+            nn.BatchNorm1d(d_model * 2, eps=1e-05, momentum=0.1),
+            nn.LeakyReLU(0.2),
+            nn.Linear(d_model * 2, d_model * 2),
+            nn.BatchNorm1d(d_model * 2, eps=1e-05, momentum=0.1),
+            nn.LeakyReLU(0.2),
+            nn.Linear(d_model * 2, 1)
         )
         self.discriminator.apply(self.init_weights)
 
@@ -22,5 +30,5 @@ class DiscriminatorNet(nn.Module):
             m.weight.data.normal_(0, 0.02) # N(0, 0.02)
             m.bias.data.fill_(0)
 
-    def forward(self, c_hs, sampled_z):
-        return self.discriminator(torch.cat([c_hs, sampled_z], dim=-1))
+    def forward(self, c_embeds, sampled_z):
+        return self.discriminator(torch.cat([c_embeds, sampled_z], dim=-1))

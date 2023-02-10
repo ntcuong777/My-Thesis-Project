@@ -46,7 +46,7 @@ class PosteriorEncoder(nn.Module):
             m.weight.data.normal_(0, 0.02) # N(0, 0.02)
             m.bias.data.fill_(0)
 
-    def forward(self, c_ids, q_ids, a_mask, return_hs=None):
+    def forward(self, c_ids, q_ids, a_mask):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
@@ -58,20 +58,12 @@ class PosteriorEncoder(nn.Module):
         q_hidden_states, q_state = self.encoder(q_embeds, q_lengths.to("cpu"))
         q_h = q_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         q_h = q_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # question self attention
-        # q_hidden_states = self.self_attention(q_hidden_states, q_mask)
-        # mask = q_mask.unsqueeze(1)
-        # q_h = self.final_state_attention(q_h.unsqueeze(1), q_hidden_states, mask).squeeze(1)
 
         # context enc
         c_embeds = self.embedding(c_ids)
         c_hidden_states, c_state = self.encoder(c_embeds, c_lengths.to("cpu"))
         c_h = c_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # context self attention
-        # c_hidden_states = self.self_attention(c_hidden_states, c_mask)
-        # mask = c_mask.unsqueeze(1)
-        # c_h = self.final_state_attention(c_h.unsqueeze(1), c_hidden_states, mask).squeeze(1)
 
         # attetion q, c
         mask = c_mask.unsqueeze(1)
@@ -92,10 +84,6 @@ class PosteriorEncoder(nn.Module):
         c_a_hidden_states, c_a_state = self.encoder(c_a_embeds, c_lengths.to("cpu"))
         c_a_h = c_a_state[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # context-answer self-attention
-        # c_a_hidden_states = self.self_attention(c_a_hidden_states, c_mask)
-        # mask = c_mask.unsqueeze(1)
-        # c_a_h = self.final_state_attention(c_a_h.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
 
         # attention zq, c_a
         mask = c_mask.unsqueeze(1)
@@ -106,6 +94,4 @@ class PosteriorEncoder(nn.Module):
         # Sample `za`
         za = gumbel_softmax(za_logits, hard=True)
 
-        if return_hs is not None and return_hs:
-            return zq, zq_mu, zq_logvar, za, za_logits, c_h
         return zq, zq_mu, zq_logvar, za, za_logits

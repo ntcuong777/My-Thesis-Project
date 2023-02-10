@@ -45,7 +45,7 @@ class PriorEncoder(nn.Module):
             m.weight.data.normal_(0, 0.02) # N(0, 0.02)
             m.bias.data.fill_(0)
 
-    def forward(self, c_ids, return_hs=None):
+    def forward(self, c_ids):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)
 
@@ -53,11 +53,6 @@ class PriorEncoder(nn.Module):
         c_hs, c_states = self.encoder(c_embeds, c_lengths.to("cpu"))
         c_h = c_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        # encoder self attention
-        # c_hs = self.self_attention(c_hs, c_mask)
-        # final hidden state attention
-        # mask = c_mask.unsqueeze(1)
-        # c_h = self.final_state_attention(c_h.unsqueeze(1), c_hs, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(c_h)
         zq_logvar = self.zq_logvar_linear(c_h)
@@ -72,6 +67,4 @@ class PriorEncoder(nn.Module):
         # sample `za`
         za = gumbel_softmax(za_logits, hard=True)
 
-        if return_hs is not None and return_hs:
-            return zq, zq_mu, zq_logvar, za, za_logits, c_h
         return zq, zq_mu, zq_logvar, za, za_logits
