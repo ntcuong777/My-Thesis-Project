@@ -253,17 +253,15 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             D_q_real = self.q_discriminator(mean_c_embeds, prior_zq)
 
-            prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_real = self.a_discriminator(
                 mean_c_embeds,
-                torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                torch.cat([prior_zq.detach(), prior_za_logits.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_fake = self.q_discriminator(mean_c_embeds, posterior_zq)
 
-            posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(
                 mean_c_embeds,
-                torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                torch.cat([posterior_zq.detach(), posterior_za_logits.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = self.lambda_wae_q * \
                        (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
@@ -290,17 +288,15 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             D_q_fake = self.q_discriminator(mean_c_embeds, prior_zq)
 
-            prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(
                 mean_c_embeds,
-                torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                torch.cat([prior_zq.detach(), prior_za_logits.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_real = self.q_discriminator(mean_c_embeds, posterior_zq)
 
-            posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_real = self.a_discriminator(
                 mean_c_embeds,
-                torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+                torch.cat([posterior_zq.detach(), posterior_za_logits.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = self.lambda_wae_q * \
                        (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
