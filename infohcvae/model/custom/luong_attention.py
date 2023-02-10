@@ -7,6 +7,12 @@ class LuongAttention(nn.Module):
     def __init__(self, in_features, out_features, bias=True):
         super().__init__()
         self.linear_proj = nn.Linear(in_features, out_features, bias=bias)
+        self.init_weights(self.linear_proj)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            m.weight.data.normal_(0, 0.02) # N(0, 0.02)
+            m.bias.data.fill_(0)
 
     def forward(self, query, memories, mask, return_attention_logits=None):
         # project query to the same hidden_size as memories

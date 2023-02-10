@@ -29,6 +29,15 @@ class AnswerDecoder(nn.Module):
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
 
+        self.init_weights(self.za_projection)
+        self.init_weights(self.start_linear)
+        self.init_weights(self.end_linear)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            m.weight.data.normal_(0, 0.02) # N(0, 0.02)
+            m.bias.data.fill_(0)
+
     def _build_za_init_state(self, za, max_c_len):
         z_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)

@@ -15,6 +15,12 @@ class DiscriminatorNet(nn.Module):
             nn.Linear(d_model * 2, 1),
             nn.Sigmoid()
         )
+        self.discriminator.apply(self.init_weights)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Linear):        
+            m.weight.data.normal_(0, 0.02) # N(0, 0.02)
+            m.bias.data.fill_(0)
 
     def forward(self, c_hs, sampled_z):
         return self.discriminator(torch.cat([c_hs, sampled_z], dim=-1))

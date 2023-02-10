@@ -44,6 +44,7 @@ class QuestionDecoder(nn.Module):
         self.concat_linear = nn.Sequential(nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
                                            nn.Dropout(dropout),
                                            nn.Linear(2 * lstm_dec_nhidden, 2 * d_model))
+        self.concat_linear.apply(self.init_weights)
 
         self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
 
@@ -52,7 +53,14 @@ class QuestionDecoder(nn.Module):
         for param in self.lm_head.parameters():
             param.requires_grad = False
 
-        self.discriminator = nn.Bilinear(d_model, lstm_dec_nhidden, 1)
+        self.init_weights(self.q_init_cell_linear)
+        self.init_weights(self.q_init_hidden_linear)
+        # self.discriminator = nn.Bilinear(d_model, lstm_dec_nhidden, 1)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            m.weight.data.normal_(0, 0.02) # N(0, 0.02)
+            m.bias.data.fill_(0)
 
     def _build_zq_init_state(self, zq):
         q_init_h = self.q_init_hidden_linear(zq)

@@ -37,6 +37,15 @@ class PosteriorEncoder(nn.Module):
         self.zq_logvar_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
         self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values)
 
+        self.init_weights(self.zq_mu_linear)
+        self.init_weights(self.zq_logvar_linear)
+        self.init_weights(self.za_linear)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            m.weight.data.normal_(0, 0.02) # N(0, 0.02)
+            m.bias.data.fill_(0)
+
     def forward(self, c_ids, q_ids, a_mask, return_hs=None):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
         c_lengths = return_inputs_length(c_mask)

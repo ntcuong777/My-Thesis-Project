@@ -10,6 +10,14 @@ class GatedAttention(nn.Module):
         self.fusion = nn.Linear(2 * hidden_size, hidden_size, bias=False)
         self.gate = nn.Linear(2 * hidden_size, hidden_size, bias=False)
 
+        self.init_weights(self.fusion)
+        self.init_weights(self.gate)
+
+    def init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            m.weight.data.normal_(0, 0.02) # N(0, 0.02)
+            m.bias.data.fill_(0)
+
     def forward(self, hidden_states, attention_mask):
         extended_attention_mask = attention_mask
         if len(attention_mask.size()) == 2: # mask shape = (N, seq_len) => expand to attention matrix mask
