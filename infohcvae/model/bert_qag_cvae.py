@@ -445,11 +445,11 @@ class BertQAGConditionalVae(pl.LightningModule):
                           optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
                           optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         elif self.optimizer_algorithm == "adam":
-            optimizers = [optim.Adam(params_ae, lr=self.lr),
+            optimizers = [optim.Adam(params_ae, lr=self.lr, betas=(0.5, 0.999)),
                           optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
                           optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         elif self.optimizer_algorithm == "adamw":
-            optimizers = [optim.AdamW(params_ae, lr=self.lr),
+            optimizers = [optim.AdamW(params_ae, lr=self.lr, betas=(0.5, 0.999)),
                           optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
                           optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         else:
