@@ -243,8 +243,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             ##########################
             # Optimize Discriminator #
             ##########################
-            ones = torch.ones(c_ids.size(0), 1)
-            zeros = torch.zeros(c_ids.size(0), 1)
+            ones = torch.ones(c_ids.size(0), 1).to(c_ids.device)
+            zeros = torch.zeros(c_ids.size(0), 1).to(c_ids.device)
 
             D_q_real = self.q_discriminator(c_ids.float(), prior_zq)
 
@@ -277,8 +277,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             ######################
             # Optimize Generator #
             ######################
-            ones = torch.ones(c_ids.size(0), 1)
-            zeros = torch.zeros(c_ids.size(0), 1)
+            ones = torch.ones(c_ids.size(0), 1).to(c_ids.device)
+            zeros = torch.zeros(c_ids.size(0), 1).to(c_ids.device)
 
             D_q_fake = self.q_discriminator(c_ids.float(), prior_zq)
 
