@@ -44,7 +44,8 @@ class PosteriorEncoder(nn.Module):
     def init_weights(self, m):
         if isinstance(m, nn.Linear):
             m.weight.data.normal_(0, 0.02) # N(0, 0.02)
-            m.bias.data.fill_(0)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
 
     def forward(self, c_ids, q_ids, a_mask):
         c_mask = return_attention_mask(c_ids, self.pad_token_id)

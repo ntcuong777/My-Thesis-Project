@@ -36,7 +36,8 @@ class AnswerDecoder(nn.Module):
     def init_weights(self, m):
         if isinstance(m, nn.Linear):
             m.weight.data.normal_(0, 0.02) # N(0, 0.02)
-            m.bias.data.fill_(0)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
 
     def _build_za_init_state(self, za, max_c_len):
         z_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)

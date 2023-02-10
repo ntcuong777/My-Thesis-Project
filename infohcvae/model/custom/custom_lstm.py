@@ -20,7 +20,7 @@ class CustomLSTM(nn.Module):
 
     def init_weights(self):
         for w in self.lstm.parameters(): 
-            if w.dim()>1:
+            if w.dim() > 1:
                 torch.nn.init.orthogonal_(w)
 
     def forward(self, inputs, input_lengths, state=None):
