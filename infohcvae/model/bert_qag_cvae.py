@@ -261,11 +261,11 @@ class BertQAGConditionalVae(pl.LightningModule):
                 torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = self.lambda_wae_q * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones)
-                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros)))
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
+                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")))
             D_a_loss = self.lambda_wae_a * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones)
-                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros)))
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
+                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
@@ -295,11 +295,11 @@ class BertQAGConditionalVae(pl.LightningModule):
                 torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = -1 * self.lambda_wae_q * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones)
-                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros)))
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
+                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")))
             D_a_loss = -1 * self.lambda_wae_a * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones)
-                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros)))
+                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
+                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
