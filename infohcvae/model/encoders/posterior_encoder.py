@@ -30,8 +30,24 @@ class PosteriorEncoder(nn.Module):
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
-        self.zq_mu_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
-        self.zq_logvar_linear = nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim)
+        self.zq_mu_linear = nn.Sequential(
+            nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim),
+            nn.BatchNorm1d(nzqdim, eps=1e-05, momentum=0.1),
+            nn.Tanh(),
+            nn.Linear(nzqdim, nzqdim),
+            nn.BatchNorm1d(nzqdim, eps=1e-05, momentum=0.1),
+            nn.Tanh(),
+            nn.Linear(nzqdim, nzqdim)
+        )
+        self.zq_logvar_linear = nn.Sequential(
+            nn.Linear(4 * 2 * lstm_enc_nhidden, nzqdim),
+            nn.BatchNorm1d(nzqdim, eps=1e-05, momentum=0.1),
+            nn.Tanh(),
+            nn.Linear(nzqdim, nzqdim),
+            nn.BatchNorm1d(nzqdim, eps=1e-05, momentum=0.1),
+            nn.Tanh(),
+            nn.Linear(nzqdim, nzqdim)
+        )
         self.zq_generator = nn.Sequential(
             nn.Linear(nzqdim, nzqdim),
             nn.BatchNorm1d(nzqdim, eps=1e-05, momentum=0.1),
@@ -41,22 +57,30 @@ class PosteriorEncoder(nn.Module):
             nn.ReLU(),
             nn.Linear(nzqdim, nzqdim)
         )
-        self.init_weights(self.zq_mu_linear)
-        self.init_weights(self.zq_logvar_linear)
+        self.zq_mu_linear.apply(self.init_weights)
+        self.zq_logvar_linear.apply(self.init_weights)
         self.zq_generator.apply(self.init_weights)
 
-        self.za_linear = nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values)
+        self.za_linear = nn.Sequential(
+            nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values),
+            nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
+            nn.Tanh(),
+            nn.Linear(nzadim * nza_values, nzadim * nza_values),
+            nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
+            nn.Tanh(),
+            nn.Linear(nzadim * nza_values, nzadim * nza_values)
+        )
         self.za_generator = nn.Sequential(
             nn.Linear(nzadim * nza_values, nzadim * nza_values),
             nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
             nn.ReLU(),
             nn.Linear(nzadim * nza_values, nzadim * nza_values),
-            nn.BatchNorm1d(nzqdim, eps=1e-05, momentum=0.1),
+            nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
             nn.ReLU(),
             nn.Linear(nzadim * nza_values, nzadim * nza_values)
         )
+        self.za_linear.apply(self.init_weights)
         self.za_generator.apply(self.init_weights)
-        self.init_weights(self.za_linear)
 
     def init_weights(self, m):
         if isinstance(m, nn.Linear):
