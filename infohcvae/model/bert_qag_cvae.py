@@ -263,18 +263,23 @@ class BertQAGConditionalVae(pl.LightningModule):
                 mean_c_embeds,
                 torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_loss = self.lambda_wae_q * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
-                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")))
-            D_a_loss = self.lambda_wae_a * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
-                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")))
+            D_q_real_loss = F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
+            D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
+            D_q_loss = self.lambda_wae_q * (torch.mean(D_q_real_loss + D_q_fake_loss))
+
+            D_a_real_loss = F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
+            D_a_fake_loss = F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")
+            D_a_loss = self.lambda_wae_a * (torch.mean(D_a_real_loss + D_a_fake_loss))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
                 "total_disc_loss": D_loss,
                 "loss_a_disc": D_a_loss,
+                "loss_a_disc_real": D_a_real_loss.mean(),
+                "loss_a_disc_fake": D_a_fake_loss.mean(),
                 "loss_q_disc": D_q_loss,
+                "loss_q_disc_real": D_q_real_loss.mean(),
+                "loss_q_disc_fake": D_q_fake_loss.mean(),
             }
         else:
             ######################
@@ -298,18 +303,23 @@ class BertQAGConditionalVae(pl.LightningModule):
                 mean_c_embeds,
                 torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_loss = self.lambda_wae_q * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
-                                   + F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")))
-            D_a_loss = self.lambda_wae_a * \
-                       (torch.mean(F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
-                                   + F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")))
+            D_q_real_loss = F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
+            D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
+            D_q_loss = self.lambda_wae_q * (torch.mean(D_q_real_loss + D_q_fake_loss))
+
+            D_a_real_loss = F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
+            D_a_fake_loss = F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")
+            D_a_loss = self.lambda_wae_a * (torch.mean(D_a_real_loss + D_a_fake_loss))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
                 "total_gen_loss": D_loss,
                 "loss_a_gen": D_a_loss,
+                "loss_a_gen_real": D_a_real_loss.mean(),
+                "loss_a_gen_fake": D_a_fake_loss.mean(),
                 "loss_q_gen": D_q_loss,
+                "loss_q_gen_real": D_q_real_loss.mean(),
+                "loss_q_gen_fake": D_q_fake_loss.mean(),
             }
         return current_losses
 
