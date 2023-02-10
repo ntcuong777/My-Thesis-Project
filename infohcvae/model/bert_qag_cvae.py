@@ -12,17 +12,17 @@ import pytorch_lightning as pl
 from transformers import BertConfig, BertTokenizer
 from infohcvae.model.model_utils import (
     gumbel_softmax, freeze_neural_model,
+    return_attention_mask,
 )
 from infohcvae.model.losses import (
     GaussianKLLoss, CategoricalKLLoss,
-    ContinuousKernelMMDLoss, CategoricalMMDLoss,
 )
 from infohcvae.model.custom.custom_bert_model import CustomBertModel
 from infohcvae.model.custom.custom_bert_embeddings import CustomBertEmbedding
 from infohcvae.model.custom.discriminator import DiscriminatorNet
 from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder
 from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
-from infohcvae.model.infomax import JensenShannonInfoMax, AnswerJensenShannonInfoMax
+from infohcvae.model.infomax import JensenShannonInfoMax
 from evaluation.training_eval import eval_vae
 
 __logger__ = logging.Logger(__name__)
@@ -81,6 +81,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         bert_model = CustomBertModel(base_model)
         freeze_neural_model(bert_model)
 
+        self.word_embeddings = embedding.word_embeddings
+
         self.tokenizer = BertTokenizer.from_pretrained(base_model)
         self.vocab_size = vocab_size = self.tokenizer.vocab_size
         self.pad_token_id = self.tokenizer.pad_token_id
@@ -105,8 +107,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             sos_id, eos_id, vocab_size, dropout=decoder_q_dropout, max_q_len=self.max_q_len,
             pad_token_id=self.pad_token_id)
 
-        self.q_discriminator = DiscriminatorNet(self.max_c_len, nzqdim)
-        self.a_discriminator = DiscriminatorNet(self.max_c_len, nzadim * nza_values + nzqdim)
+        self.q_discriminator = DiscriminatorNet(d_model, nzqdim)
+        self.a_discriminator = DiscriminatorNet(d_model, nzadim * nza_values + nzqdim)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -145,7 +147,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
-        parser.add_argument("--alpha_kl_a", type=float, default=1)
+        parser.add_argument("--alpha_kl_a", type=float, default=0)
         parser.add_argument("--lambda_wae_q", type=float, default=10)
         parser.add_argument("--lambda_wae_a", type=float, default=10)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
@@ -246,18 +248,21 @@ class BertQAGConditionalVae(pl.LightningModule):
             ones = torch.ones(c_ids.size(0), 1).to(c_ids.device)
             zeros = torch.zeros(c_ids.size(0), 1).to(c_ids.device)
 
-            D_q_real = self.q_discriminator(c_ids.float(), prior_zq)
+            c_mask = return_attention_mask(c_ids, self.pad_token_id)
+            mean_c_embeds = self.word_embeddings(c_ids).sum(dim=1) / c_mask.sum(dim=-1, keepdims=True).float()
+
+            D_q_real = self.q_discriminator(mean_c_embeds, prior_zq)
 
             prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_real = self.a_discriminator(
-                c_ids.float(),
+                mean_c_embeds,
                 torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_fake = self.q_discriminator(c_ids.float(), posterior_zq)
+            D_q_fake = self.q_discriminator(mean_c_embeds, posterior_zq)
 
             posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(
-                c_ids.float(),
+                mean_c_embeds,
                 torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = self.lambda_wae_q * \
@@ -280,18 +285,21 @@ class BertQAGConditionalVae(pl.LightningModule):
             ones = torch.ones(c_ids.size(0), 1).to(c_ids.device)
             zeros = torch.zeros(c_ids.size(0), 1).to(c_ids.device)
 
-            D_q_fake = self.q_discriminator(c_ids.float(), prior_zq)
+            c_mask = return_attention_mask(c_ids, self.pad_token_id)
+            mean_c_embeds = self.word_embeddings(c_ids).sum(dim=1) / c_mask.sum(dim=-1, keepdims=True).float()
+
+            D_q_fake = self.q_discriminator(mean_c_embeds, prior_zq)
 
             prior_za = gumbel_softmax(prior_za_logits, hard=False)
             D_a_fake = self.a_discriminator(
-                c_ids.float(),
+                mean_c_embeds,
                 torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
-            D_q_real = self.q_discriminator(c_ids.float(), posterior_zq)
+            D_q_real = self.q_discriminator(mean_c_embeds, posterior_zq)
 
             posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
             D_a_real = self.a_discriminator(
-                c_ids.float(),
+                mean_c_embeds,
                 torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = self.lambda_wae_q * \

@@ -21,6 +21,9 @@ class DiscriminatorNet(nn.Module):
             nn.Linear(d_model * 2, d_model * 2),
             nn.BatchNorm1d(d_model * 2, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(0.2),
+            nn.Linear(d_model * 2, d_model * 2),
+            nn.BatchNorm1d(d_model * 2, eps=1e-05, momentum=0.1),
+            nn.LeakyReLU(0.2),
             nn.Linear(d_model * 2, 1)
         )
         self.discriminator.apply(self.init_weights)

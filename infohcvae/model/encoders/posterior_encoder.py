@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
-from infohcvae.model.custom.gated_self_attention import GatedAttention
 from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
@@ -26,8 +25,6 @@ class PosteriorEncoder(nn.Module):
         self.encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        # self.self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        # self.final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.question_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
         self.context_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
