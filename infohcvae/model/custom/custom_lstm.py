@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -15,6 +16,12 @@ class CustomLSTM(nn.Module):
         self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
                             num_layers=num_layers, dropout=dropout,
                             bidirectional=bidirectional, batch_first=True)
+        self.init_weights()
+
+    def init_weights(self):
+        for w in self.lstm.parameters(): 
+            if w.dim()>1:
+                torch.nn.init.orthogonal_(w)
 
     def forward(self, inputs, input_lengths, state=None):
         _, total_length, _ = inputs.size()

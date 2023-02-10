@@ -107,7 +107,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             pad_token_id=self.pad_token_id)
 
         self.q_discriminator = DiscriminatorNet(self.encoder_nhidden * 2, nzqdim)
-        self.a_discriminator = DiscriminatorNet(self.encoder_nhidden * 2, nzadim * nza_values)
+        self.a_discriminator = DiscriminatorNet(self.encoder_nhidden * 2, nzadim * nza_values + nzqdim)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -147,7 +147,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
-        parser.add_argument("--alpha_kl_a", type=float, default=0)
+        parser.add_argument("--alpha_kl_a", type=float, default=1)
         parser.add_argument("--lambda_wae_q", type=float, default=1)
         parser.add_argument("--lambda_wae_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
@@ -258,12 +258,14 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_q_real = self.q_discriminator(prior_c_h, prior_zq)
 
             prior_za = gumbel_softmax(prior_za_logits, hard=False)
-            D_a_real = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
+            D_a_real = self.a_discriminator(
+                prior_c_h, torch.cat([prior_zq, prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_fake = self.q_discriminator(posterior_c_h, posterior_zq)
 
             posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
-            D_a_fake = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
+            D_a_fake = self.a_discriminator(
+                posterior_c_h, torch.cat([posterior_zq, posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
             D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real) + torch.log(1 - D_a_fake)))
@@ -281,12 +283,14 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_q_fake = self.q_discriminator(prior_c_h, prior_zq)
 
             prior_za = gumbel_softmax(prior_za_logits, hard=False)
-            D_a_fake = self.a_discriminator(prior_c_h, prior_za.view(-1, self.nzadim * self.nza_values))
+            D_a_fake = self.a_discriminator(
+                prior_c_h, torch.cat([prior_zq, prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_real = self.q_discriminator(posterior_c_h, posterior_zq)
 
             posterior_za = gumbel_softmax(posterior_za_logits, hard=False)
-            D_a_real = self.a_discriminator(posterior_c_h, posterior_za.view(-1, self.nzadim * self.nza_values))
+            D_a_real = self.a_discriminator(
+                posterior_c_h, torch.cat([posterior_zq, posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
 
             D_q_loss = self.lambda_wae_q * (-torch.mean(torch.log(D_q_real) + torch.log(1 - D_q_fake)))
             D_a_loss = self.lambda_wae_a * (-torch.mean(torch.log(D_a_real) + torch.log(1 - D_a_fake)))
@@ -300,7 +304,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return current_losses
 
     def training_step(self, batch, batch_idx, optimizer_idx):
-        _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
+        _, q_ids, c_ids, a_mask, _, _, _, _ = batch
         out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_decoder=(optimizer_idx == 0))
 
         current_losses = self.compute_loss(out, batch, optimizer_idx)
@@ -419,7 +423,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         disc_lr = 1e-4
         gen_lr = 2e-4
         if self.optimizer_algorithm == "sgd":
-            optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.9, nesterov=False),
+            optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.5, nesterov=False),
                           optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
                           optim.Adam(params_gen, lr=gen_lr, betas=(0.5, 0.999))]
         elif self.optimizer_algorithm == "adam":
