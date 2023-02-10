@@ -444,8 +444,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
-        disc_lr = 1e-5
-        gen_lr = 5e-5
+        disc_lr = 5e-5
+        gen_lr = 2e-4
         if self.optimizer_algorithm == "sgd":
             optimizers = [optim.SGD(params_ae, lr=self.lr, momentum=0.5, nesterov=False),
                           optim.Adam(params_disc, lr=disc_lr, betas=(0.5, 0.999)),
