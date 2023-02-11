@@ -59,7 +59,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.alpha_kl_q = args.alpha_kl_q
         self.alpha_kl_a = args.alpha_kl_a
         self.lambda_wae_q = args.lambda_wae_q
-        self.lambda_wae_a = args.lambda_wae_a
+        self.lambda_gan_a = args.lambda_gan_a
         self.lambda_qa_info = args.lambda_qa_info
 
         """ Initialize model """
@@ -149,9 +149,9 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
         parser.add_argument("--alpha_kl_q", type=float, default=0.1)
-        parser.add_argument("--alpha_kl_a", type=float, default=0.1)
+        parser.add_argument("--alpha_kl_a", type=float, default=1)
         parser.add_argument("--lambda_wae_q", type=float, default=1)
-        parser.add_argument("--lambda_wae_a", type=float, default=1)
+        parser.add_argument("--lambda_gan_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=2e-4, type=float, help="lr")
@@ -166,7 +166,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
             run_question_decoder: bool = True,
-            return_answer_mask: bool = False,
+            gan_optim: bool = False,
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
@@ -179,9 +179,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # answer decoding
         a_mask = None
-        if return_answer_mask:
+        if gan_optim:
             start_logits, end_logits, a_mask = \
-                self.answer_decoder(c_ids, posterior_za, return_answer_mask=return_answer_mask)
+                self.answer_decoder(c_ids, prior_za, return_answer_mask=gan_optim)
         else:
             start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
 
@@ -270,7 +270,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             D_a_real_loss = F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
             D_a_fake_loss = F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")
-            D_a_loss = self.lambda_wae_a * (torch.mean(D_a_real_loss + D_a_fake_loss))
+            D_a_loss = self.lambda_gan_a * (torch.mean(D_a_real_loss + D_a_fake_loss))
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
@@ -293,7 +293,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             mean_c_embeds = self.word_embeddings(c_ids).sum(dim=1) / c_mask.sum(dim=-1, keepdims=True).float()
 
             D_q_fake = self.q_discriminator(mean_c_embeds, prior_zq)
-            D_a_fake = self.a_discriminator(c_ids, a_mask)
 
             D_q_real = self.q_discriminator(mean_c_embeds, posterior_zq)
             D_a_real = self.a_discriminator(c_ids, dec_a_mask)
@@ -303,15 +302,13 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_q_loss = self.lambda_wae_q * (torch.mean(D_q_real_loss + D_q_fake_loss))
 
             D_a_real_loss = F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
-            D_a_fake_loss = F.binary_cross_entropy_with_logits(D_a_fake, zeros, reduction="none")
-            D_a_loss = self.lambda_wae_a * (torch.mean(D_a_real_loss + D_a_fake_loss))
+            D_a_loss = self.lambda_gan_a * torch.mean(D_a_real_loss)
             D_loss = D_q_loss + D_a_loss
 
             current_losses = {
                 "total_gen_loss": D_loss,
                 "loss_a_gen": D_a_loss,
                 "loss_a_gen_real": D_a_real_loss.mean(),
-                "loss_a_gen_fake": D_a_fake_loss.mean(),
                 "loss_q_gen": D_q_loss,
                 "loss_q_gen_real": D_q_real_loss.mean(),
                 "loss_q_gen_fake": D_q_fake_loss.mean(),
@@ -322,7 +319,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         _, q_ids, c_ids, a_mask, _, _, _, _ = batch
         out = self.forward(
             c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=(optimizer_idx == 0),
-            return_answer_mask=(optimizer_idx != 0))
+            gan_optim=(optimizer_idx != 0))
 
         current_losses = self.compute_loss(out, batch, optimizer_idx)
 
