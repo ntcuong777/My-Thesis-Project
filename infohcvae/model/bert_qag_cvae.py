@@ -262,7 +262,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_a_real = self.a_discriminator(c_ids, a_mask)
 
             D_q_fake = self.q_discriminator(mean_c_embeds, posterior_zq)
-            D_a_fake = self.a_discriminator(c_mask, dec_a_mask)
+            D_a_fake = self.a_discriminator(c_ids, dec_a_mask)
 
             D_q_real_loss = F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
             D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
