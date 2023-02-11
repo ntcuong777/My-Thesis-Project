@@ -180,8 +180,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         # answer decoding
         start_logits, end_logits, posterior_a_mask, prior_a_mask = None, None, None, None
         if gan_optim:
-            posterior_a_mask = self.answer_decoder(c_ids, posterior_za, return_answer_mask=gan_optim)
-            prior_a_mask = self.answer_decoder(c_ids, prior_za, return_answer_mask=gan_optim)
+            start_logits, end_logits, posterior_a_mask = self.answer_decoder(c_ids, posterior_za, return_answer_mask=gan_optim)
+            _, _, prior_a_mask = self.answer_decoder(c_ids, prior_za, return_answer_mask=gan_optim)
         else:
             start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
 

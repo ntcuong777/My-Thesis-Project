@@ -68,7 +68,7 @@ class AnswerDecoder(nn.Module):
 
         if return_answer_mask is not None and return_answer_mask:
             a_mask, _, _ = self.generate(c_ids, start_logits=masked_start_logits, end_logits=masked_end_logits)
-            return a_mask
+            return masked_start_logits, masked_end_logits, a_mask
         return masked_start_logits, masked_end_logits
 
     def generate(self, c_ids, za=None, start_logits=None, end_logits=None):
