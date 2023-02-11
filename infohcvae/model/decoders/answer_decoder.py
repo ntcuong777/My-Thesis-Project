@@ -9,7 +9,7 @@ from infohcvae.model.model_utils import (
 
 
 class AnswerDecoder(nn.Module):
-    def __init__(self, embedding, d_model, nzadim, nza_values,
+    def __init__(self, embedding, d_model, nzadim,
                  lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0, pad_token_id=0):
         super(AnswerDecoder, self).__init__()
 
@@ -18,8 +18,7 @@ class AnswerDecoder(nn.Module):
         self.pad_token_id = pad_token_id
 
         self.nzadim = nzadim
-        self.nza_values = nza_values
-        self.za_projection = nn.Linear(nzadim * nza_values, d_model, bias=False)
+        self.za_projection = nn.Linear(nzadim, d_model, bias=False)
 
         self.answer_decoder = CustomLSTM(input_size=4 * d_model, hidden_size=lstm_dec_nhidden,
                                          num_layers=lstm_dec_nlayers, dropout=dropout,
@@ -40,11 +39,11 @@ class AnswerDecoder(nn.Module):
                 m.bias.data.fill_(0)
 
     def _build_za_init_state(self, za, max_c_len):
-        z_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)
+        z_projected = self.za_projection(za)  # shape = (N, d_model)
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
-    def forward(self, c_ids, za, return_answer_mask=None):
+    def forward(self, c_ids, za):
         _, max_c_len = c_ids.size()
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
@@ -66,9 +65,6 @@ class AnswerDecoder(nn.Module):
         masked_start_logits = start_logits.masked_fill(start_end_mask, -3e4)
         masked_end_logits = end_logits.masked_fill(start_end_mask, -3e4)
 
-        if return_answer_mask is not None and return_answer_mask:
-            a_mask, _, _ = self.generate(c_ids, start_logits=masked_start_logits, end_logits=masked_end_logits)
-            return masked_start_logits, masked_end_logits, a_mask
         return masked_start_logits, masked_end_logits
 
     def generate(self, c_ids, za=None, start_logits=None, end_logits=None):
