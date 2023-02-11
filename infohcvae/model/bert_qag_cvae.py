@@ -121,7 +121,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
 
-        a_infomax_discriminator = nn.Bilinear(decoder_a_nhidden, decoder_q_nhidden, 1)
+        a_infomax_discriminator = nn.Bilinear(2 * decoder_a_nhidden, decoder_q_nhidden, 1)
         self.a_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                               discriminator=a_infomax_discriminator)
 
