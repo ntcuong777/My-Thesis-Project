@@ -359,7 +359,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     def generate_qa_from_prior(self, c_ids):
         with torch.no_grad():
-            zq, _, _, za, _ = self.prior_encoder(c_ids)
+            zq, _, _, za, _, _ = self.prior_encoder(c_ids)
 
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
                 self._generate_answer(c_ids, za)
@@ -372,7 +372,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     def generate_qa_from_posterior(self, c_ids, q_ids, c_a_mask):
         with torch.no_grad():
-            zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
+            zq, _, _, za, _, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
             """ Generation """
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
