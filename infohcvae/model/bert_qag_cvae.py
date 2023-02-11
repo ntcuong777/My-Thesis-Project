@@ -20,6 +20,7 @@ from infohcvae.model.losses import (
 from infohcvae.model.custom.custom_bert_model import CustomBertModel
 from infohcvae.model.custom.custom_bert_embeddings import CustomBertEmbedding
 from infohcvae.model.custom.discriminator import DiscriminatorNet
+from infohcvae.model.custom.answer_discriminator import AnswerDiscriminator
 from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder
 from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
 from infohcvae.model.infomax import JensenShannonInfoMax
@@ -108,7 +109,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             pad_token_id=self.pad_token_id)
 
         self.q_discriminator = DiscriminatorNet(d_model, nzqdim)
-        self.a_discriminator = DiscriminatorNet(d_model, nzadim * nza_values + nzqdim)
+        self.a_discriminator = AnswerDiscriminator(
+            embedding, d_model, encoder_nhidden, num_layers=2, dropout=encoder_dropout, pad_token_id=self.pad_token_id)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
@@ -146,8 +148,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
         parser.add_argument("--w_bce", type=float, default=1)
-        parser.add_argument("--alpha_kl_q", type=float, default=0)
-        parser.add_argument("--alpha_kl_a", type=float, default=0)
+        parser.add_argument("--alpha_kl_q", type=float, default=0.1)
+        parser.add_argument("--alpha_kl_a", type=float, default=0.1)
         parser.add_argument("--lambda_wae_q", type=float, default=1)
         parser.add_argument("--lambda_wae_a", type=float, default=1)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
@@ -163,7 +165,8 @@ class BertQAGConditionalVae(pl.LightningModule):
     def forward(
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
-            run_decoder: bool = True
+            run_question_decoder: bool = True,
+            return_answer_mask: bool = False,
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
@@ -174,12 +177,16 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_zq, prior_zq_mu, prior_zq_logvar, \
             prior_za, prior_za_logits = self.prior_encoder(c_ids)
 
-        start_logits, end_logits = None, None
+        # answer decoding
+        a_mask = None
+        if return_answer_mask:
+            start_logits, end_logits, a_mask = \
+                self.answer_decoder(c_ids, posterior_za, return_answer_mask=return_answer_mask)
+        else:
+            start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
+
         lm_logits, mean_embeds = None, (None, None)
-        if run_decoder:
-            # answer decoding
-            start_logits, end_logits = \
-                self.answer_decoder(c_ids, posterior_za)
+        if run_question_decoder:
             # question decoding
             lm_logits, mean_embeds = self.question_decoder(
                 c_ids, q_ids, c_a_mask, posterior_zq, return_qa_mean_embeds=True)
@@ -189,7 +196,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_logits),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
-            "answer_out": (start_logits, end_logits),
+            "answer_out": (start_logits, end_logits, a_mask),
             "question_out": (lm_logits,) + mean_embeds
         })
         return out
@@ -201,7 +208,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
-        start_logits, end_logits = out["answer_out"]
+        start_logits, end_logits, dec_a_mask = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         if optimizer_idx == 0:
@@ -252,16 +259,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             mean_c_embeds = self.word_embeddings(c_ids).sum(dim=1) / c_mask.sum(dim=-1, keepdims=True).float()
 
             D_q_real = self.q_discriminator(mean_c_embeds, prior_zq)
-
-            D_a_real = self.a_discriminator(
-                mean_c_embeds,
-                torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+            D_a_real = self.a_discriminator(c_ids, a_mask)
 
             D_q_fake = self.q_discriminator(mean_c_embeds, posterior_zq)
-
-            D_a_fake = self.a_discriminator(
-                mean_c_embeds,
-                torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+            D_a_fake = self.a_discriminator(c_mask, dec_a_mask)
 
             D_q_real_loss = F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
             D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
@@ -292,16 +293,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             mean_c_embeds = self.word_embeddings(c_ids).sum(dim=1) / c_mask.sum(dim=-1, keepdims=True).float()
 
             D_q_fake = self.q_discriminator(mean_c_embeds, prior_zq)
-
-            D_a_fake = self.a_discriminator(
-                mean_c_embeds,
-                torch.cat([prior_zq.detach(), prior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+            D_a_fake = self.a_discriminator(c_ids, a_mask)
 
             D_q_real = self.q_discriminator(mean_c_embeds, posterior_zq)
-
-            D_a_real = self.a_discriminator(
-                mean_c_embeds,
-                torch.cat([posterior_zq.detach(), posterior_za.view(-1, self.nzadim * self.nza_values)], dim=-1))
+            D_a_real = self.a_discriminator(c_ids, dec_a_mask)
 
             D_q_real_loss = F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
             D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
@@ -325,7 +320,9 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         _, q_ids, c_ids, a_mask, _, _, _, _ = batch
-        out = self.forward(c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_decoder=(optimizer_idx == 0))
+        out = self.forward(
+            c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=(optimizer_idx == 0),
+            return_answer_mask=(optimizer_idx != 0))
 
         current_losses = self.compute_loss(out, batch, optimizer_idx)
 
@@ -440,7 +437,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         params_disc = list(list(self.q_discriminator.parameters()) + list(self.a_discriminator.parameters()))
         params_disc = filter(lambda p: p.requires_grad, params_disc)
 
-        params_gen = list(self.posterior_encoder.parameters()) + list(self.prior_encoder.parameters())
+        params_gen = list(self.posterior_encoder.parameters()) + list(self.prior_encoder.parameters()) \
+                     + list(self.answer_decoder.parameters())
         params_gen = filter(lambda p: p.requires_grad, params_gen)
 
         # 1st optimizer is optimizer for AE, 2nd is for discriminator
