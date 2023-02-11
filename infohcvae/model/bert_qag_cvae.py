@@ -323,8 +323,7 @@ class BertQAGConditionalVae(pl.LightningModule):
     def training_step(self, batch, batch_idx, optimizer_idx):
         _, q_ids, c_ids, a_mask, _, _, _, _ = batch
         out = self.forward(
-            c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=(optimizer_idx == 0),
-            gan_optim=(optimizer_idx != 2))
+            c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=(optimizer_idx == 0))
 
         current_losses = self.compute_loss(out, batch, optimizer_idx)
 
