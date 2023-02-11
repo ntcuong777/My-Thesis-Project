@@ -248,7 +248,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_a_real_pri_loss = F.binary_cross_entropy_with_logits(D_a_real_pri, ones, reduction="none")
             D_a_loss = self.lambda_gan_a * torch.mean(D_a_real_pos_loss + D_a_real_pri_loss)
 
-            total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info
+            total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + D_a_loss
             current_losses = {
                 "total_ae_loss": total_ae_loss,
                 "loss_q_rec": loss_q_rec,
