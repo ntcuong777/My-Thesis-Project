@@ -442,7 +442,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         return current_losses["total_ae_loss"]
 
     def validation_epoch_end(self, outputs):
-        loss = sum(output['loss'].item() for output in outputs) / len(outputs)
+        loss = sum(output.item() for output in outputs) / len(outputs)
         print("Overall validation loss = %.6f" % loss)
 
         with open(self.loss_val_log_file, "a") as f:
