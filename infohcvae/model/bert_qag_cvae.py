@@ -168,7 +168,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
             run_question_decoder: bool = True,
     ) -> Dict:
-        assert self.training, "forward() only use for training mode"
+        # assert self.training, "forward() only use for training mode"
 
         posterior_zq, posterior_zq_mu, posterior_zq_logvar, \
             posterior_za, posterior_za_logits = self.posterior_encoder(
