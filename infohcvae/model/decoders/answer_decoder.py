@@ -9,7 +9,7 @@ from infohcvae.model.model_utils import (
 
 
 class AnswerDecoder(nn.Module):
-    def __init__(self, embedding, d_model, nzadim, nza_values,
+    def __init__(self, embedding, d_model, nzadim,
                  lstm_dec_nhidden, lstm_dec_nlayers, dropout=0.0, pad_token_id=0):
         super(AnswerDecoder, self).__init__()
 
@@ -18,9 +18,9 @@ class AnswerDecoder(nn.Module):
         self.pad_token_id = pad_token_id
 
         self.nzadim = nzadim
-        self.nza_values = nza_values
+        # self.nza_values = nza_values
         self.za_projection = nn.Sequential(
-            nn.Linear(nzadim * nza_values, d_model),
+            nn.Linear(2 * nzadim, d_model),
             nn.BatchNorm1d(d_model, eps=1e-05, momentum=0.1),
             nn.Tanh(),
             nn.Linear(d_model, d_model),
@@ -50,7 +50,7 @@ class AnswerDecoder(nn.Module):
                 m.bias.data.fill_(0)
 
     def _build_za_init_state(self, za, max_c_len):
-        z_projected = self.za_projection(za.view(-1, self.nzadim * self.nza_values))  # shape = (N, d_model)
+        z_projected = self.za_projection(za)  # shape = (N, d_model)
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
