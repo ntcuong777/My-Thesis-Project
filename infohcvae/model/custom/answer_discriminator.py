@@ -24,7 +24,7 @@ class AnswerDiscriminator(nn.Module):
                                         bidirectional=True)
         self.linear = nn.Sequential(
             nn.Linear(2 * hidden_size, hidden_size),
-            nn.BatchNorm1d(hidden_size * 2, eps=1e-05, momentum=0.1),
+            nn.BatchNorm1d(hidden_size, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(0.2),
             nn.Linear(hidden_size, hidden_size),
             nn.BatchNorm1d(hidden_size, eps=1e-05, momentum=0.1),
