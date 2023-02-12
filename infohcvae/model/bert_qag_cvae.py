@@ -48,7 +48,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.max_q_len = args.max_q_len
         self.lr = args.lr
         self.optimizer_algorithm = args.optimizer
-        self.loss_log_file = args.loss_log_file
+        self.loss_train_log_file = args.loss_train_log_file
+        self.loss_val_log_file = args.loss_val_log_file
         self.eval_metrics_log_file = args.eval_metrics_log_file
 
         self.nzqdim = nzqdim = args.nzqdim
@@ -321,8 +322,7 @@ class BertQAGConditionalVae(pl.LightningModule):
     def training_step(self, batch, batch_idx, optimizer_idx):
         _, q_ids, c_ids, a_mask, _, _, _, _ = batch
         out = self.forward(
-            c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=(optimizer_idx == 0),
-            gan_optim=True)
+            c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=(optimizer_idx == 0))
 
         current_losses = self.compute_loss(out, batch, optimizer_idx)
 
@@ -331,11 +331,10 @@ class BertQAGConditionalVae(pl.LightningModule):
             log_str = ""
             for k, v in current_losses.items():
                 log_str += "{:s}={:.4f}; ".format(k, v.item())
-            with open(self.loss_log_file, "a") as f:
+            with open(self.loss_train_log_file, "a") as f:
                 f.write(log_str)
                 if optimizer_idx == 2:
                     f.write("\n\n")
-        self.log_dict(current_losses, prog_bar=False)
         if optimizer_idx == 0:
             return current_losses["total_ae_loss"]
         elif optimizer_idx == 1:
@@ -346,12 +345,12 @@ class BertQAGConditionalVae(pl.LightningModule):
     """ Generation-related methods """
 
     def _generate_answer(self, c_ids, za):
-        return_start_logits, return_end_logits = self.answer_decoder(c_ids, za)
+        answer_tok_logits = self.answer_decoder(c_ids, za)
 
         # Get generated answer mask from context ids `c_ids`
         gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = self.answer_decoder.generate(
-            c_ids, start_logits=return_start_logits, end_logits=return_end_logits)
-        return gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, return_start_logits, return_end_logits
+            c_ids, answer_tok_logits=answer_tok_logits)
+        return gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, answer_tok_logits
 
     def _generate_question(self, c_ids, c_a_mask, zq):
         return self.question_decoder.generate(c_ids, c_a_mask, zq)
@@ -360,7 +359,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         with torch.no_grad():
             zq, _, _, za, _ = self.prior_encoder(c_ids)
 
-            gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
+            gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _ = \
                 self._generate_answer(c_ids, za)
 
             q_ids = self._generate_question(c_ids, gen_c_a_mask, zq)
@@ -374,46 +373,46 @@ class BertQAGConditionalVae(pl.LightningModule):
             zq, _, _, za, _ = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
             """ Generation """
-            gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
+            gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, answer_tok_logits = \
                 self._generate_answer(c_ids, za)
             question_ids = self._generate_question(c_ids, c_a_mask, zq)
 
-        return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits
+        return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, answer_tok_logits
 
     """ Validation-related methods """
 
-    def evaluation(self, val_dataloader):
-        all_text_examples = val_dataloader.dataset.all_text_examples
-        all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
-
-        posterior_metrics, bleu = eval_vae(
-            self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
-        posterior_f1 = posterior_metrics["f1"]
-        posterior_em = posterior_metrics["exact_match"]
-        bleu = bleu * 100
-
-        if posterior_em > self.best_em:
-            self.best_em = posterior_em
-            filename = os.path.join(self.program_args.best_model_dir, "model-best_em.ckpt")
-            self.trainer.save_checkpoint(filename)
-        if posterior_f1 > self.best_f1:
-            self.best_f1 = posterior_f1
-            filename = os.path.join(self.program_args.best_model_dir, "model-best_f1.ckpt")
-            self.trainer.save_checkpoint(filename)
-        if bleu > self.best_bleu:
-            self.best_bleu = bleu
-            filename = os.path.join(self.program_args.best_model_dir, "model-best_bleu.ckpt")
-            self.trainer.save_checkpoint(filename)
-
-        with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
-            import json
-            json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
-                       "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
-
-        log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
-        log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
-        with open(self.eval_metrics_log_file, "a") as f:
-            f.write(log_str + "\n\n")
+    # def evaluation(self, val_dataloader):
+    #     all_text_examples = val_dataloader.dataset.all_text_examples
+    #     all_preprocessed_examples = val_dataloader.dataset.all_preprocessed_examples
+    #
+    #     posterior_metrics, bleu = eval_vae(
+    #         self.program_args, self, val_dataloader, all_text_examples, all_preprocessed_examples)
+    #     posterior_f1 = posterior_metrics["f1"]
+    #     posterior_em = posterior_metrics["exact_match"]
+    #     bleu = bleu * 100
+    #
+    #     if posterior_em > self.best_em:
+    #         self.best_em = posterior_em
+    #         filename = os.path.join(self.program_args.best_model_dir, "model-best_em.ckpt")
+    #         self.trainer.save_checkpoint(filename)
+    #     if posterior_f1 > self.best_f1:
+    #         self.best_f1 = posterior_f1
+    #         filename = os.path.join(self.program_args.best_model_dir, "model-best_f1.ckpt")
+    #         self.trainer.save_checkpoint(filename)
+    #     if bleu > self.best_bleu:
+    #         self.best_bleu = bleu
+    #         filename = os.path.join(self.program_args.best_model_dir, "model-best_bleu.ckpt")
+    #         self.trainer.save_checkpoint(filename)
+    #
+    #     with open(os.path.join(self.program_args.model_dir, "metrics.json"), "wt") as f:
+    #         import json
+    #         json.dump({"latest_bleu": bleu, "latest_pos_em": posterior_em, "latest_pos_f1": posterior_f1,
+    #                    "best_bleu": self.best_bleu, "best_em": self.best_em, "best_f1": self.best_f1}, f, indent=4)
+    #
+    #     log_str = "{}-th Epochs BLEU : {:02.2f} POS_EM : {:02.2f} POS_F1 : {:02.2f}"
+    #     log_str = log_str.format(self.current_epoch + 1, bleu, posterior_em, posterior_f1)
+    #     with open(self.eval_metrics_log_file, "a") as f:
+    #         f.write(log_str + "\n\n")
 
     def training_epoch_end(self, outputs):
         if (self.current_epoch + 1) % self.program_args.save_frequency == 0:
@@ -421,11 +420,23 @@ class BertQAGConditionalVae(pl.LightningModule):
                 self.program_args.save_by_epoch_dir, "model-epoch-{:02d}.ckpt".format(self.current_epoch + 1))
             self.trainer.save_checkpoint(filename)
 
-        if (self.current_epoch + 1) % self.program_args.eval_frequency == 0:
-            self.evaluation(self.trainer.val_dataloaders[0])
+        # if (self.current_epoch + 1) % self.program_args.eval_frequency == 0:
+        #     self.evaluation(self.trainer.val_dataloaders[0])
 
     def validation_step(self, batch, batch_idx):
-        pass  # nothing here
+        _, q_ids, c_ids, a_mask, _, _, _, _ = batch
+        out = self.forward(
+            c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=True)
+
+        current_losses = self.compute_loss(out, batch, 0)
+        if batch_idx % 25 == 0:
+            # Log to file
+            log_str = ""
+            for k, v in current_losses.items():
+                log_str += "{:s}={:.4f}; ".format(k, v.item())
+            with open(self.loss_val_log_file, "a") as f:
+                f.write(log_str + "\n\n")
+        return current_losses["total_ae_loss"]
 
     """ Optimizer """
 
