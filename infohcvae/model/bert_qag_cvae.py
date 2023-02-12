@@ -121,10 +121,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.qa_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
                                                discriminator=qa_discriminator)
 
-        a_infomax_discriminator = nn.Bilinear(decoder_a_nhidden, decoder_q_nhidden, 1)
-        self.a_infomax = JensenShannonInfoMax(x_preprocessor=preprocessor, y_preprocessor=preprocessor,
-                                              discriminator=a_infomax_discriminator)
-
         self.best_em = self.best_f1 = self.best_bleu = 0.0
 
         """ Validation """
@@ -166,6 +162,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
             run_question_decoder: bool = True,
+            gan_optim: bool = False,
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
@@ -180,7 +177,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         lm_logits, mean_embeds = None, (None, None)
         if run_question_decoder:
             # answer decoding
-            start_logits, end_logits, a_dec_outs = self.answer_decoder(c_ids, posterior_za, return_embeds=True)
+            start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
 
             # question decoding
             lm_logits, mean_embeds = self.question_decoder(
@@ -191,7 +188,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_mu, prior_za_logvar),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
-            "answer_out": (start_logits, end_logits, a_dec_outs),
+            "answer_out": (start_logits, end_logits),
             "question_out": (lm_logits,) + mean_embeds,
         })
         return out
@@ -203,7 +200,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_za, prior_za_mu, prior_za_logvar = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
-        start_logits, end_logits, a_dec_outs = out["answer_out"]
+        start_logits, end_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         if optimizer_idx == 0:
@@ -235,12 +232,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             # QA info loss
             loss_qa_info = self.lambda_qa_info * self.qa_infomax(q_mean_emb, a_mean_emb)
 
-            # Answer infomax loss with encoder of question generator
-            dec_a_embs = a_dec_outs * a_mask.float().unsqueeze(2)
-            mean_dec_a_embs = torch.sum(dec_a_embs, dim=1) / a_mask.sum(1).unsqueeze(1).float()
-            loss_a_info = self.lambda_qa_info * self.a_infomax(mean_dec_a_embs, a_mean_emb)
-
-            total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_a_info
+            total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info
             current_losses = {
                 "total_ae_loss": total_ae_loss,
                 "loss_q_rec": loss_q_rec,

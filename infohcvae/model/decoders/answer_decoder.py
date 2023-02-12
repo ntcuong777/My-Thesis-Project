@@ -43,7 +43,7 @@ class AnswerDecoder(nn.Module):
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
-    def forward(self, c_ids, za, return_embeds=None):
+    def forward(self, c_ids, za):
         _, max_c_len = c_ids.size()
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
@@ -65,8 +65,6 @@ class AnswerDecoder(nn.Module):
         masked_start_logits = start_logits.masked_fill(start_end_mask, -3e4)
         masked_end_logits = end_logits.masked_fill(start_end_mask, -3e4)
 
-        if return_embeds is not None and return_embeds:
-            return masked_start_logits, masked_end_logits, dec_outputs
         return masked_start_logits, masked_end_logits
 
     def generate(self, c_ids, za=None, start_logits=None, end_logits=None):
