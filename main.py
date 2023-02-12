@@ -100,7 +100,8 @@ if __name__ == "__main__":
         os.makedirs(dataloader_dir, exist_ok=True)
         args.dataloader_dir = os.path.abspath(dataloader_dir)
 
-    open(args.loss_log_file, "w")  # empty loss log file if existed
+    open(args.loss_train_log_file, "w")  # empty loss log file if existed
+    open(args.loss_val_log_file, "w")  # empty loss log file if existed
     open(args.eval_metrics_log_file, "w")  # empty loss log file if existed
 
     random.seed(args.seed)
