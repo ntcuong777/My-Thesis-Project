@@ -267,8 +267,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             mean_c_embeds = self.word_embeddings(c_ids).sum(dim=1) / c_mask.sum(dim=-1, keepdims=True).float()
 
             D_q_real = self.q_discriminator(mean_c_embeds, prior_zq)
-            modified_a_mask = (a_mask == 0) * torch.empty_like(a_mask).float().uniform_(0, 0.15) + \
-                              (a_mask == 1) * (1 - torch.empty_like(a_mask).float().uniform_(0, 0.15))
+            modified_a_mask = (a_mask == 0) * torch.empty_like(a_mask).float().uniform_(0, 0.2) + \
+                              (a_mask == 1) * (1 - torch.empty_like(a_mask).float().uniform_(0, 0.2))
             D_a_real = self.a_discriminator(c_ids, modified_a_mask)
 
             D_q_fake = self.q_discriminator(mean_c_embeds, posterior_zq)
