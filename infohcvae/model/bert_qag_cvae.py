@@ -247,7 +247,6 @@ class BertQAGConditionalVae(pl.LightningModule):
                 "loss_a_rec": loss_a_rec,
                 "loss_kl": loss_kl,
                 "loss_qa_info": loss_qa_info,
-                "loss_a_info": loss_a_info,
             }
         elif optimizer_idx == 1:
             ##########################
