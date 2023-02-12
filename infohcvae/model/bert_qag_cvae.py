@@ -421,6 +421,9 @@ class BertQAGConditionalVae(pl.LightningModule):
                 self.program_args.save_by_epoch_dir, "model-epoch-{:02d}.ckpt".format(self.current_epoch + 1))
             self.trainer.save_checkpoint(filename)
 
+        with open(self.loss_train_log_file, "a") as f:
+            f.write("\n\n------------------ Epoch %d\n\n" % (self.current_epoch + 2))
+
         # if (self.current_epoch + 1) % self.program_args.eval_frequency == 0:
         #     self.evaluation(self.trainer.val_dataloaders[0])
 
@@ -430,14 +433,21 @@ class BertQAGConditionalVae(pl.LightningModule):
             c_ids=c_ids, q_ids=q_ids, c_a_mask=a_mask, run_question_decoder=True)
 
         current_losses = self.compute_loss(out, batch, 0)
-        if batch_idx % 25 == 0:
-            # Log to file
-            log_str = ""
-            for k, v in current_losses.items():
-                log_str += "{:s}={:.4f}; ".format(k, v.item())
-            with open(self.loss_val_log_file, "a") as f:
-                f.write(log_str + "\n\n")
+        # Log to file
+        log_str = ""
+        for k, v in current_losses.items():
+            log_str += "{:s}={:.4f}; ".format(k, v.item())
+        with open(self.loss_val_log_file, "a") as f:
+            f.write(log_str + "\n\n")
         return current_losses["total_ae_loss"]
+
+    def validation_epoch_end(self, outputs):
+        loss = sum(output['loss'].item() for output in outputs) / len(outputs)
+        print("Overall validation loss = %.6f" % loss)
+
+        with open(self.loss_val_log_file, "a") as f:
+            f.write("Overall validation loss = %.6f" % loss)
+            f.write("\n\n------------------ Epoch %d\n\n" % (self.current_epoch + 2))
 
     """ Optimizer """
 
