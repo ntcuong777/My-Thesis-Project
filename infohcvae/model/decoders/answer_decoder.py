@@ -86,7 +86,7 @@ class AnswerDecoder(nn.Module):
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
 
-        answer_tok_logits = answer_tok_logits.masked_fill(c_mask, 0.0)
+        answer_tok_logits = answer_tok_logits.masked_fill(c_mask, -3e4)
         answer_tok_logits = torch.round(answer_tok_logits)
         start_positions = answer_tok_logits.argmax(dim=1)
         end_positions = max_c_len - torch.flip(answer_tok_logits, dims=[1]).max(dim=1) - 1
