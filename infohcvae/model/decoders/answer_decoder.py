@@ -20,7 +20,7 @@ class AnswerDecoder(nn.Module):
         self.nzadim = nzadim
         # self.nza_values = nza_values
         self.za_projection = nn.Sequential(
-            nn.Linear(2 * nzadim, d_model),
+            nn.Linear(nzadim, d_model),
             nn.BatchNorm1d(d_model, eps=1e-05, momentum=0.1),
             nn.Tanh(),
             nn.Linear(d_model, d_model),
