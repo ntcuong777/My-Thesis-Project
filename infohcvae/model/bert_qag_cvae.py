@@ -176,7 +176,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_zq, prior_zq_mu, prior_zq_logvar, \
             prior_za, prior_za_mu, prior_za_logvar = self.prior_encoder(c_ids)
 
-        start_logits, end_logits, a_dec_outs = None, None, None
+        start_logits, end_logits = None, None
         lm_logits, mean_embeds = None, (None, None)
         if run_question_decoder:
             # answer decoding
