@@ -224,7 +224,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             # loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
             # loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
             # loss_a_rec = self.w_bce * 0.5 * (loss_start_a_rec + loss_end_a_rec)
-            loss_a_rec = self.w_bce * self.a_rec_criterion(posterior_a_mask_logits)
+            loss_a_rec = self.w_bce * self.a_rec_criterion(posterior_a_mask_logits, a_mask)
 
             # kl loss
             loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
