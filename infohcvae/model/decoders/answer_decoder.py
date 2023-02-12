@@ -38,9 +38,9 @@ class AnswerDecoder(nn.Module):
             nn.Linear(2 * lstm_dec_nhidden, lstm_dec_nhidden),
             nn.BatchNorm1d(lstm_dec_nhidden, eps=1e-05, momentum=0.1),
             nn.Tanh(),
-            nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
-            nn.BatchNorm1d(lstm_dec_nhidden, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            # nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
+            # nn.BatchNorm1d(lstm_dec_nhidden, eps=1e-05, momentum=0.1),
+            # nn.Tanh(),
             nn.Linear(lstm_dec_nhidden, 1)
         )
         self.answer_token_discriminator.apply(self.init_weights)
@@ -70,7 +70,6 @@ class AnswerDecoder(nn.Module):
                                dim=-1)
         dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths.to("cpu"))
         dec_outputs = self.self_attention(dec_outputs, c_mask)
-        print(dec_outputs.size())
 
         answer_tok_logits = self.answer_token_discriminator(dec_outputs).squeeze(2)
 
