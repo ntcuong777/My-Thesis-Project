@@ -111,7 +111,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         self.q_discriminator = DiscriminatorNet(d_model, nzqdim)
         self.a_discriminator = AnswerDiscriminator(
-            embedding, d_model, encoder_nhidden, num_layers=2, dropout=encoder_dropout, pad_token_id=self.pad_token_id)
+            embedding, d_model, encoder_nhidden, num_layers=1, dropout=encoder_dropout, pad_token_id=self.pad_token_id)
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)

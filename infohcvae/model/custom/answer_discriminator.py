@@ -16,17 +16,20 @@ class AnswerDiscriminator(nn.Module):
         self.nhidden = hidden_size
         self.nlayers = num_layers
 
-        self.discriminator = CustomLSTM(input_size=d_model, hidden_size=hidden_size,
+        self.encoder = CustomLSTM(input_size=d_model, hidden_size=hidden_size,
+                                  num_layers=num_layers, dropout=dropout,
+                                  bidirectional=True)
+        self.discriminator = CustomLSTM(input_size=hidden_size * 4, hidden_size=hidden_size,
                                         num_layers=num_layers, dropout=dropout,
                                         bidirectional=True)
         self.linear = nn.Sequential(
-            nn.Linear(4 * hidden_size, hidden_size * 2),
+            nn.Linear(2 * hidden_size, hidden_size),
             nn.BatchNorm1d(hidden_size * 2, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(0.2),
-            nn.Linear(hidden_size * 2, hidden_size),
+            nn.Linear(hidden_size, hidden_size),
             nn.BatchNorm1d(hidden_size, eps=1e-05, momentum=0.1),
             nn.LeakyReLU(0.2),
-            nn.Linear(hidden_size, 1),
+            nn.Linear(hidden_size, 1)
         )
         self.linear.apply(self.init_weights)
 
@@ -43,12 +46,12 @@ class AnswerDiscriminator(nn.Module):
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
-        _, c_states = self.discriminator(c_embeds, c_lengths.to("cpu"))
-        c_h = c_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        c_hs, _ = self.encoder(c_embeds, c_lengths.to("cpu"))
 
-        c_a_embeds = c_embeds * a_mask.unsqueeze(2) + c_embeds[:, 0, :] # not ignoring [CLS] token
-        _, c_a_states = self.discriminator(c_a_embeds, c_lengths.to("cpu"))
-        c_a_h = c_a_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
-        c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
-        return self.linear(torch.cat([c_h, c_a_h], dim=-1))
+        c_a_embeds = c_embeds * a_mask.unsqueeze(2)
+        c_a_hs, _ = self.encoder(c_a_embeds, c_lengths.to("cpu"))
+
+        _, combined_c_a_states = self.discriminator(torch.cat([c_hs, c_a_hs], dim=-1))
+        combined_c_a_h = combined_c_a_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
+        combined_c_a_h = combined_c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        return self.linear(combined_c_a_h)
