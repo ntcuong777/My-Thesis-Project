@@ -33,10 +33,10 @@ class PosteriorEncoder(nn.Module):
         self.zq_linear = nn.Sequential(
             nn.Linear(4 * 2 * lstm_enc_nhidden, 2 * nzqdim),
             nn.BatchNorm1d(2 * nzqdim, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(2 * nzqdim, 2 * nzqdim),
             nn.BatchNorm1d(2 * nzqdim, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(2 * nzqdim, 2 * nzqdim)
         )
         self.zq_linear.apply(self.init_weights)
@@ -44,10 +44,10 @@ class PosteriorEncoder(nn.Module):
         self.za_linear = nn.Sequential(
             nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values),
             nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(nzadim * nza_values, nzadim * nza_values),
             nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(nzadim * nza_values, nzadim * nza_values)
         )
         self.za_linear.apply(self.init_weights)

@@ -27,18 +27,16 @@ class PriorEncoder(nn.Module):
         self.encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
-        # self.self_attention = GatedAttention(2 * lstm_enc_nhidden)
-        # self.final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
         self.zq_linear = nn.Sequential(
             nn.Linear(2 * lstm_enc_nhidden, 2 * nzqdim),
             nn.BatchNorm1d(2 * nzqdim, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(2 * nzqdim, 2 * nzqdim),
             nn.BatchNorm1d(2 * nzqdim, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(2 * nzqdim, 2 * nzqdim)
         )
         self.zq_linear.apply(self.init_weights)
@@ -46,10 +44,10 @@ class PriorEncoder(nn.Module):
         self.za_linear = nn.Sequential(
             nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values),
             nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(nzadim * nza_values, nzadim * nza_values),
             nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(nzadim * nza_values, nzadim * nza_values)
         )
         self.za_linear.apply(self.init_weights)
