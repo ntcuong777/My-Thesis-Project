@@ -36,11 +36,9 @@ class AnswerDecoder(nn.Module):
 
         self.answer_token_discriminator = nn.Sequential(
             nn.Linear(2 * lstm_dec_nhidden, lstm_dec_nhidden),
-            nn.BatchNorm1d(lstm_dec_nhidden, eps=1e-05, momentum=0.1),
             nn.Tanh(),
-            # nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
-            # nn.BatchNorm1d(lstm_dec_nhidden, eps=1e-05, momentum=0.1),
-            # nn.Tanh(),
+            nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
+            nn.Tanh(),
             nn.Linear(lstm_dec_nhidden, 1)
         )
         self.answer_token_discriminator.apply(self.init_weights)
