@@ -47,7 +47,7 @@ class AnswerDiscriminator(nn.Module):
         c_h = c_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
 
-        c_a_embeds = c_embeds * a_mask.unsqueeze(2) + c_embeds[:, 0] # not ignoring [CLS] token
+        c_a_embeds = c_embeds * a_mask.unsqueeze(2) + c_embeds[:, 0, :] # not ignoring [CLS] token
         _, c_a_states = self.discriminator(c_a_embeds, c_lengths.to("cpu"))
         c_a_h = c_a_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_a_h = c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
