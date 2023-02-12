@@ -114,7 +114,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
-        self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
+        self.a_rec_criterion = nn.BCEWithLogitsLoss()
         self.gaussian_kl_criterion = GaussianKLLoss()
         self.categorical_kl_criterion = CategoricalKLLoss()
 
@@ -166,7 +166,6 @@ class BertQAGConditionalVae(pl.LightningModule):
             self, c_ids: torch.Tensor = None,
             q_ids: torch.Tensor = None, c_a_mask: torch.Tensor = None,
             run_question_decoder: bool = True,
-            gan_optim: bool = False,
     ) -> Dict:
         assert self.training, "forward() only use for training mode"
 
@@ -178,12 +177,9 @@ class BertQAGConditionalVae(pl.LightningModule):
             prior_za, prior_za_logits = self.prior_encoder(c_ids)
 
         # answer decoding
-        start_logits, end_logits, posterior_a_mask, prior_a_mask = None, None, None, None
-        if gan_optim:
-            start_logits, end_logits, posterior_a_mask = self.answer_decoder(c_ids, posterior_za, return_answer_mask=gan_optim)
-            _, _, prior_a_mask = self.answer_decoder(c_ids, prior_za, return_answer_mask=gan_optim)
-        else:
-            start_logits, end_logits = self.answer_decoder(c_ids, posterior_za)
+        # posterior_a_mask_logits, prior_a_mask_logits = None, None
+        posterior_a_mask_logits = self.answer_decoder(c_ids, posterior_za)
+        prior_a_mask_logits = self.answer_decoder(c_ids, prior_za)
 
         lm_logits, mean_embeds = None, (None, None)
         if run_question_decoder:
@@ -196,7 +192,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_logits),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
-            "answer_out": (start_logits, end_logits, posterior_a_mask, prior_a_mask),
+            "answer_out": (posterior_a_mask_logits, prior_a_mask_logits),
             "question_out": (lm_logits,) + mean_embeds,
         })
         return out
@@ -208,7 +204,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
-        start_logits, end_logits, posterior_a_mask, prior_a_mask = out["answer_out"]
+        posterior_a_mask_logits, prior_a_mask_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         if optimizer_idx == 0:
@@ -221,12 +217,13 @@ class BertQAGConditionalVae(pl.LightningModule):
                 q_logits[:, :-1, :].transpose(1, 2).contiguous(), q_ids[:, 1:])
 
             # a rec loss
-            max_c_len = c_ids.size(1)
-            no_q_start_positions.clamp_(0, max_c_len)
-            no_q_end_positions.clamp_(0, max_c_len)
-            loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
-            loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-            loss_a_rec = self.w_bce * 0.5 * (loss_start_a_rec + loss_end_a_rec)
+            # max_c_len = c_ids.size(1)
+            # no_q_start_positions.clamp_(0, max_c_len)
+            # no_q_end_positions.clamp_(0, max_c_len)
+            # loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
+            # loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
+            # loss_a_rec = self.w_bce * 0.5 * (loss_start_a_rec + loss_end_a_rec)
+            loss_a_rec = self.w_bce * self.a_rec_criterion(posterior_a_mask_logits)
 
             # kl loss
             loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
@@ -242,9 +239,11 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             # Answer GAN loss
             ones = torch.ones(c_ids.size(0), 1).to(c_ids.device)
-            D_a_real_pos = self.a_discriminator(c_ids, posterior_a_mask)
+            D_a_real_pos = self.a_discriminator(c_ids, posterior_a_mask_logits.sigmoid())
             D_a_real_pos_loss = F.binary_cross_entropy_with_logits(D_a_real_pos, ones, reduction="none")
-            D_a_loss = self.lambda_gan_a * torch.mean(D_a_real_pos_loss)
+            D_a_real_pri = self.a_discriminator(c_ids, prior_a_mask_logits.sigmoid())
+            D_a_real_pri_loss = self.lambda_gan_a * F.binary_cross_entropy_with_logits(D_a_real_pri, ones)
+            D_a_loss = self.lambda_gan_a * torch.mean(D_a_real_pos_loss + D_a_real_pri_loss)
 
             total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + D_a_loss
             current_losses = {
@@ -255,6 +254,7 @@ class BertQAGConditionalVae(pl.LightningModule):
                 "loss_qa_info": loss_qa_info,
                 "loss_a_gen": D_a_loss,
                 "loss_a_pos_gen_real": D_a_real_pos_loss.mean(),
+                "loss_a_pri_gen_real": D_a_real_pri_loss.mean(),
             }
         elif optimizer_idx == 1:
             ##########################
@@ -270,8 +270,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_a_real_pos = self.a_discriminator(c_ids, a_mask)
 
             D_q_fake = self.q_discriminator(mean_c_embeds, posterior_zq)
-            D_a_fake_pos = self.a_discriminator(c_ids, posterior_a_mask)
-            D_a_fake_pri = self.a_discriminator(c_ids, prior_a_mask)
+            D_a_fake_pos = self.a_discriminator(c_ids, posterior_a_mask_logits.sigmoid())
+            D_a_fake_pri = self.a_discriminator(c_ids, prior_a_mask_logits.sigmoid())
 
             D_q_real_loss = F.binary_cross_entropy_with_logits(D_q_real, ones, reduction="none")
             D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
@@ -310,14 +310,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
             D_q_loss = self.lambda_wae_q * (torch.mean(D_q_real_loss + D_q_fake_loss))
 
-            D_a_real_pri = self.a_discriminator(c_ids, prior_a_mask)
-            D_a_real_pri_loss = self.lambda_gan_a * F.binary_cross_entropy_with_logits(D_a_real_pri, ones)
-
-            D_loss = D_q_loss + D_a_real_pri_loss
-
             current_losses = {
-                "total_gen_loss": D_loss,
-                "loss_a_pri_gen_real": D_a_real_pri_loss,
+                "total_gen_loss": D_q_loss,
                 "loss_q_gen": D_q_loss,
                 "loss_q_gen_real": D_q_real_loss.mean(),
                 "loss_q_gen_fake": D_q_fake_loss.mean(),
