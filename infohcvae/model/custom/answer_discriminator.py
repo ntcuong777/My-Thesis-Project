@@ -51,7 +51,7 @@ class AnswerDiscriminator(nn.Module):
         c_a_embeds = c_embeds * a_mask.unsqueeze(2)
         c_a_hs, _ = self.encoder(c_a_embeds, c_lengths.to("cpu"))
 
-        _, combined_c_a_states = self.discriminator(torch.cat([c_hs, c_a_hs], dim=-1))
+        _, combined_c_a_states = self.discriminator(torch.cat([c_hs, c_a_hs], dim=-1), c_lengths.to("cpu"))
         combined_c_a_h = combined_c_a_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         combined_c_a_h = combined_c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         return self.linear(combined_c_a_h)
