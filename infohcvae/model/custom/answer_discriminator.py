@@ -16,7 +16,10 @@ class AnswerDiscriminator(nn.Module):
         self.nhidden = hidden_size
         self.nlayers = num_layers
 
-        self.discriminator = CustomLSTM(input_size=d_model * 2, hidden_size=hidden_size,
+        self.encoder = CustomLSTM(input_size=d_model, hidden_size=hidden_size,
+                                  num_layers=num_layers, dropout=dropout,
+                                  bidirectional=True)
+        self.discriminator = CustomLSTM(input_size=hidden_size * 4, hidden_size=hidden_size,
                                         num_layers=num_layers, dropout=dropout,
                                         bidirectional=True)
         self.linear = nn.Sequential(
@@ -43,8 +46,12 @@ class AnswerDiscriminator(nn.Module):
         c_lengths = return_inputs_length(c_mask)
 
         c_embeds = self.embedding(c_ids)
+        c_hs, _ = self.encoder(c_embeds, c_lengths.to("cpu"))
+
         c_a_embeds = c_embeds * a_mask.unsqueeze(2)
-        _, combined_c_a_states = self.discriminator(torch.cat([c_embeds, c_a_embeds], dim=-1), c_lengths.to("cpu"))
+        c_a_hs, _ = self.encoder(c_a_embeds, c_lengths.to("cpu"))
+
+        _, combined_c_a_states = self.discriminator(torch.cat([c_hs, c_a_hs], dim=-1), c_lengths.to("cpu"))
         combined_c_a_h = combined_c_a_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         combined_c_a_h = combined_c_a_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
         return self.linear(combined_c_a_h)
