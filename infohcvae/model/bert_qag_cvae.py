@@ -238,7 +238,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             # Answer infomax loss with encoder of question generator
             dec_a_embs = a_dec_outs * a_mask.float().unsqueeze(2)
             mean_dec_a_embs = torch.sum(dec_a_embs, dim=1) / a_mask.sum(1).unsqueeze(1).float()
-            loss_a_info = self.lambda_qa_info * self.a_infomax(mean_dec_a_embs, a_mean_emb.detach())
+            loss_a_info = self.lambda_qa_info * self.a_infomax(mean_dec_a_embs, a_mean_emb)
 
             total_ae_loss = loss_q_rec + loss_a_rec + loss_kl + loss_qa_info + loss_a_info
             current_losses = {
