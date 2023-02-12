@@ -238,8 +238,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             # Answer GAN loss
             ones = torch.ones(c_ids.size(0), 1).to(c_ids.device)
-            D_a_real_pos = self.a_discriminator(c_ids, posterior_a_mask_logits.sigmoid())
-            D_a_real_pos_loss = F.binary_cross_entropy_with_logits(D_a_real_pos, ones, reduction="none")
+            D_a_real = self.a_discriminator(c_ids, posterior_a_mask_logits.sigmoid())
+            D_a_real_pos_loss = F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
             D_a_real_pri = self.a_discriminator(c_ids, prior_a_mask_logits.sigmoid())
             D_a_real_pri_loss = self.lambda_gan_a * F.binary_cross_entropy_with_logits(D_a_real_pri, ones)
             D_a_loss = self.lambda_gan_a * torch.mean(D_a_real_pos_loss + D_a_real_pri_loss)
@@ -266,7 +266,9 @@ class BertQAGConditionalVae(pl.LightningModule):
             mean_c_embeds = self.word_embeddings(c_ids).sum(dim=1) / c_mask.sum(dim=-1, keepdims=True).float()
 
             D_q_real = self.q_discriminator(mean_c_embeds, prior_zq)
-            D_a_real_pos = self.a_discriminator(c_ids, a_mask)
+            modified_a_mask = (a_mask == 0) * torch.empty_like(a_mask).uniform_(0, 0.15) + \
+                              (a_mask == 1) * (1 - torch.empty_like(a_mask).uniform(0, 0.15))
+            D_a_real = self.a_discriminator(c_ids, modified_a_mask)
 
             D_q_fake = self.q_discriminator(mean_c_embeds, posterior_zq)
             D_a_fake_pos = self.a_discriminator(c_ids, posterior_a_mask_logits.sigmoid())
@@ -276,7 +278,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             D_q_fake_loss = F.binary_cross_entropy_with_logits(D_q_fake, zeros, reduction="none")
             D_q_loss = self.lambda_wae_q * (torch.mean(D_q_real_loss + D_q_fake_loss))
 
-            D_a_real_pos_loss = F.binary_cross_entropy_with_logits(D_a_real_pos, ones, reduction="none")
+            D_a_real_pos_loss = F.binary_cross_entropy_with_logits(D_a_real, ones, reduction="none")
             D_a_fake_pos_loss = F.binary_cross_entropy_with_logits(D_a_fake_pos, zeros, reduction="none")
             D_a_fake_pri_loss = F.binary_cross_entropy_with_logits(D_a_fake_pri, zeros, reduction="none")
             D_a_loss = self.lambda_gan_a * (torch.mean(D_a_real_pos_loss + D_a_fake_pos_loss + D_a_fake_pri_loss))
