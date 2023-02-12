@@ -10,7 +10,7 @@ from infohcvae.model.model_utils import (
 
 class PosteriorEncoder(nn.Module):
     def __init__(self, embedding, d_model, lstm_enc_nhidden, lstm_enc_nlayers,
-                 nzqdim, nzadim, dropout=0.0, pad_token_id=0):
+                 nzqdim, nzadim, nza_values, dropout=0.0, pad_token_id=0):
         super(PosteriorEncoder, self).__init__()
 
         self.embedding = embedding
@@ -20,6 +20,7 @@ class PosteriorEncoder(nn.Module):
         self.nlayers = lstm_enc_nlayers
         self.nzqdim = nzqdim
         self.nzadim = nzadim
+        self.nza_values = nza_values
 
         self.encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
@@ -41,13 +42,13 @@ class PosteriorEncoder(nn.Module):
         self.zq_linear.apply(self.init_weights)
 
         self.za_linear = nn.Sequential(
-            nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, 2 * nzadim),
-            nn.BatchNorm1d(2 * nzadim, eps=1e-05, momentum=0.1),
+            nn.Linear(nzqdim + 2 * 2 * lstm_enc_nhidden, nzadim * nza_values),
+            nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
             nn.Tanh(),
-            nn.Linear(2 * nzadim, 2 * nzadim),
-            nn.BatchNorm1d(2 * nzadim, eps=1e-05, momentum=0.1),
+            nn.Linear(nzadim * nza_values, nzadim * nza_values),
+            nn.BatchNorm1d(nzadim * nza_values, eps=1e-05, momentum=0.1),
             nn.Tanh(),
-            nn.Linear(2 * nzadim, 2 * nzadim)
+            nn.Linear(nzadim * nza_values, nzadim * nza_values)
         )
         self.za_linear.apply(self.init_weights)
 
@@ -101,9 +102,8 @@ class PosteriorEncoder(nn.Module):
         c_a_attned_by_zq = self.answer_zq_attention(zq.unsqueeze(1), c_a_hidden_states, mask).squeeze(1)
 
         h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
-        za_params = self.za_linear(h)
-        za_mu, za_logvar = torch.split(za_params, self.nzadim, dim=-1)
+        za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)
         # Sample `za`
-        za = sample_gaussian(za_mu, za_logvar)
+        za = gumbel_softmax(za_logits, hard=True)
 
-        return zq, zq_mu, zq_logvar, za, za_mu, za_logvar
+        return zq, zq_mu, zq_logvar, za, za_logits
