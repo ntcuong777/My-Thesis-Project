@@ -72,7 +72,7 @@ class AnswerDecoder(nn.Module):
         answer_tok_logits = self.answer_token_discriminator(dec_outputs).squeeze(2)
 
         start_end_mask = (c_mask == 0)
-        masked_answer_tok_logits = answer_tok_logits.masked_fill(start_end_mask, 0.0)
+        masked_answer_tok_logits = answer_tok_logits.masked_fill(start_end_mask, -3e4)
         return masked_answer_tok_logits
 
     def generate(self, c_ids, za=None, answer_tok_logits=None):
