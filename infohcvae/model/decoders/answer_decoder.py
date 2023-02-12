@@ -70,6 +70,7 @@ class AnswerDecoder(nn.Module):
                                dim=-1)
         dec_outputs, _ = self.answer_decoder(dec_inputs, c_lengths.to("cpu"))
         dec_outputs = self.self_attention(dec_outputs, c_mask)
+        print(dec_outputs.size())
 
         answer_tok_logits = self.answer_token_discriminator(dec_outputs).squeeze(2)
 
