@@ -108,7 +108,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
-        self.a_join_rec_criterion = nn.BCELoss(reduction="none")
+        self.a_join_rec_criterion = nn.CrossEntropyLoss()
         self.gaussian_kl_criterion = GaussianKLLoss()
         self.categorical_kl_criterion = CategoricalKLLoss()
 
@@ -172,8 +172,8 @@ class BertQAGConditionalVae(pl.LightningModule):
             prior_za, prior_za_logits = self.prior_encoder(c_ids)
 
         # answer decoding
-        start_logits, end_logits = \
-            self.answer_decoder(c_ids, posterior_zq, posterior_za)
+        start_logits, end_logits, joint_logits = \
+            self.answer_decoder(c_ids, posterior_zq, posterior_za, return_joint_logits=True)
         # question decoding
         lm_logits, mean_embeds = self.question_decoder(
             c_ids, q_ids, c_a_mask, posterior_zq, return_qa_mean_embeds=True)
@@ -183,7 +183,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_logits),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
-            "answer_out": (start_logits, end_logits),
+            "answer_out": (start_logits, end_logits, joint_logits),
             "question_out": (lm_logits,) + mean_embeds
         })
         return out
@@ -195,7 +195,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
-        start_logits, end_logits = out["answer_out"]
+        start_logits, end_logits, joint_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         # Compute losses
@@ -210,11 +210,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
         start_end_mask_matrix = torch.matmul(start_mask.unsqueeze(2).float(), end_mask.unsqueeze(1).float())
-        loss_joint_a_rec = \
-            self.a_join_rec_criterion(
-                torch.exp(F.log_softmax(start_logits, dim=1).unsqueeze(2)
-                          + F.log_softmax(end_logits, dim=1).unsqueeze(1)),
-                start_end_mask_matrix).sum(dim=1).sum(dim=1).mean()
+        loss_joint_a_rec = self.a_join_rec_criterion(joint_logits, start_end_mask_matrix)
         loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec + loss_joint_a_rec) / 3.
 
         # kl loss

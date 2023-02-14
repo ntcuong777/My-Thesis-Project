@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from infohcvae.model.custom.answer_decoder_bilstm_with_attention import AnswerDecoderBiLstmWithAttention
+from infohcvae.model.custom.luong_attention import LuongAttention
 from infohcvae.model.model_utils import (
     return_attention_mask, return_inputs_length
 )
@@ -26,6 +27,18 @@ class AnswerDecoder(nn.Module):
         for i in range(1, lstm_dec_nlayers):
             layers.append(AnswerDecoderBiLstmWithAttention(2 * lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout))
         self.answer_decoder = nn.ModuleList(layers)
+        self.start_last_linear = nn.Sequential(
+            nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.ReLU(),
+            nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.ReLU(),
+        )
+        self.end_last_linear = nn.Sequential(
+            nn.Linear(4 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.ReLU(),
+            nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.ReLU(),
+        )
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
@@ -41,7 +54,7 @@ class AnswerDecoder(nn.Module):
         q_state = (q_init, q_init)
         return q_state
 
-    def forward(self, c_ids, zq, za):
+    def forward(self, c_ids, zq, za, return_joint_logits=None):
         _, max_c_len = c_ids.size()
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
@@ -59,17 +72,22 @@ class AnswerDecoder(nn.Module):
 
         start_logits = self.start_linear(dec_hs).squeeze(-1)
         end_logits = self.end_linear(dec_hs).squeeze(-1)
-        # joint_logits = torch.bmm(dec_hs, dec_hs.transpose(-1, -2))
 
         start_end_mask = (c_mask == 0)
         masked_start_logits = start_logits.masked_fill(start_end_mask, -3e4)
         masked_end_logits = end_logits.masked_fill(start_end_mask, -3e4)
 
-        # start_end_mask_matrix = torch.matmul(start_end_mask.unsqueeze(2).float(), start_end_mask.unsqueeze(1).float())
-        # start_end_mask_matrix = torch.triu(start_end_mask_matrix) == 0
-        # masked_joint_logits = joint_logits.masked_fill(start_end_mask_matrix, -3e4)
+        if return_joint_logits is not None and return_joint_logits:
+            start_dec_hs = self.start_last_linear(dec_hs)
+            end_dec_hs = self.end_last_linear(dec_hs)
+            joint_logits = torch.bmm(start_dec_hs, end_dec_hs.transpose(-1, -2))
 
-        return masked_start_logits, masked_end_logits #, masked_joint_logits
+            start_end_mask_matrix = torch.matmul(start_end_mask.unsqueeze(2).float(), start_end_mask.unsqueeze(1).float())
+            start_end_mask_matrix = torch.triu(start_end_mask_matrix) == 0
+            masked_joint_logits = joint_logits.masked_fill(start_end_mask_matrix, -3e4)
+            return masked_start_logits, masked_end_logits, masked_joint_logits
+
+        return masked_start_logits, masked_end_logits
 
     def generate(self, c_ids, zq=None, za=None, start_logits=None, end_logits=None):
         assert (start_logits is None and end_logits is None) or (start_logits is not None and end_logits is not None),\
