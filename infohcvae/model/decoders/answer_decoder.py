@@ -47,7 +47,7 @@ class AnswerDecoder(nn.Module):
         q_state = (q_init, q_init)
         return q_state
 
-    def forward(self, c_ids, zq, za, return_joint_logits=None):
+    def forward(self, c_ids, zq, za):
         _, max_c_len = c_ids.size()
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
