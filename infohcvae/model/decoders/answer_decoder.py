@@ -26,21 +26,12 @@ class AnswerDecoder(nn.Module):
         layers = [AnswerDecoderBiLstmWithAttention(4 * d_model, lstm_dec_nhidden, 1, dropout=dropout)]
         for i in range(1, lstm_dec_nlayers):
             layers.append(AnswerDecoderBiLstmWithAttention(2 * lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout))
-        self.answer_decoder = nn.ModuleList(layers)
-        # self.start_last_linear = nn.Sequential(
-        #     nn.Linear(2 * lstm_dec_nhidden, lstm_dec_nhidden),
-        #     nn.ReLU(),
-        #     nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
-        #     nn.ReLU(),
-        #     nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
-        # )
-        # self.end_last_linear = nn.Sequential(
-        #     nn.Linear(2 * lstm_dec_nhidden, lstm_dec_nhidden),
-        #     nn.ReLU(),
-        #     nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
-        #     nn.ReLU(),
-        #     nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
-        # )
+        self.answer_start_decoder = nn.ModuleList(layers)
+
+        layers = [AnswerDecoderBiLstmWithAttention(4 * d_model + lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout)]
+        for i in range(1, lstm_dec_nlayers):
+            layers.append(AnswerDecoderBiLstmWithAttention(2 * lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout))
+        self.answer_end_decoder = nn.ModuleList(layers)
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
@@ -65,30 +56,29 @@ class AnswerDecoder(nn.Module):
         c_embeds = self.context_encoder(c_ids, c_mask)
         init_state = self._build_za_init_state(za, max_c_len)
         q_init_state = self._build_zq_init_state(zq)
-        dec_hs = torch.cat([c_embeds, init_state,
-                            c_embeds * init_state,
-                            torch.abs(c_embeds - init_state)],
-                           dim=-1)
-        for layer in self.answer_decoder:
-            dec_hs = layer(dec_hs, c_lengths, c_mask, q_init_state)
 
-        start_logits = self.start_linear(dec_hs).squeeze(-1)
-        end_logits = self.end_linear(dec_hs).squeeze(-1)
+        # Decoding answer start position
+        start_dec_hs = torch.cat([c_embeds, init_state,
+                                  c_embeds * init_state,
+                                  torch.abs(c_embeds - init_state)],
+                                 dim=-1)
+        for layer in self.answer_start_decoder:
+            start_dec_hs = layer(start_dec_hs, c_lengths, c_mask, q_init_state)
+        start_logits = self.start_linear(start_dec_hs).squeeze(-1)
+
+        # Decoding answer end position
+        end_dec_hs = torch.cat([c_embeds, init_state,
+                                c_embeds * init_state,
+                                torch.abs(c_embeds - init_state),
+                                start_logits.unsqueeze(-1).repeat(1, 1, self.dec_nhidden)],
+                               dim=-1)
+        for layer in self.answer_end_decoder:
+            end_dec_hs = layer(start_dec_hs, c_lengths, c_mask, q_init_state)
+        end_logits = self.end_linear(end_dec_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
         masked_start_logits = start_logits.masked_fill(start_end_mask, -3e4)
         masked_end_logits = end_logits.masked_fill(start_end_mask, -3e4)
-
-        # if return_joint_logits is not None and return_joint_logits:
-        #     start_dec_hs = self.start_last_linear(dec_hs)
-        #     end_dec_hs = self.end_last_linear(dec_hs)
-        #     joint_logits = torch.bmm(start_dec_hs, end_dec_hs.transpose(-1, -2))
-        #
-        #     start_end_mask_matrix = \
-        #         torch.matmul(start_end_mask.unsqueeze(2).float(), start_end_mask.unsqueeze(1).float())
-        #     start_end_mask_matrix = torch.triu(start_end_mask_matrix) == 0
-        #     masked_joint_logits = joint_logits.masked_fill(start_end_mask_matrix, -3e4)
-        #     return masked_start_logits, masked_end_logits, masked_joint_logits
 
         return masked_start_logits, masked_end_logits
 
