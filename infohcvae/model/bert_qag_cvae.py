@@ -140,7 +140,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--decoder_a_nlayers", type=int, default=2)
         parser.add_argument("--decoder_a_nhidden", type=int, default=300)
         parser.add_argument("--decoder_a_dropout", type=float, default=0.3)
-        parser.add_argument("--decoder_a_generator", type=str, default="joint", choices=["joint", "independent"])
         parser.add_argument("--decoder_q_nlayers", type=int, default=2)
         parser.add_argument("--decoder_q_nhidden", type=int, default=900)
         parser.add_argument("--decoder_q_dropout", type=float, default=0.3)
@@ -150,8 +149,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--w_bce", type=float, default=1)
         parser.add_argument("--alpha_kl_q", type=float, default=1)
         parser.add_argument("--alpha_kl_a", type=float, default=1)
-        parser.add_argument("--lambda_mmd_q", type=float, default=50)
-        parser.add_argument("--lambda_mmd_a", type=float, default=50)
+        parser.add_argument("--lambda_mmd_q", type=float, default=100)
+        parser.add_argument("--lambda_mmd_a", type=float, default=100)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=1e-3, type=float, help="lr")
