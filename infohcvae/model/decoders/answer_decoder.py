@@ -26,12 +26,7 @@ class AnswerDecoder(nn.Module):
         layers = [AnswerDecoderBiLstmWithAttention(4 * d_model, lstm_dec_nhidden, 1, dropout=dropout)]
         for i in range(1, lstm_dec_nlayers):
             layers.append(AnswerDecoderBiLstmWithAttention(2 * lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout))
-        self.answer_start_decoder = nn.ModuleList(layers)
-
-        layers = [AnswerDecoderBiLstmWithAttention(4 * d_model + lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout)]
-        for i in range(1, lstm_dec_nlayers):
-            layers.append(AnswerDecoderBiLstmWithAttention(2 * lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout))
-        self.answer_end_decoder = nn.ModuleList(layers)
+        self.answer_decoder = nn.ModuleList(layers)
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
         self.end_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
@@ -58,23 +53,14 @@ class AnswerDecoder(nn.Module):
         q_init_state = self._build_zq_init_state(zq)
 
         # Decoding answer start position
-        start_dec_hs = torch.cat([c_embeds, init_state,
+        dec_hs = torch.cat([c_embeds, init_state,
                                   c_embeds * init_state,
                                   torch.abs(c_embeds - init_state)],
                                  dim=-1)
-        for layer in self.answer_start_decoder:
-            start_dec_hs = layer(start_dec_hs, c_lengths, c_mask, q_init_state)
-        start_logits = self.start_linear(start_dec_hs).squeeze(-1)
-
-        # Decoding answer end position
-        end_dec_hs = torch.cat([c_embeds, init_state,
-                                c_embeds * init_state,
-                                torch.abs(c_embeds - init_state),
-                                start_logits.unsqueeze(-1).repeat(1, 1, self.dec_nhidden)],
-                               dim=-1)
-        for layer in self.answer_end_decoder:
-            end_dec_hs = layer(end_dec_hs, c_lengths, c_mask, q_init_state)
-        end_logits = self.end_linear(end_dec_hs).squeeze(-1)
+        for layer in self.answer_decoder:
+            dec_hs = layer(dec_hs, c_lengths, c_mask, q_init_state)
+        start_logits = self.start_linear(dec_hs).squeeze(-1)
+        end_logits = self.end_linear(dec_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
         masked_start_logits = start_logits.masked_fill(start_end_mask, -3e4)
