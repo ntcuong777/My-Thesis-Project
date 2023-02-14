@@ -5,6 +5,7 @@ from typing import Dict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch_optimizer as additional_optim
 import torch.optim as optim
 import pytorch_lightning as pl
@@ -109,6 +110,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
+        self.a_join_rec_criterion = nn.BCEWithLogitsLoss()
         self.gaussian_kl_criterion = GaussianKLLoss()
         self.categorical_kl_criterion = CategoricalKLLoss()
 
@@ -210,7 +212,12 @@ class BertQAGConditionalVae(pl.LightningModule):
         no_q_end_positions.clamp_(0, max_c_len)
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec) / 2.
+        start_end_mask_matrix = torch.matmul(start_mask.unsqueeze(2), end_mask.unsqueeze(1))
+        loss_joint_a_rec = \
+            self.a_join_rec_criterion(
+                F.softmax(start_logits).unsqueeze(2) * F.softmax(end_logits).unsqueeze(1) + 1e-6,
+                start_end_mask_matrix)
+        loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec + loss_joint_a_rec) / 3.
 
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
