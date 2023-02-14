@@ -76,8 +76,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_dropout
         self.d_model = d_model = config.hidden_size
 
-        self.decoder_a_generator = args.decoder_a_generator
-
         embedding = CustomBertEmbedding(base_model)
         freeze_neural_model(embedding)
         bert_model = CustomBertModel(base_model)
