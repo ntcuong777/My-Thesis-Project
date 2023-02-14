@@ -239,10 +239,15 @@ class BertQAGConditionalVae(pl.LightningModule):
             "total_loss": total_loss,
             "loss_q_rec": loss_q_rec,
             "loss_a_rec": loss_a_rec,
+            "loss_a_start": loss_start_a_rec,
+            "loss_a_end": loss_end_a_rec,
+            "loss_a_joint": loss_joint_a_rec,
             "loss_mmd": loss_mmd,
             "loss_zq_mmd": loss_zq_mmd,
             "loss_za_mmd": loss_za_mmd,
             "loss_kl": loss_kl,
+            "loss_zq_kl": loss_zq_kl,
+            "loss_za_kl": loss_za_kl,
             "loss_qa_info": loss_qa_info,
         }
         return current_losses
@@ -253,14 +258,13 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         current_losses = self.compute_loss(out, batch)
 
-        if batch_idx % 50 == 0:
+        if batch_idx % 25 == 0:
             # Log to file
             log_str = ""
             for k, v in current_losses.items():
                 log_str += "{:s}={:.4f}; ".format(k, v.item())
             with open(self.loss_log_file, "a") as f:
                 f.write(log_str + "\n\n")
-        self.log_dict(current_losses, prog_bar=False)
 
         return current_losses["total_loss"]
 
@@ -344,6 +348,10 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         if (self.current_epoch + 1) % self.program_args.eval_frequency == 0:
             self.evaluation(self.trainer.val_dataloaders[0])
+
+        # signify that end of epoch is reached
+        with open(self.loss_log_file, "a") as f:
+            f.write("----------------- End Epoch = " + str(self.current_epoch + 1) + " -----------------\n\n")
 
     def validation_step(self, batch, batch_idx):
         pass  # nothing here
