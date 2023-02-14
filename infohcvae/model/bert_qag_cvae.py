@@ -108,7 +108,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
-        self.a_join_rec_criterion = nn.BCELoss()
+        self.a_join_rec_criterion = nn.BCELoss(reduction="none")
         self.gaussian_kl_criterion = GaussianKLLoss()
         self.categorical_kl_criterion = CategoricalKLLoss()
 
@@ -191,6 +191,8 @@ class BertQAGConditionalVae(pl.LightningModule):
     def compute_loss(self, out: Dict, batch: torch.Tensor):
         _, q_ids, c_ids, a_mask, start_mask, end_mask, no_q_start_positions, no_q_end_positions = batch
 
+        c_len = c_ids.size(1)
+
         posterior_za, posterior_za_logits = out["posterior_za_out"]
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
@@ -210,11 +212,13 @@ class BertQAGConditionalVae(pl.LightningModule):
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
         start_end_mask_matrix = torch.matmul(start_mask.unsqueeze(2).float(), end_mask.unsqueeze(1).float())
+        mult_mask = torch.ones_like(start_end_mask_matrix, device=start_end_mask_matrix.device)
+        mult_mask[start_end_mask_matrix == 1] = c_len - 1
         loss_joint_a_rec = \
-            self.a_join_rec_criterion(
+            (self.a_join_rec_criterion(
                 torch.exp(F.log_softmax(start_logits, dim=1).unsqueeze(2)
                           + F.log_softmax(end_logits, dim=1).unsqueeze(1)),
-                start_end_mask_matrix)
+                start_end_mask_matrix) * mult_mask).sum(dim=1).sum(dim=1).mean()
         loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec + loss_joint_a_rec) / 3.
 
         # kl loss
