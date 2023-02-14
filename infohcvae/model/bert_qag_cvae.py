@@ -363,9 +363,9 @@ class BertQAGConditionalVae(pl.LightningModule):
         if self.optimizer_algorithm == "sgd":
             optimizer = optim.SGD(params, lr=self.lr, momentum=0.9, nesterov=False)
         elif self.optimizer_algorithm == "adam":
-            optimizer = optim.Adam(params, lr=self.lr)
+            optimizer = optim.Adam(params, lr=self.lr, betas=(0.5, 0.999))
         elif self.optimizer_algorithm == "adamw":
-            optimizer = optim.AdamW(params, lr=self.lr)
+            optimizer = optim.AdamW(params, lr=self.lr, betas=(0.5, 0.999))
         else:
             optimizer = additional_optim.SWATS(params, lr=self.lr, nesterov=False)
         return optimizer
