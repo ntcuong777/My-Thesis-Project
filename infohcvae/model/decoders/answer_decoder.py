@@ -20,7 +20,7 @@ class AnswerDecoder(nn.Module):
         self.nza_values = nza_values
         self.dec_nhidden = lstm_dec_nhidden
         self.za_projection = nn.Linear(nzadim * nza_values, d_model)
-        self.zq_projection = nn.Linear(nzqdim, lstm_dec_nhidden)
+        self.zq_projection = nn.Linear(nzqdim, lstm_dec_nhidden * 2)
 
         layers = [AnswerDecoderBiLstmWithAttention(4 * d_model, lstm_dec_nhidden, 1, dropout=dropout)]
         for i in range(1, lstm_dec_nlayers):
@@ -37,7 +37,7 @@ class AnswerDecoder(nn.Module):
 
     def _build_zq_init_state(self, zq):
         q_init = self.zq_projection(zq)  # shape = (N, d_model)
-        q_init = q_init.view(-1, 1, self.dec_nhidden).transpose(0, 1).contiguous()
+        q_init = q_init.view(-1, 2, self.dec_nhidden).transpose(0, 1).contiguous()
         q_state = (q_init, q_init)
         return q_state
 
