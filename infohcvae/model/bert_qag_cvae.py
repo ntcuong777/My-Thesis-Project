@@ -96,7 +96,7 @@ class BertQAGConditionalVae(pl.LightningModule):
                                           nzqdim, nzadim, nza_values, dropout=encoder_dropout,
                                           pad_token_id=self.pad_token_id)
 
-        self.answer_decoder = AnswerDecoder(bert_model, d_model, nzadim, nza_values, decoder_a_nhidden,
+        self.answer_decoder = AnswerDecoder(bert_model, d_model, nzqdim, nzadim, nza_values, decoder_a_nhidden,
                                             decoder_a_nlayers, dropout=decoder_a_dropout,
                                             pad_token_id=self.pad_token_id)
 
