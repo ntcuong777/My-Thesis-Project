@@ -209,7 +209,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         no_q_end_positions.clamp_(0, max_c_len)
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        start_end_mask_matrix = torch.matmul(start_mask.unsqueeze(2), end_mask.unsqueeze(1))
+        start_end_mask_matrix = torch.matmul(start_mask.unsqueeze(2).float(), end_mask.unsqueeze(1).float())
         loss_joint_a_rec = \
             self.a_join_rec_criterion(
                 torch.exp(F.log_softmax(start_logits, dim=1).unsqueeze(2)
