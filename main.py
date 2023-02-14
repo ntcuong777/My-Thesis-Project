@@ -36,7 +36,7 @@ def main(run_args):
         torch.save(eval_data, os.path.join(run_args.dataloader_dir, "eval_data.pt"))
 
     model = BertQAGConditionalVae(run_args)
-    full_trainer = Trainer.from_argparse_args(run_args, gradient_clip_algorithm="norm", gradient_clip_val=1.0)
+    full_trainer = Trainer.from_argparse_args(run_args, gradient_clip_algorithm="norm", gradient_clip_val=0.5)
     ckpt_path = args.checkpoint_file
     full_trainer.fit(model, train_dataloaders=train_dataloader, val_dataloaders=eval_dataloader, ckpt_path=ckpt_path)
 
