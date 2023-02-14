@@ -17,11 +17,12 @@ class AnswerDecoder(nn.Module):
 
         self.pad_token_id = pad_token_id
 
+        # self.nzqdim = nzqdim
         self.nzadim = nzadim
         self.nza_values = nza_values
         self.dec_nhidden = lstm_dec_nhidden
         self.za_projection = nn.Linear(nzadim * nza_values, d_model)
-        self.zq_projection = nn.Linear(nzqdim, lstm_dec_nhidden * 2)
+        # self.zq_projection = nn.Linear(nzqdim, lstm_dec_nhidden * 2)
 
         layers = [AnswerDecoderBiLstmWithAttention(4 * d_model, lstm_dec_nhidden, 1, dropout=dropout)]
         for i in range(1, lstm_dec_nlayers):
@@ -36,13 +37,13 @@ class AnswerDecoder(nn.Module):
         z_projected = z_projected.unsqueeze(1).expand(-1, max_c_len, -1)  # shape = (N, c_len, d_model)
         return z_projected
 
-    def _build_zq_init_state(self, zq):
-        q_init = self.zq_projection(zq)  # shape = (N, d_model)
-        q_init = q_init.view(-1, 2, self.dec_nhidden).transpose(0, 1).contiguous()
-        q_state = (q_init, q_init)
-        return q_state
+    # def _build_zq_init_state(self, zq):
+    #     q_init = self.zq_projection(zq)  # shape = (N, d_model)
+    #     q_init = q_init.view(-1, 2, self.dec_nhidden).transpose(0, 1).contiguous()
+    #     q_state = (q_init, q_init)
+    #     return q_state
 
-    def forward(self, c_ids, zq, za):
+    def forward(self, c_ids, za):
         _, max_c_len = c_ids.size()
 
         c_mask = return_attention_mask(c_ids, self.pad_token_id)
@@ -68,7 +69,7 @@ class AnswerDecoder(nn.Module):
 
         return masked_start_logits, masked_end_logits
 
-    def generate(self, c_ids, zq=None, za=None, start_logits=None, end_logits=None):
+    def generate(self, c_ids, za=None, start_logits=None, end_logits=None):
         assert (start_logits is None and end_logits is None) or (start_logits is not None and end_logits is not None),\
             "`start_logits` and `end_logits` must be both provided or both empty"
         assert (start_logits is None and (za is not None or zq is not None)) or \
@@ -76,7 +77,7 @@ class AnswerDecoder(nn.Module):
             "cannot both provide logits and latent `zq` and `za`, only <one> is accepted"
 
         if start_logits is None:
-            start_logits, end_logits = self.forward(c_ids, zq, za)
+            start_logits, end_logits = self.forward(c_ids, za)
 
         batch_size, max_c_len = c_ids.size()
 

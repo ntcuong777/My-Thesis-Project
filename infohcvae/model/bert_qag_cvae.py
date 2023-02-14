@@ -148,7 +148,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=1)
         parser.add_argument("--lambda_mmd_q", type=float, default=10)
-        parser.add_argument("--lambda_mmd_a", type=float, default=1000)
+        parser.add_argument("--lambda_mmd_a", type=float, default=100)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=0.0001, type=float, help="lr")
@@ -173,7 +173,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
         # answer decoding
         start_logits, end_logits = \
-            self.answer_decoder(c_ids, posterior_zq, posterior_za)
+            self.answer_decoder(c_ids, posterior_za)
         # question decoding
         lm_logits, mean_embeds = self.question_decoder(
             c_ids, q_ids, c_a_mask, posterior_zq, return_qa_mean_embeds=True)
@@ -209,11 +209,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         no_q_end_positions.clamp_(0, max_c_len)
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        # start_end_mask_matrix = torch.matmul(start_mask.unsqueeze(2).float(), end_mask.unsqueeze(1).float())
-        # loss_joint_a_rec = self.a_join_rec_criterion(
-        #     joint_logits.view(-1, self.max_c_len*self.max_c_len),
-        #     start_end_mask_matrix.view(-1, self.max_c_len*self.max_c_len))
-        # loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec + loss_joint_a_rec) / 3.
         loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec) / 2.
 
         # kl loss
@@ -269,8 +264,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     """ Generation-related methods """
 
-    def _generate_answer(self, c_ids, zq, za):
-        return_start_logits, return_end_logits = self.answer_decoder(c_ids, zq, za)
+    def _generate_answer(self, c_ids, za):
+        return_start_logits, return_end_logits = self.answer_decoder(c_ids, za)
 
         # Get generated answer mask from context ids `c_ids`
         gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = self.answer_decoder.generate(
@@ -285,7 +280,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             zq, _, _, za, _ = self.prior_encoder(c_ids)
 
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
-                self._generate_answer(c_ids, zq, za)
+                self._generate_answer(c_ids, za)
 
             q_ids = self._generate_question(c_ids, gen_c_a_mask, zq)
 
