@@ -110,7 +110,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
-        self.a_join_rec_criterion = nn.BCEWithLogitsLoss()
+        self.a_join_rec_criterion = nn.BCELoss()
         self.gaussian_kl_criterion = GaussianKLLoss()
         self.categorical_kl_criterion = CategoricalKLLoss()
 
@@ -215,7 +215,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         start_end_mask_matrix = torch.matmul(start_mask.unsqueeze(2), end_mask.unsqueeze(1))
         loss_joint_a_rec = \
             self.a_join_rec_criterion(
-                F.softmax(start_logits).unsqueeze(2) * F.softmax(end_logits).unsqueeze(1) + 1e-6,
+                torch.exp(F.log_softmax(start_logits, dim=1).unsqueeze(2)
+                          + F.log_softmax(end_logits, dim=1).unsqueeze(1)),
                 start_end_mask_matrix)
         loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec + loss_joint_a_rec) / 3.
 
