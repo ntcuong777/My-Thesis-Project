@@ -51,7 +51,7 @@ class AnswerDecoder(nn.Module):
 
         c_embeds = self.context_encoder(c_ids, c_mask)
         init_state = self._build_za_init_state(za, max_c_len)
-        q_init_state = self._build_zq_init_state(zq)
+        # q_init_state = self._build_zq_init_state(zq)
 
         # Decoding answer start position
         dec_hs = torch.cat([c_embeds, init_state,
@@ -59,7 +59,7 @@ class AnswerDecoder(nn.Module):
                                   torch.abs(c_embeds - init_state)],
                                  dim=-1)
         for layer in self.answer_decoder:
-            dec_hs = layer(dec_hs, c_lengths, c_mask, q_init_state)
+            dec_hs = layer(dec_hs, c_lengths, c_mask)
         start_logits = self.start_linear(dec_hs).squeeze(-1)
         end_logits = self.end_linear(dec_hs).squeeze(-1)
 
