@@ -73,7 +73,7 @@ class AnswerDecoder(nn.Module):
                                 start_logits.unsqueeze(-1).repeat(1, 1, self.dec_nhidden)],
                                dim=-1)
         for layer in self.answer_end_decoder:
-            end_dec_hs = layer(start_dec_hs, c_lengths, c_mask, q_init_state)
+            end_dec_hs = layer(end_dec_hs, c_lengths, c_mask, q_init_state)
         end_logits = self.end_linear(end_dec_hs).squeeze(-1)
 
         start_end_mask = (c_mask == 0)
