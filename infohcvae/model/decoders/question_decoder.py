@@ -75,8 +75,6 @@ class QuestionDecoder(nn.Module):
         # question dec
         q_embeds = self.embedding(q_ids)
         q_outputs, _ = self.question_lstm(q_embeds, q_lengths.to("cpu"), init_state)
-        # causal_q_mask = return_causal_mask_from_position_mask(q_mask)
-        # q_outputs = self.question_self_attention(q_outputs, causal_q_mask)
 
         logits, q_last_outputs = self.get_question_logits_from_out_hidden_states(
             c_ids, c_mask, q_ids, q_mask, q_outputs, c_a_outputs)

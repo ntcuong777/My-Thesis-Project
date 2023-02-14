@@ -95,6 +95,6 @@ class PosteriorEncoder(nn.Module):
         h = torch.cat([zq, c_a_attned_by_zq, c_a_h], dim=-1)
         za_logits = self.za_linear(h).view(-1, self.nzadim, self.nza_values)
         # Sample `za`
-        za = gumbel_softmax(za_logits, hard=True)
+        za = gumbel_softmax(za_logits, hard=False)
 
         return zq, zq_mu, zq_logvar, za, za_logits
