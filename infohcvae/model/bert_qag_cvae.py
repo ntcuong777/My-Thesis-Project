@@ -64,7 +64,6 @@ class BertQAGConditionalVae(pl.LightningModule):
         base_model = args.base_model
         config = BertConfig.from_pretrained(base_model)
 
-        self.encoder_bert_nlayers = encoder_bert_nlayers = args.encoder_bert_nlayers
         self.encoder_nlayers = encoder_nlayers = args.encoder_nlayers
         self.encoder_nhidden = encoder_nhidden = args.encoder_nhidden
         self.encoder_dropout = encoder_dropout = args.encoder_dropout
@@ -75,6 +74,8 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.decoder_q_nhidden = decoder_q_nhidden = args.decoder_q_nhidden
         self.decoder_q_dropout = decoder_q_dropout = args.decoder_q_dropout
         self.d_model = d_model = config.hidden_size
+
+        self.decoder_a_generator = args.decoder_a_generator
 
         embedding = CustomBertEmbedding(base_model)
         freeze_neural_model(embedding)
@@ -132,12 +133,12 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
         parser.add_argument("--base_model", default="bert-base-uncased", type=str)
         parser.add_argument("--encoder_nlayers", type=int, default=1)
-        parser.add_argument("--encoder_bert_nlayers", type=int, default=0)
         parser.add_argument("--encoder_nhidden", type=int, default=300)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)
         parser.add_argument("--decoder_a_nlayers", type=int, default=2)
         parser.add_argument("--decoder_a_nhidden", type=int, default=300)
         parser.add_argument("--decoder_a_dropout", type=float, default=0.3)
+        parser.add_argument("--decoder_a_generator", type=str, default="joint", choices=["joint", "independent"])
         parser.add_argument("--decoder_q_nlayers", type=int, default=2)
         parser.add_argument("--decoder_q_nhidden", type=int, default=900)
         parser.add_argument("--decoder_q_dropout", type=float, default=0.3)
@@ -172,7 +173,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             prior_za, prior_za_logits = self.prior_encoder(c_ids)
 
         # answer decoding
-        start_logits, end_logits, joint_logits = \
+        start_logits, end_logits = \
             self.answer_decoder(c_ids, posterior_zq, posterior_za)
         # question decoding
         lm_logits, mean_embeds = self.question_decoder(
@@ -183,7 +184,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "prior_za_out": (prior_za, prior_za_logits),
             "posterior_zq_out": (posterior_zq, posterior_zq_mu, posterior_zq_logvar),
             "prior_zq_out": (prior_zq, prior_zq_mu, prior_zq_logvar),
-            "answer_out": (start_logits, end_logits, joint_logits),
+            "answer_out": (start_logits, end_logits),
             "question_out": (lm_logits,) + mean_embeds
         })
         return out
@@ -195,7 +196,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         prior_za, prior_za_logits = out["prior_za_out"]
         posterior_zq, posterior_zq_mu, posterior_zq_logvar = out["posterior_zq_out"]
         prior_zq, prior_zq_mu, prior_zq_logvar = out["prior_zq_out"]
-        start_logits, end_logits, joint_logits = out["answer_out"]
+        start_logits, end_logits = out["answer_out"]
         q_logits, q_mean_emb, a_mean_emb = out["question_out"]
 
         # Compute losses
@@ -209,9 +210,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         no_q_end_positions.clamp_(0, max_c_len)
         loss_start_a_rec = self.a_rec_criterion(start_logits, no_q_start_positions)
         loss_end_a_rec = self.a_rec_criterion(end_logits, no_q_end_positions)
-        loss_joint_rec = self.a_rec_criterion(joint_logits.view(joint_logits.shape[0], -1),
-                                              no_q_start_positions * end_logits.shape[-1] + no_q_end_positions)
-        loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec + loss_joint_rec) / 3.
+        loss_a_rec = self.w_bce * (loss_start_a_rec + loss_end_a_rec) / 2.
 
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
@@ -263,7 +262,7 @@ class BertQAGConditionalVae(pl.LightningModule):
     """ Generation-related methods """
 
     def _generate_answer(self, c_ids, zq, za):
-        return_start_logits, return_end_logits, _ = self.answer_decoder(c_ids, zq, za)
+        return_start_logits, return_end_logits = self.answer_decoder(c_ids, zq, za)
 
         # Get generated answer mask from context ids `c_ids`
         gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = self.answer_decoder.generate(
