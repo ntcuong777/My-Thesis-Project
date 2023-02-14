@@ -28,16 +28,18 @@ class AnswerDecoder(nn.Module):
             layers.append(AnswerDecoderBiLstmWithAttention(2 * lstm_dec_nhidden, lstm_dec_nhidden, 1, dropout=dropout))
         self.answer_decoder = nn.ModuleList(layers)
         self.start_last_linear = nn.Sequential(
-            nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.Linear(2 * lstm_dec_nhidden, lstm_dec_nhidden),
             nn.ReLU(),
-            nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
             nn.ReLU(),
+            nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
         )
         self.end_last_linear = nn.Sequential(
-            nn.Linear(4 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.Linear(2 * lstm_dec_nhidden, lstm_dec_nhidden),
             nn.ReLU(),
-            nn.Linear(2 * lstm_dec_nhidden, 2 * lstm_dec_nhidden),
+            nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
             nn.ReLU(),
+            nn.Linear(lstm_dec_nhidden, lstm_dec_nhidden),
         )
 
         self.start_linear = nn.Linear(2 * lstm_dec_nhidden, 1)
@@ -82,7 +84,8 @@ class AnswerDecoder(nn.Module):
             end_dec_hs = self.end_last_linear(dec_hs)
             joint_logits = torch.bmm(start_dec_hs, end_dec_hs.transpose(-1, -2))
 
-            start_end_mask_matrix = torch.matmul(start_end_mask.unsqueeze(2).float(), start_end_mask.unsqueeze(1).float())
+            start_end_mask_matrix = \
+                torch.matmul(start_end_mask.unsqueeze(2).float(), start_end_mask.unsqueeze(1).float())
             start_end_mask_matrix = torch.triu(start_end_mask_matrix) == 0
             masked_joint_logits = joint_logits.masked_fill(start_end_mask_matrix, -3e4)
             return masked_start_logits, masked_end_logits, masked_joint_logits
