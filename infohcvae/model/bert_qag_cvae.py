@@ -144,14 +144,14 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzqdim", type=int, default=50)
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
-        parser.add_argument("--w_bce", type=float, default=1)
+        parser.add_argument("--w_bce", type=float, default=10)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=1)
         parser.add_argument("--lambda_mmd_q", type=float, default=10)
         parser.add_argument("--lambda_mmd_a", type=float, default=100)
         parser.add_argument("--lambda_qa_info", type=float, default=1)
 
-        parser.add_argument("--lr", default=0.0001, type=float, help="lr")
+        parser.add_argument("--lr", default=0.001, type=float, help="lr")
         parser.add_argument("--optimizer", default="adamw", choices=["sgd", "adam", "swats", "adamw"], type=str,
                             help="optimizer to use, [\"adam\", \"sgd\", \"swats\", \"adamw\"] are supported")
 
@@ -356,11 +356,11 @@ class BertQAGConditionalVae(pl.LightningModule):
         params = filter(lambda p: p.requires_grad, self.parameters())
 
         if self.optimizer_algorithm == "sgd":
-            optimizer = optim.SGD(params, lr=self.lr, momentum=0.9, nesterov=False)
+            optimizer = optim.SGD(params, lr=self.lr)
         elif self.optimizer_algorithm == "adam":
-            optimizer = optim.Adam(params, lr=self.lr, betas=(0.5, 0.999))
+            optimizer = optim.Adam(params, lr=self.lr)
         elif self.optimizer_algorithm == "adamw":
-            optimizer = optim.AdamW(params, lr=self.lr, betas=(0.5, 0.999))
+            optimizer = optim.AdamW(params, lr=self.lr)
         else:
             optimizer = additional_optim.SWATS(params, lr=self.lr, nesterov=False)
         return optimizer
