@@ -7,9 +7,9 @@ from infohcvae.model.model_utils import softargmax, gumbel_latent_var_sampling
 from infohcvae.model.loss_utils import compute_mmd
 
 
-class VaeGumbelKLLoss(nn.Module):
+class VaeCategoricalKLLoss(nn.Module):
     def __init__(self, categorical_dim=10):
-        super(VaeGumbelKLLoss, self).__init__()
+        super(VaeCategoricalKLLoss, self).__init__()
         self.categorical_dim = categorical_dim
 
     def forward(self, logits, eps=1e-10):
