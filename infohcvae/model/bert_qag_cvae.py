@@ -54,7 +54,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         self.nzadim = nzadim = args.nzadim
         self.nza_values = nza_values = args.nza_values
 
-        self.w_bce = args.w_bce
+        self.w_bce = 1 # args.w_bce
         self.alpha_kl_q = args.alpha_kl_q
         self.alpha_kl_a = args.alpha_kl_a
         self.lambda_mmd_q = args.lambda_mmd_q
@@ -144,7 +144,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--nzqdim", type=int, default=50)
         parser.add_argument("--nzadim", type=int, default=20)
         parser.add_argument("--nza_values", type=int, default=10)
-        parser.add_argument("--w_bce", type=float, default=10)
+        # parser.add_argument("--w_bce", type=float, default=10)
         parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=1)
         parser.add_argument("--lambda_mmd_q", type=float, default=10)
