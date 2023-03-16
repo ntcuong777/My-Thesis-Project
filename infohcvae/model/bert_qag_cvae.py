@@ -11,16 +11,17 @@ import torch.optim as optim
 import pytorch_lightning as pl
 from transformers import BertConfig, BertTokenizer
 from infohcvae.model.model_utils import (
-    freeze_neural_model,
+    gumbel_softmax, sample_gaussian,
+    freeze_neural_model, return_attention_mask,
+    return_inputs_length,
 )
 from infohcvae.model.losses import (
     GaussianKLLoss, CategoricalKLLoss,
-    VaeGaussianKLLoss, VaeCategoricalKLLoss,
     ContinuousKernelMMDLoss, CategoricalMMDLoss,
 )
 from infohcvae.model.custom.custom_bert_model import CustomBertModel
 from infohcvae.model.custom.custom_bert_embeddings import CustomBertEmbedding
-from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder, PriorGenerator
+from infohcvae.model.encoders import PosteriorEncoder, PriorEncoder
 from infohcvae.model.decoders import AnswerDecoder, QuestionDecoder
 from infohcvae.model.infomax import JensenShannonInfoMax, AnswerJensenShannonInfoMax
 from evaluation.training_eval import eval_vae
@@ -39,7 +40,7 @@ class BertQAGConditionalVae(pl.LightningModule):
         if args.debug:
             self.debug = True
 
-        self.use_neural_prior = args.use_neural_prior
+        # self.minibatch_size = args.minibatch_size
 
         """ Model parameters """
         self.max_c_len = args.max_c_len
@@ -91,12 +92,9 @@ class BertQAGConditionalVae(pl.LightningModule):
                                                   nzqdim, nzadim, nza_values, dropout=encoder_dropout,
                                                   pad_token_id=self.pad_token_id)
 
-        if args.use_neural_prior:
-            self.prior_encoder = PriorEncoder(embedding, d_model, encoder_nhidden, encoder_nlayers,
-                                              nzqdim, nzadim, nza_values, dropout=encoder_dropout,
-                                              pad_token_id=self.pad_token_id)
-        else:
-            self.prior_encoder = PriorGenerator(nzqdim, nzadim, nza_values)
+        self.prior_encoder = PriorEncoder(embedding, d_model, encoder_nhidden, encoder_nlayers,
+                                          nzqdim, nzadim, nza_values, dropout=encoder_dropout,
+                                          pad_token_id=self.pad_token_id)
 
         self.answer_decoder = AnswerDecoder(bert_model, d_model, nzqdim, nzadim, nza_values, decoder_a_nhidden,
                                             decoder_a_nlayers, dropout=decoder_a_dropout,
@@ -110,13 +108,9 @@ class BertQAGConditionalVae(pl.LightningModule):
         """ Loss computation """
         self.q_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.pad_token_id)
         self.a_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
-
-        if args.use_neural_prior:
-            self.gaussian_kl_criterion = GaussianKLLoss()
-            self.categorical_kl_criterion = CategoricalKLLoss()
-        else:
-            self.gaussian_kl_criterion = VaeGaussianKLLoss()
-            self.categorical_kl_criterion = VaeCategoricalKLLoss()
+        # self.a_join_rec_criterion = nn.CrossEntropyLoss(ignore_index=self.max_c_len)
+        self.gaussian_kl_criterion = GaussianKLLoss()
+        self.categorical_kl_criterion = CategoricalKLLoss()
 
         self.cont_mmd_criterion = ContinuousKernelMMDLoss()
         self.gumbel_mmd_criterion = CategoricalMMDLoss()
@@ -138,7 +132,6 @@ class BertQAGConditionalVae(pl.LightningModule):
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("BertQAGConditionalVae")
         parser.add_argument("--base_model", default="bert-base-uncased", type=str)
-        parser.add_argument("--use_neural_prior", dest="use_neural_prior", action="store_true", default=False)
         parser.add_argument("--encoder_nlayers", type=int, default=1)
         parser.add_argument("--encoder_nhidden", type=int, default=300)
         parser.add_argument("--encoder_dropout", type=float, default=0.2)
@@ -150,13 +143,13 @@ class BertQAGConditionalVae(pl.LightningModule):
         parser.add_argument("--decoder_q_dropout", type=float, default=0.3)
         parser.add_argument("--nzqdim", type=int, default=50)
         parser.add_argument("--nzadim", type=int, default=20)
-        parser.add_argument("--nza_values", type=int, default=1.5)
-        parser.add_argument("--w_bce", type=float, default=1.5)
-        parser.add_argument("--alpha_kl_q", type=float, default=1)
+        parser.add_argument("--nza_values", type=int, default=10)
+        parser.add_argument("--w_bce", type=float, default=10)
+        parser.add_argument("--alpha_kl_q", type=float, default=0)
         parser.add_argument("--alpha_kl_a", type=float, default=1)
-        parser.add_argument("--lambda_mmd_q", type=float, default=100)
+        parser.add_argument("--lambda_mmd_q", type=float, default=10)
         parser.add_argument("--lambda_mmd_a", type=float, default=100)
-        parser.add_argument("--lambda_qa_info", type=float, default=1.5)
+        parser.add_argument("--lambda_qa_info", type=float, default=1)
 
         parser.add_argument("--lr", default=0.001, type=float, help="lr")
         parser.add_argument("--optimizer", default="adamw", choices=["sgd", "adam", "swats", "adamw"], type=str,
@@ -176,16 +169,11 @@ class BertQAGConditionalVae(pl.LightningModule):
             posterior_za, posterior_za_logits = self.posterior_encoder(c_ids, q_ids, c_a_mask)
 
         prior_zq, prior_zq_mu, prior_zq_logvar, \
-            prior_za, prior_za_logits = None, None, None, None, None
-        if self.use_neural_prior:
-            prior_zq, prior_zq_mu, prior_zq_logvar, \
-                prior_za, prior_za_logits = self.prior_encoder(c_ids)
-        else:
-            prior_zq, prior_zq = self.prior_encoder(c_ids)
+            prior_za, prior_za_logits = self.prior_encoder(c_ids)
 
         # answer decoding
         start_logits, end_logits = \
-            self.answer_decoder(c_ids, posterior_za, posterior_zq)
+            self.answer_decoder(c_ids, posterior_za)
         # question decoding
         lm_logits, mean_embeds = self.question_decoder(
             c_ids, q_ids, c_a_mask, posterior_zq, return_qa_mean_embeds=True)
@@ -226,16 +214,11 @@ class BertQAGConditionalVae(pl.LightningModule):
         # kl loss
         loss_kl, loss_zq_kl, loss_za_kl = torch.tensor(0.0), torch.tensor(0.0), torch.tensor(0.0)
         if self.alpha_kl_a > 0.001 or self.alpha_kl_q > 0.001:  # eps = 1e-3
-            if self.use_neural_prior:
-                loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
-                    posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
-                loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(
-                    posterior_za_logits, prior_za_logits)
-                loss_kl = loss_zq_kl + loss_za_kl
-            else:
-                loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(posterior_zq_mu, posterior_zq_logvar)
-                loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(posterior_za_logits)
-                loss_kl = loss_zq_kl + loss_za_kl
+            loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(
+                posterior_zq_mu, posterior_zq_logvar, prior_zq_mu, prior_zq_logvar)
+            loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(
+                posterior_za_logits, prior_za_logits)
+            loss_kl = loss_zq_kl + loss_za_kl
 
         loss_zq_mmd = self.lambda_mmd_q * self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
         loss_za_mmd = self.lambda_mmd_a * self.gumbel_mmd_criterion(posterior_z=posterior_za, prior_z=prior_za)
@@ -252,6 +235,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             "loss_a_rec": loss_a_rec,
             "loss_a_start": loss_start_a_rec,
             "loss_a_end": loss_end_a_rec,
+            # "loss_a_joint": loss_joint_a_rec,
             "loss_mmd": loss_mmd,
             "loss_zq_mmd": loss_zq_mmd,
             "loss_za_mmd": loss_za_mmd,
@@ -280,8 +264,8 @@ class BertQAGConditionalVae(pl.LightningModule):
 
     """ Generation-related methods """
 
-    def _generate_answer(self, c_ids, za, zq):
-        return_start_logits, return_end_logits = self.answer_decoder(c_ids, za, zq)
+    def _generate_answer(self, c_ids, za):
+        return_start_logits, return_end_logits = self.answer_decoder(c_ids, za)
 
         # Get generated answer mask from context ids `c_ids`
         gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions = self.answer_decoder.generate(
@@ -296,7 +280,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             zq, _, _, za, _ = self.prior_encoder(c_ids)
 
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, _, _ = \
-                self._generate_answer(c_ids, za, zq)
+                self._generate_answer(c_ids, za)
 
             q_ids = self._generate_question(c_ids, gen_c_a_mask, zq)
 
@@ -310,7 +294,7 @@ class BertQAGConditionalVae(pl.LightningModule):
 
             """ Generation """
             gen_c_a_mask, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits = \
-                self._generate_answer(c_ids, za, zq)
+                self._generate_answer(c_ids, zq, za)
             question_ids = self._generate_question(c_ids, c_a_mask, zq)
 
         return question_ids, gen_c_a_start_positions, gen_c_a_end_positions, start_logits, end_logits

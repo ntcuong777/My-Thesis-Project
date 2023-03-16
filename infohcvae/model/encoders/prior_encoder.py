@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from infohcvae.model.custom.luong_attention import LuongAttention
+from infohcvae.model.custom.gated_self_attention import GatedAttention
 from infohcvae.model.custom.custom_lstm import CustomLSTM
 from infohcvae.model.model_utils import (
     gumbel_softmax, sample_gaussian,
@@ -26,6 +27,8 @@ class PriorEncoder(nn.Module):
         self.encoder = CustomLSTM(
             input_size=d_model, hidden_size=lstm_enc_nhidden, num_layers=lstm_enc_nlayers,
             dropout=dropout, bidirectional=True)
+        # self.self_attention = GatedAttention(2 * lstm_enc_nhidden)
+        # self.final_state_attention = LuongAttention(2 * lstm_enc_nhidden, 2 * lstm_enc_nhidden)
 
         self.answer_zq_attention = LuongAttention(nzqdim, 2 * lstm_enc_nhidden)
 
@@ -41,6 +44,11 @@ class PriorEncoder(nn.Module):
         c_hs, c_states = self.encoder(c_embeds, c_lengths.to("cpu"))
         c_h = c_states[0].view(self.nlayers, 2, -1, self.nhidden)[-1]
         c_h = c_h.transpose(0, 1).contiguous().view(-1, 2 * self.nhidden)
+        # encoder self attention
+        # c_hs = self.self_attention(c_hs, c_mask)
+        # final hidden state attention
+        # mask = c_mask.unsqueeze(1)
+        # c_h = self.final_state_attention(c_h.unsqueeze(1), c_hs, mask).squeeze(1)
 
         zq_mu = self.zq_mu_linear(c_h)
         zq_logvar = self.zq_logvar_linear(c_h)
