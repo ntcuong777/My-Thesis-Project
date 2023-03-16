@@ -181,7 +181,7 @@ class BertQAGConditionalVae(pl.LightningModule):
             prior_zq, prior_zq_mu, prior_zq_logvar, \
                 prior_za, prior_za_logits = self.prior_encoder(c_ids)
         else:
-            prior_zq, prior_za = self.prior_encoder(c_ids)
+            prior_zq, prior_zq = self.prior_encoder(c_ids)
 
         # answer decoding
         start_logits, end_logits = \
@@ -234,7 +234,7 @@ class BertQAGConditionalVae(pl.LightningModule):
                 loss_kl = loss_zq_kl + loss_za_kl
             else:
                 loss_zq_kl = self.alpha_kl_q * self.gaussian_kl_criterion(posterior_zq_mu, posterior_zq_logvar)
-                loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(posterior_za)
+                loss_za_kl = self.alpha_kl_a * self.categorical_kl_criterion(posterior_za_logits)
                 loss_kl = loss_zq_kl + loss_za_kl
 
         loss_zq_mmd = self.lambda_mmd_q * self.cont_mmd_criterion(posterior_z=posterior_zq, prior_z=prior_zq)
